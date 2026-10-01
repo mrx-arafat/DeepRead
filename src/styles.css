@@ -411,7 +411,8 @@ select {
   width: 100%;
   min-height: 2.75rem;
   padding: 0 0.75rem;
-  border: 1px solid var(--rule);
+  /* A control's edge must clear 3:1 against the page; the hairline --rule is only for dividers. */
+  border: 1px solid var(--ink-faint);
   border-radius: var(--radius);
   background: var(--paper);
   color: var(--ink);
@@ -432,6 +433,11 @@ select {
 /* Sits beside the 2.75rem Save button, so it matches it. */
 .shelf-edit-actions .quiet-button {
   min-height: 2.75rem;
+}
+
+.shelf-edit-actions .quiet-button,
+.library-retry .quiet-button {
+  border-color: var(--ink-faint);
 }
 
 .shelf-edit-actions .button:disabled,
