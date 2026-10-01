@@ -41,12 +41,12 @@ app.on("exit", (code) => {
 });
 
 // An empty config file: otherwise a named tunnel's ~/.cloudflared/config.yml takes over the quick tunnel's
-// routing and every request gets that config's catch-all 404. Vite listens on ::1 only, hence the address.
+// routing and every request gets that config's catch-all 404.
 const emptyConfig = join(root, "data", "cloudflared-empty.yml");
 writeFileSync(emptyConfig, "");
 const tunnel = spawn(
   "cloudflared",
-  ["tunnel", "--no-autoupdate", "--config", emptyConfig, "--url", "http://[::1]:5173"],
+  ["tunnel", "--no-autoupdate", "--config", emptyConfig, "--url", "http://127.0.0.1:5173"],
   { stdio: ["ignore", "pipe", "pipe"] },
 );
 children.push(tunnel);
