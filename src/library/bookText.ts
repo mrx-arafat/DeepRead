@@ -6,3 +6,9 @@ export function lengthLabel(book: BookSummary): string {
   const length = hours >= 1 ? `about ${Math.round(hours)} h of reading` : `about ${Math.max(1, Math.round(hours * 60))} min of reading`;
   return `${book.chapterCount} chapters · ${length}`;
 }
+
+/** Names the file that failed, so the reader knows which one the reason is about. */
+export function addFailure(fileName: string, reason: unknown): string {
+  const why = reason instanceof Error ? reason.message : "Please try again.";
+  return `${fileName} could not be added. ${why}`;
+}

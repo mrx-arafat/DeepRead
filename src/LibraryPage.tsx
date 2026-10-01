@@ -5,6 +5,7 @@ import type { BookSummary, BookUpdate } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
+import { addFailure } from "./library/bookText.ts";
 
 /** The one row that is being edited or asked to confirm its removal. */
 type Active = { kind: "edit"; id: string } | { kind: "delete"; id: string; error: string | null };
@@ -59,7 +60,7 @@ export function LibraryPage() {
       const book = await api.uploadBook(file);
       navigate(`/book/${book.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That file could not be added.");
+      setError(addFailure(file.name, err));
       setUploading(null);
     }
   }
