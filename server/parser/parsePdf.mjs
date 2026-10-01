@@ -68,37 +68,47 @@ function withTimeout(promise, ms, label) {
 // ---------------------------------------------------------------------------------------------
 // Text utilities
 
-const LIGATURES = { "ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl", "ﬅ": "st", "ﬆ": "st" };
+const LIGATURES = { "\uFB00": "ff", "\uFB01": "fi", "\uFB02": "fl", "\uFB03": "ffi", "\uFB04": "ffl", "\uFB05": "st", "\uFB06": "st" };
 
 /** Raw item string -> safe string (keeps U+00AD so line-end soft hyphens can be honoured). */
 function cleanStr(s) {
   return s
-    .replace(/[ﬀ-ﬆ]/g, (c) => LIGATURES[c])
-    .replace(/[\u0000-\u0008\u000E-\u001F\u007F​-‍⁠﻿￾￿]/g, "")
-    .replace(/[\t\n\v\f\r  -   　]/g, " ");
+    .replace(/[\uFB00-\uFB06]/g, (c) => LIGATURES[c])
+    .replace(/[\u0000-\u0008\u000E-\u001F\u007F\u200B-\u200D\u2060\uFEFF\uFFFE\uFFFF]/g, "")
+    .replace(/[\t\n\v\f\r\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, " ");
 }
 
 /** Final text normalisation for anything that leaves the parser. */
 function finalText(s) {
-  return cleanStr(s).replace(/­/g, "").replace(/\s+/g, " ").trim();
+  return cleanStr(s).replace(/\u00AD/g, "").replace(/\s+/g, " ").trim();
 }
 
 /** Loose comparison key: letters and digits only. */
 function normKey(s) {
   return s
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036F]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "");
 }
 
-const TERMINAL_RE = /[.!?…:;]["'”’»)\]]*$/;
+const TERMINAL_RE = /[.!?\u2026:;]["'\u201D\u2019\u00BB)\]]*$/;
 const BULLET_RE = /^(?:[\u2022\u25CF\u25CB\u25E6\u25AA\u25A0\u25A1\u2023\u2219\u27A2\u27A4\u2713\u2714-]\s|\(?\d{1,2}[.)]\s|\d{1,2}(?:\.\d{1,2})+\s|\(?[a-z][.)]\s)/;
+// a list marker sitting alone on its line ("3.", "a)", a bullet), with the item text below it
+const BARE_MARKER_RE = /^(?:\(?\d{1,3}[.)]|[a-z][.)]|[\u2022\u25CF\u25A0\u25AA*-])$/;
 const CHAPTER_RE =
   /^(?:chapter|chap\.)\s*(?:\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/i;
 const PART_RE = /^(?:part|book|volume)\s+(?:\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i;
 const FRONT_MATTER_RE =
-  /^(?:cover|front cover|title( page)?|half[- ]title|copyright( page| notice)?|dedication|epigraph|contents|table of contents|praise( for.*)?|also by.*|other books.*|books by.*|about the publishers?|newsletter.*|frontispiece|imprint|map|maps)$/i;
+  /^(?:cover( page| image)?|front cover|title( page)?|half[- ]title|copyright( page| notice)?|dedication|epigraph|contents|table of contents|praise( for.*)?|also by.*|other books.*|books by.*|about the publishers?|newsletter.*|frontispiece|imprint|map|maps)$/i;
+
+// section titles that open front/back matter, recognised when they share the chapter headings' style
+const MATTER_RE =
+  /^(?:preface|foreword|introduction|prologue|epilogue|afterword|postscript|conclusion|appendix\b.*|notes|endnotes|bibliograph.*|references|further reading|glossary|index|acknowledge?ments|about the authors?)$/i;
+const GUTENBERG_END_RE = /^\*{3}\s*end of (?:the|this) project gutenberg/i;
+
+/** Letters and digits in a string: the unit of the text-coverage self-check. */
+const alnum = (str) => (str.match(/[\p{L}\p{N}]/gu) ?? []).length;
 
 const mode = (values) => {
   const m = new Map();
@@ -114,7 +124,8 @@ const mode = (values) => {
 const median = (xs) => {
   if (!xs.length) return 0;
   const s = [...xs].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -179,11 +190,12 @@ async function extract(filePath, o, warnings) {
       try {
         const page = await withTimeout(doc.getPage(p), o.pageTimeoutMs, `Loading page ${p}`);
         const tc = await withTimeout(page.getTextContent(), o.pageTimeoutMs, `Reading text of page ${p}`);
-        pages.push({ num: p, view: page.view, items: compactItems(tc, page.view) });
+        const rawAlnum = tc.items.reduce((n, it) => n + (typeof it.str === "string" ? alnum(cleanStr(it.str)) : 0), 0);
+        pages.push({ num: p, view: page.view, items: compactItems(tc, page.view), rawAlnum, droppedAlnum: 0, hfAlnum: 0 });
         page.cleanup();
       } catch (e) {
         failures++;
-        pages.push({ num: p, view: [0, 0, 612, 792], items: [], failed: true });
+        pages.push({ num: p, view: [0, 0, 612, 792], items: [], failed: true, rawAlnum: 0, droppedAlnum: 0, hfAlnum: 0 });
         if (failures > Math.max(10, doc.numPages * 0.2)) {
           throw new PdfParseError("timeout", `Too many pages failed to load (last: ${e.message}).`);
         }
@@ -276,7 +288,7 @@ function buildLines(page) {
   const dropCaps = [];
   const normal = [];
   for (const it of items) {
-    if (!it.ws && /^["“‘']?\p{Lu}$/u.test(it.s.trim()) && it.size >= 1.8 * pageSize) dropCaps.push(it);
+    if (!it.ws && /^["\u201C\u2018']?\p{Lu}$/u.test(it.s.trim()) && it.size >= 1.8 * pageSize) dropCaps.push(it);
     else normal.push(it);
   }
 
@@ -319,9 +331,15 @@ function buildLines(page) {
         continue;
       }
       // footnote reference markers: small, raised, numeric
-      if (it.size < 0.85 * size && it.y - baseY > 0.15 * size && /^[\d\s,*†‡§-]+$/.test(it.s)) continue;
+      if (it.size < 0.85 * size && it.y - baseY > 0.15 * size && /^[\d\s,*\u2020\u2021\u00A7-]+$/.test(it.s)) {
+        page.droppedAlnum += alnum(it.s);
+        continue;
+      }
       // fake-bold overprint: same string drawn twice at (almost) the same spot
-      if (prev && prev.s === it.s && Math.abs(prev.x - it.x) < 0.5 * size) continue;
+      if (prev && prev.s === it.s && Math.abs(prev.x - it.x) < 0.5 * size) {
+        page.droppedAlnum += alnum(it.s);
+        continue;
+      }
       if (prev) {
         const gap = it.x - (prev.x + prev.w);
         const needSpace = pendingSpace || gap > 0.12 * Math.min(prev.size, it.size);
@@ -354,8 +372,11 @@ function buildLines(page) {
   // footnote markers raised so far they formed their own "line": drop them
   for (let i = lines.length - 1; i >= 0; i--) {
     const l = lines[i];
-    if (l.size < 0.85 * pageSize && l.text.length <= 4 && /^[\d*†‡§,\s]+$/.test(l.text)) {
-      if (lines.some((o) => o !== l && o.size > l.size && Math.abs(o.y - l.y) < 0.8 * o.size && l.x >= o.x - 2 && l.x <= o.x2 + 2 * o.size)) lines.splice(i, 1);
+    if (l.size < 0.85 * pageSize && l.text.length <= 4 && /^[\d*\u2020\u2021\u00A7,\s]+$/.test(l.text)) {
+      if (lines.some((o) => o !== l && o.size > l.size && Math.abs(o.y - l.y) < 0.8 * o.size && l.x >= o.x - 2 && l.x <= o.x2 + 2 * o.size)) {
+        page.droppedAlnum += alnum(l.text);
+        lines.splice(i, 1);
+      }
     }
   }
 
@@ -387,20 +408,24 @@ function removeHeadersFooters(pages, warnings) {
       .replace(/\d+/g, "#")
       .replace(/\b[ivxlcdm]+\b/g, "#") // roman page numbers in front matter
       .replace(/\s+/g, " ")
-      .replace(/^[\s\-–—|•·]+|[\s\-–—|•·]+$/g, "");
+      .replace(/^[\s\-\u2013\u2014|\u2022\u00B7]+|[\s\-\u2013\u2014|\u2022\u00B7]+$/g, "");
   const zoneOf = (pg, ln) => {
     const h = pg.view[3] - pg.view[1];
     if (ln.top <= 0.12 * h + ln.size) return "T";
     if (ln.bottom <= 0.12 * h) return "B";
     return null;
   };
+  // running heads are body-size or smaller; display text (chapter labels/numbers) never is
+  const sizeW = new Map();
+  for (const pg of pages) for (const l of pg.lines) sizeW.set(Math.round(l.size * 2) / 2, (sizeW.get(Math.round(l.size * 2) / 2) ?? 0) + l.text.length);
+  const body = [...sizeW].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 10;
   const stats = new Map();
   for (const pg of pages) {
     const n = pg.lines.length;
     const cand = n <= 4 ? pg.lines : [...pg.lines.slice(0, 2), ...pg.lines.slice(-2)];
     for (const ln of cand) {
       const zone = zoneOf(pg, ln);
-      if (!zone) continue;
+      if (!zone || ln.size > 1.1 * body) continue;
       const k = PAGE_NO_RE.test(ln.text.trim()) ? `${zone}:#pageno` : `${zone}:${keyOf(ln.text)}`;
       ln._hf = k;
       if (!stats.has(k)) stats.set(k, []);
@@ -451,7 +476,10 @@ function removeHeadersFooters(pages, warnings) {
       removed++;
     }
   }
-  for (const pg of pages) pg.lines = pg.lines.filter((l) => !l._remove);
+  for (const pg of pages) {
+    for (const l of pg.lines) if (l._remove) pg.hfAlnum += alnum(l.text);
+    pg.lines = pg.lines.filter((l) => !l._remove);
+  }
   return { removed, patterns };
 }
 
@@ -541,8 +569,9 @@ function bookStats(pages) {
 /**
  * Some PDFs carry a wrong advance width for one glyph (Principles: every "y" is followed by a gap
  * of ~0.12em), so pdf.js inserts a fake space after it: "psy chology", "y ears", "way s".
- * Signature: a common letter that (almost) never appears word-internally. Repair joins a split
- * unless both halves are independently attested as real words in this book.
+ * Signature: a common letter that (almost) never appears word-internally. Each "a b" split after
+ * that letter is then judged with evidence from the book itself: is "a" seen as a complete word
+ * (line end / before punctuation), is "b" seen starting words elsewhere, is "b" a suffix fragment.
  */
 function repairFakeSpaces(pages, warnings) {
   const allLines = pages.flatMap((p) => p.lines).filter((l) => !l.mono);
@@ -555,18 +584,23 @@ function repairFakeSpaces(pages, warnings) {
       else spaced.set(ch, (spaced.get(ch) ?? 0) + 1);
     }
   }
+  // the split also leaves the letter standing alone before a word ("y ou", "y ears"), which real
+  // text almost never does; requiring that too keeps word-final-heavy vocabularies from triggering it
+  const lone = new Map();
+  for (const l of allLines) for (const m of l.text.matchAll(/(?:^|\s)(\p{L})\s\p{Ll}/gu)) lone.set(m[1].toLowerCase(), (lone.get(m[1].toLowerCase()) ?? 0) + 1);
   const bad = [];
   for (const [ch, sp] of spaced) {
     const inn = internal.get(ch) ?? 0;
-    if (sp + inn > 300 && inn / (sp + inn) < 0.1 && ch !== "s") bad.push(ch); // "s" is word-final by nature in some corpora
+    if (ch === "s" || ch === "a" || ch === "i") continue; // word-final "s"; "a" and "I" are words
+    if (sp + inn > 300 && inn / (sp + inn) < 0.1 && (lone.get(ch) ?? 0) >= Math.max(10, 0.01 * sp)) bad.push(ch);
   }
   if (!bad.length) return;
 
-  const strip = (t) => t.replace(/^[^\p{L}]+|[^\p{L}'’-]+$/gu, "").toLowerCase();
+  const strip = (t) => t.replace(/^[^\p{L}]+|[^\p{L}'\u2019-]+$/gu, "").toLowerCase();
   const badClass = `[${bad.join("")}${bad.join("").toUpperCase()}]`;
   const endsBad = new RegExp(`${badClass}$`, "u");
   // lookahead for the tail so overlapping pairs ("way y ou", "my caddy ing") are each considered
-  const pairRe = new RegExp(`([\\p{L}'’]*${badClass}) (?=(-?\\p{Ll}[\\p{L}'’-]*))`, "gu");
+  const pairRe = new RegExp(`([\\p{L}'\u2019]*${badClass}) (?=([-/]?\\p{Ll}[\\p{L}'\u2019-]*))`, "gu");
   // evidence that a token is a complete word: it ends a line or precedes punctuation
   const complete = new Set();
   // evidence that a lowercase token starts a word: it begins a line or follows a token that cannot produce a fake split
@@ -574,7 +608,7 @@ function repairFakeSpaces(pages, warnings) {
   for (const l of allLines) {
     const toks = l.text.split(" ");
     toks.forEach((t, i) => {
-      if (i === toks.length - 1 || /[^\p{L}'’]$/u.test(t)) complete.add(strip(t));
+      if (i === toks.length - 1 || /[^\p{L}'\u2019]$/u.test(t)) complete.add(strip(t));
       const lead = t.replace(/^[^\p{L}]+/u, "");
       if (/^\p{Ll}/u.test(lead) && (i === 0 || !endsBad.test(toks[i - 1]))) { const w = strip(t); starts.set(w, (starts.get(w) ?? 0) + 1); }
     });
@@ -586,7 +620,8 @@ function repairFakeSpaces(pages, warnings) {
   const SUFFIX = /^(?:s|es|ed|er|ers|ing|ings|ment|ments|ness|able|ably|ance|ances|ant|ants|al|als|ally|ful|less|ist|ists|ism|isms|ize|ized|izes|izing|ee|ees|ology|ologies|ologist|ologists|ological|ically|ical|ic|ics|ous|ously|ation|ations|ish|ies|ied|self|selves)$/;
   /** Decide whether "a b" is one word split by a fake space. */
   const shouldJoin = (a, b) => {
-    if (b.startsWith("-")) return true; // "easy -credit"
+    if (/^[-/]/.test(b)) return true; // "easy -credit", "community /company"
+    if (/^(?:any|every|some|no)$/.test(a) && /^(?:thing|things|where|body|one|how)$/.test(b)) return true; // "any thing"
     if (b.length === 1 && endsBad.test(b)) return false; // "way y ou": the lone letter heads the next word
     if (a.length === 1) return true; // "y ou", "y ears": a lone letter is never the word
     if (b.length === 1 && b !== "a" && b !== "i") return true; // "alway s", "day s"
@@ -604,7 +639,7 @@ function repairFakeSpaces(pages, warnings) {
     for (let pass = 0; pass < 3; pass++) {
       const before = l.text;
       l.text = l.text.replace(re, (m, a, b) => {
-        if (!shouldJoin(strip(a), b.startsWith("-") ? b : strip(b))) return m;
+        if (!shouldJoin(strip(a), /^[-/]/.test(b) ? b : strip(b))) return m;
         fixes++;
         return a;
       });
@@ -639,13 +674,14 @@ function buildLexicon(pages) {
 /** Join two consecutive lines of the same paragraph. */
 function joinLines(a, b, lex) {
   if (!a) return b;
-  if (a.endsWith("­")) return a.slice(0, -1) + b;
-  if (/[—]$/.test(a) || /^[—]/.test(b)) return a + b;
-  const hy = a.match(/([\p{L}\d'’.\/:]+)-$/u);
+  if (a.endsWith("\u00AD")) return a.slice(0, -1) + b;
+  if (/[\u2014]$/.test(a) || /^[\u2014]/.test(b)) return a + b;
+  const hy = a.match(/([\p{L}\d'\u2019.\/:]+)-$/u);
   if (hy && !/\s-$/.test(a)) {
     const left = hy[1];
     if (/[\/.:]/.test(left) || !/^\p{Ll}/u.test(b)) return a + b; // URL / "SHA-" + "1" / "pre-" + "COVID": keep the hyphen
-    const right = (b.match(/^[\p{L}'’-]+/u)?.[0] ?? "").replace(/[-'’]+$/, "");
+    if (/^(?:and|or|nor|to)\s/.test(b)) return `${a} ${b}`; // suspended hyphen: "second- and third-order"
+    const right = (b.match(/^[\p{L}'\u2019-]+/u)?.[0] ?? "").replace(/[-'\u2019]+$/, "");
     const L = left.toLowerCase();
     const R = right.toLowerCase();
     const cJoined = lex.get(L + R) ?? 0;
@@ -699,7 +735,7 @@ function findTitle(pg, title, stats, { strict, nearTop = null }) {
     let acc = "";
     for (let j = i; j < Math.min(lines.length, i + 4); j++) {
       if (strict && lines[j].size < 1.1 * stats.bodySize) break;
-      if (j > i && lines[j - 1].y - lines[j].y > 3 * Math.max(lines[j].size, lines[j - 1].size)) break;
+      if (j > i && lines[j - 1].y - lines[j].y > 4.5 * Math.max(lines[j].size, lines[j - 1].size)) break; // chapter openers are airy
       acc += normKey(lines[j].text);
       let score = 0;
       if (acc === key) score = 3;
@@ -729,7 +765,11 @@ function structureFromOutline(outline, pages, stats, numPages, warnings) {
     const e = outline[i];
     const n = outline[i + 1];
     if (isBareNumber(e.title) && n && n.depth === e.depth && !isBareNumber(n.title) && e.children.length === 0) {
-      entries.push({ ...n, title: `${e.title.replace(/\.$/, "")}. ${n.title}`, page: n.page ?? e.page, top: n.page ? n.top : e.top, merged: true });
+      // merge in place so parent/child links stay valid; the number entry disappears
+      if (n.page == null) Object.assign(n, { page: e.page, top: e.top });
+      Object.assign(n, { title: `${e.title.replace(/\.$/, "")}. ${n.title}`, merged: true });
+      if (e.parent) e.parent.children = e.parent.children.filter((c) => c !== e);
+      entries.push(n);
       i++;
     } else entries.push(e);
   }
@@ -794,23 +834,25 @@ function structureFromOutline(outline, pages, stats, numPages, warnings) {
   if (placed.length < 2) return null;
 
   // 4. choose chapter depth: expand top-level "Part" containers into their children
-  const spanOf = (list) => list.map((c, i) => (list[i + 1]?.page ?? numPages + 1) - c.page);
+  const spanOf = (list, end) => list.map((c, i) => (list[i + 1]?.page ?? end) - c.page);
   const chapters = [];
   const marks = [];
   const topPlaced = placed.filter((e) => e.depth === 0);
-  for (const t of topPlaced) {
+  topPlaced.forEach((t, ti) => {
     const kids = t.children.filter((c) => c.page != null);
     const partLike = PART_RE.test(t.title) || /^part\b/i.test(t.title);
-    const expand = kids.length >= 2 && (partLike || median(spanOf(kids)) >= 8);
+    const end = topPlaced[ti + 1]?.page ?? numPages + 1;
+    const expand = kids.length >= 2 && (partLike || median(spanOf(kids, end)) >= 8);
     chapters.push({ title: t.title, page: t.page, y: t.y, isPart: expand });
     const chapterDepth = expand ? 1 : 0;
     if (expand) {
+      marks.push({ title: t.title, page: t.page, y: t.y, level: 1 });
       for (const k of kids) {
         chapters.push({ title: k.title, page: k.page, y: k.y });
         collectMarks(k, chapterDepth, marks);
       }
     } else collectMarks(t, chapterDepth, marks);
-  }
+  });
   // entries whose top-level ancestor was lost still count as chapters
   if (!topPlaced.length) for (const e of placed) chapters.push({ title: e.title, page: e.page, y: e.y });
   return { chapters, marks, source: "outline" };
@@ -829,43 +871,104 @@ function structureFromOutline(outline, pages, stats, numPages, warnings) {
 
 /** No (usable) outline: chapters from "Chapter N" lines or the dominant top-of-page heading size. */
 function structureFromText(pages, stats, numPages, warnings) {
-  const groupsByPage = pages.map((pg) => headingGroups(pg, stats, 1.2));
-  // a) explicit "Chapter N" / "Part N" lines near the top of a page
-  const patternStarts = [];
-  for (const pg of pages) {
-    const head = pg.lines.slice(0, 3);
-    const idx = head.findIndex((l) => (CHAPTER_RE.test(l.text) || PART_RE.test(l.text)) && l.text.length < 120 && l.size >= 0.95 * stats.bodySize);
-    if (idx < 0) continue;
-    const l = head[idx];
-    const next = pg.lines[idx + 1];
-    let title = l.text;
-    if (next && next.size >= 1.1 * stats.bodySize && l.y - next.y < 4 * next.size && !CHAPTER_RE.test(l.text.replace(CHAPTER_RE, "").trim() ? "x" : "")) {
-      if (normKey(l.text).length <= 12) title = `${l.text}: ${next.text}`;
+  const isLarge = (l) => l.size >= 1.1 * stats.bodySize;
+  const sameSize = (a, b) => Math.abs(a.size - b.size) <= 0.06 * Math.max(a.size, b.size);
+  const isLabelLine = (t) => CHAPTER_RE.test(t) || PART_RE.test(t) || /^(?:chapter|part)$/i.test(t);
+  // full title of a heading starting at line i: "CHAPTER" + "1" + "Introduction to Antivirus" + "Software",
+  // or a title that wraps over several lines of the same size ("CHAPTER IX. THE WORLD OF" + "UNIVERSALS")
+  const titleFrom = (pg, i) => {
+    let title = pg.lines[i].text;
+    let last = pg.lines[i];
+    for (let j = i + 1; j < Math.min(pg.lines.length, i + 5); j++) {
+      const l = pg.lines[j];
+      const gap = last.y - l.y;
+      if (!isLarge(l) || gap > 4.5 * Math.max(l.size, last.size)) break;
+      if (/^(?:chapter|part)$/i.test(title) && /^(?:\d+|[ivxlc]+)$/i.test(l.text)) title = `${title} ${l.text}`;
+      else if (normKey(title).length <= 14) title = `${title}: ${l.text}`; // "CHAPTER 3" + its title
+      else if (sameSize(l, last) && gap <= 2 * l.size) title = `${title} ${l.text}`; // wrapped title line
+      else break;
+      last = l;
     }
-    patternStarts.push({ title, page: pg.num, y: l.y + l.size });
+    return title;
+  };
+
+  // a) explicit "Chapter N" / "Part N" headings anywhere on a page. Contents pages list every chapter
+  //    in body type, so a label in body type only counts at the top of a page that is not a contents page.
+  const chapterHits = [];
+  const partHits = [];
+  for (const pg of pages) {
+    const labels = pg.lines.filter((l) => isLabelLine(l.text));
+    const bodyLabels = labels.filter((l) => !isLarge(l)).length;
+    // three or more labels on one page is a contents list; only a heading set larger than all of
+    // its entries survives there (Russell's "CHAPTER I." below a body-type contents list)
+    const tocSizes = labels.length >= 3 ? labels.map((l) => l.size).sort((a, b) => b - a) : null;
+    for (let i = 0; i < pg.lines.length; i++) {
+      const l = pg.lines[i];
+      if (!isLabelLine(l.text) || l.text.length >= 120) continue;
+      if (tocSizes && !(l.size === tocSizes[0] && tocSizes[0] > 1.1 * tocSizes[1])) continue;
+      if (/^(?:chapter|part)$/i.test(l.text) && !/^(?:\d+|[ivxlc]+)$/i.test(pg.lines[i + 1]?.text ?? "")) continue;
+      const display = isLarge(l) || (i < 3 && bodyLabels < 3 && pg.lines[i + 1] && isLarge(pg.lines[i + 1]));
+      if (!display) continue;
+      const title = titleFrom(pg, i);
+      (PART_RE.test(title) ? partHits : chapterHits).push({ title, page: pg.num, y: l.y + l.size, size: Math.max(l.size, pg.lines[i + 1]?.size ?? 0) });
+    }
   }
-  if (patternStarts.length >= 3) {
-    warnings.push(`No usable outline; ${patternStarts.length} chapters detected from "Chapter N" headings.`);
-    return { chapters: patternStarts, marks: patternStarts.map((c) => ({ ...c, level: 1 })), source: "pattern" };
+  // a part title repeated later (summary pages) is not a new part
+  const seenParts = new Set();
+  const uniqueParts = partHits.filter((h) => !seenParts.has(normKey(h.title)) && seenParts.add(normKey(h.title)));
+  if (chapterHits.length >= 3) {
+    // front/back matter set in the same style as the chapter headings ("PREFACE", "BIBLIOGRAPHICAL NOTE")
+    const tier = median(chapterHits.map((h) => h.size));
+    const extra = [];
+    for (const pg of pages) {
+      pg.lines.forEach((l, i) => {
+        if (isLarge(l) && Math.abs(l.size - tier) <= 0.06 * tier && MATTER_RE.test(l.text.trim()) && !chapterHits.some((h) => h.page === pg.num && Math.abs(h.y - (l.y + l.size)) < 1))
+          extra.push({ title: titleFrom(pg, i), page: pg.num, y: l.y + l.size });
+        if (GUTENBERG_END_RE.test(l.text)) extra.push({ title: "Project Gutenberg License", page: pg.num, y: l.y + l.size });
+      });
+    }
+    const starts = [...chapterHits, ...uniqueParts, ...extra].sort((x, y) => x.page - y.page || y.y - x.y);
+    warnings.push(`No usable outline; ${chapterHits.length} chapters detected from "Chapter N" headings.`);
+    return { chapters: starts, marks: starts.map((c) => ({ ...c, level: 1 })), source: "pattern" };
   }
-  // b) the largest heading size that recurs at the top of pages
+
+  // b) title pages: pages whose only content is one to three display lines; consecutive ones
+  //    ("THE FIRST PRACTICE" / "It's All Invented") open the same chapter
+  // (a display quotation on a page of its own is not a title)
+  const titlePages = pages.filter((pg) => pg.lines.length >= 1 && pg.lines.length <= 3 && pg.lines.every(isLarge) && pg.lines.map((l) => l.text).join(" ").length <= 80);
+  const runs = [];
+  for (const pg of titlePages) {
+    const last = runs.at(-1);
+    if (last && last.lastPage === pg.num - 1) {
+      last.title += ` ${pg.lines.map((l) => l.text).join(" ")}`;
+      last.lastPage = pg.num;
+    } else runs.push({ title: pg.lines.map((l) => l.text).join(" "), page: pg.num, lastPage: pg.num, y: null });
+  }
+  if (runs.length >= 3 && runs.length <= numPages / 4) {
+    warnings.push(`No usable outline; ${runs.length} chapters detected from chapter title pages.`);
+    return { chapters: [...runs, ...uniqueParts].sort((x, y) => x.page - y.page), marks: [], source: "titlepages" };
+  }
+
+  // c) the largest heading size that recurs at the top of pages, spaced like chapters
   const tiers = new Map();
-  for (const gs of groupsByPage)
-    for (const g of gs) {
+  for (const pg of pages)
+    for (const g of headingGroups(pg, stats, 1.2)) {
       if (!g.firstOnPage) continue;
       const k = Math.round(g.size * 2) / 2;
       if (!tiers.has(k)) tiers.set(k, []);
       tiers.get(k).push(g);
     }
-  const sorted = [...tiers.entries()].sort((a, b) => b[0] - a[0]);
+  const sorted = [...tiers.entries()].sort((x, y) => y[0] - x[0]);
   for (let i = 0; i < sorted.length; i++) {
     const [size, gs] = sorted[i];
-    if (gs.length < 3 || gs.length > numPages / 2.5) continue;
+    if (gs.length < 3 || gs.length > numPages / 4) continue;
     // include rarer, larger tiers that also open pages (e.g. part titles) as chapters too
     const starts = sorted
       .slice(0, i + 1)
       .flatMap(([, g]) => g)
-      .sort((a, b) => a.page - b.page || b.y - a.y);
+      .sort((x, y) => x.page - y.page || y.y - x.y);
+    const spacing = median(starts.slice(1).map((g, k) => g.page - starts[k].page));
+    if (spacing < 3) continue;
     warnings.push(`No usable outline; ${starts.length} chapters detected from heading font size (${size}pt vs body ${stats.bodySize}pt).`);
     return {
       chapters: starts.map((g) => ({ title: g.text, page: g.page, y: g.y + g.size })),
@@ -873,10 +976,11 @@ function structureFromText(pages, stats, numPages, warnings) {
       source: "headings",
     };
   }
-  // c) last resort: fixed page ranges
+
+  // d) last resort: fixed page ranges
   const span = numPages <= 60 ? 10 : 20;
   const chapters = [];
-  for (let p = 1; p <= numPages; p += span) chapters.push({ title: `Pages ${p}–${Math.min(numPages, p + span - 1)}`, page: p, y: null });
+  for (let p = 1; p <= numPages; p += span) chapters.push({ title: `Pages ${p}\u2013${Math.min(numPages, p + span - 1)}`, page: p, y: null });
   warnings.push(`No outline and no recognisable chapter headings; split into fixed ${span}-page sections.`);
   return { chapters, marks: [], source: "ranges" };
 }
@@ -904,8 +1008,9 @@ function applyMarks(marks, pages, stats) {
 // Stage 7: lines -> blocks
 
 function buildBlocks(pages, stats, starts, lex) {
-  const largeSizes = [...new Set(pages.flatMap((p) => p.lines).filter((l) => l.size >= 1.1 * stats.bodySize).map((l) => Math.round(l.size * 2) / 2))].sort((a, b) => b - a);
-  const tierLevel = (size) => Math.min(3, Math.max(1, largeSizes.indexOf(Math.round(size * 2) / 2) + 1));
+  // headings without an outline match: level from size relative to body text
+  const tierLevel = (size) => (size >= 1.6 * stats.bodySize ? 1 : size >= 1.12 * stats.bodySize ? 2 : 3);
+  const isLabel = (t) => /^(?:(?:chapter|part|book|section)\s*(?:\d+|[ivxlc]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)?|\d{1,3}|[ivxlc]{1,6})\.?$/i.test(t.trim());
   const blocks = [];
   let cur = null;
   let deferred = []; // footnote-like small blocks held back while a paragraph continues across a page break
@@ -919,8 +1024,21 @@ function buildBlocks(pages, stats, starts, lex) {
       deferred = [];
     }
   };
-  for (const pg of pages) {
+  let carryDropCap = null;
+  for (const [pi, pg] of pages.entries()) {
     const lines = pg.lines;
+    // a drop cap orphaned at the bottom of the previous page (its line starts the next page)
+    if (carryDropCap && lines.length) {
+      const first = lines.find((x) => stats.isBody(x));
+      if (first && !first.text.startsWith(carryDropCap)) first.text = carryDropCap + first.text;
+      else pages[pi - 1].droppedAlnum += alnum(carryDropCap);
+    }
+    carryDropCap = null;
+    const last = lines.at(-1);
+    if (last && /^\p{Lu}$/u.test(last.text) && last.size >= 1.8 * stats.bodySize && pages[pi + 1]) {
+      carryDropCap = last.text;
+      lines.pop();
+    }
     // trailing small-print lines below the last body line are footnotes: defer them
     let lastBody = -1;
     lines.forEach((l, i) => {
@@ -942,30 +1060,44 @@ function buildBlocks(pages, stats, starts, lex) {
       }
       if (forced) {
         flush();
-        if (deferred.length) {
-          blocks.push(...deferred);
-          deferred = [];
-        }
+        blocks.push(...deferred);
+        deferred = [];
       }
       const kind = l.headingLevel ? "heading" : l.size >= 1.1 * stats.bodySize && !l.mono ? "large" : l.size < 0.85 * stats.bodySize ? "small" : "body";
       const isFootnote = fnStart >= 0 && i >= fnStart && kind === "small";
 
       let startNew = !cur || forced;
       if (!startNew) {
-        if (kind === "heading") startNew = cur.kind !== "heading" || cur.headingId !== l.headingId;
-        else if (cur.kind === "heading") startNew = true;
-        else if (l.mono !== cur.mono) startNew = true;
+        const headingLike = (k) => k === "heading" || k === "large";
+        if (headingLike(kind) && headingLike(cur.kind) && isLabel(cur.text) && prev && prev.y - l.y < 4.5 * Math.max(prev.size, l.size)) {
+          startNew = false; // "CHAPTER 3" + "THEY DON'T SHY AWAY FROM CHANGE" -> one heading
+          if (kind === "heading") Object.assign(cur, { kind, headingId: l.headingId, level: Math.min(cur.level ?? 3, l.headingLevel) });
+        } else if (kind === "heading") startNew = cur.kind !== "heading" || cur.headingId !== l.headingId;
+        else if (cur.kind === "heading") {
+          // a wrapped heading line the title match did not cover ("CHAPTER IX. THE WORLD OF" / "UNIVERSALS")
+          startNew = !(kind === "large" && prev && Math.abs(l.size - prev.size) <= 0.06 * prev.size && prev.y - l.y <= 2 * l.size);
+        }
+        else if (l.mono !== cur.mono) {
+          // an inline URL / identifier that happens to fill a whole line continues the sentence
+          startNew = !(l.mono && prev && !TERMINAL_RE.test(prev.text) && l.text.split(" ").length <= 3 && cur.kind === "body");
+        }
         else if (kind !== cur.kind) {
           // body <-> small (small caps, a smaller inline run): continue a sentence that obviously runs on
-          const runOn = prev && (kind === "body" || kind === "small") && (cur.kind === "body" || cur.kind === "small") && !TERMINAL_RE.test(prev.text) && prev.y - l.y < 1.6 * (pg.leading ?? stats.leading);
+          const width = pg.rightEdge - pg.leftEdge;
+          const runOn =
+            prev &&
+            (kind === "body" || kind === "small") &&
+            (cur.kind === "body" || cur.kind === "small") &&
+            !TERMINAL_RE.test(prev.text) &&
+            prev.x - pg.leftEdge < 2 * prev.size && // prose line, not a centred subheading
+            prev.x2 - pg.leftEdge > 0.6 * width &&
+            prev.y - l.y < 1.6 * (pg.leading ?? stats.leading);
           startNew = !runOn;
+          if (runOn && kind === "body") Object.assign(cur, { kind: "body", size: l.size });
         }
         else if (kind === "large") startNew = !prev || prev.y - l.y > 2.6 * l.size || Math.abs(l.size - cur.size) > 0.08 * cur.size;
         else if (!prev) startNew = !continuesAcrossPage(cur, l, pg, stats);
         else startNew = paragraphBreak(prev, l, pg, stats, cur);
-      }
-      if (isFootnote && cur && cur.kind !== "small" && cur.page !== pg.num) {
-        // never reached: footnotes come after body on the same page; kept for clarity
       }
       if (isFootnote) {
         // hold footnotes so a body paragraph that continues on the next page is not cut in two
@@ -976,7 +1108,7 @@ function buildBlocks(pages, stats, starts, lex) {
       }
       if (startNew) {
         if (cur) blocks.push(cur);
-        cur = { kind, text: l.text, page: pg.num, y: l.y, size: l.size, mono: l.mono, headingId: l.headingId, level: l.headingLevel ?? (kind === "large" ? tierLevel(l.size) : undefined), lastLine: l, nLines: 1, firstX: l.x };
+        cur = { kind, text: l.text, page: pg.num, y: l.y, size: l.size, mono: l.mono, headingId: l.headingId, level: l.headingLevel ?? (kind === "large" ? tierLevel(l.size) : undefined), lastLine: l, nLines: 1, firstX: l.x, lines: [l] };
         if (deferred.length && deferred[0].page !== pg.num) {
           blocks.push(...deferred);
           deferred = [];
@@ -984,13 +1116,45 @@ function buildBlocks(pages, stats, starts, lex) {
       } else {
         cur.text = cur.mono ? `${cur.text} ${l.text}` : joinLines(cur.text, l.text, lex);
         cur.lastLine = l;
+        cur.lines.push(l);
         cur.nLines++;
       }
     }
   }
   flush();
   blocks.push(...deferred);
+  promoteStandaloneHeadings(blocks, stats);
   return blocks;
+}
+
+/**
+ * Body-size subheadings (bold or centred in the original) have no size signal. Promote a short,
+ * standalone, unpunctuated line that introduces a real paragraph.
+ */
+function promoteStandaloneHeadings(blocks, stats) {
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    const next = blocks[i + 1];
+    const prev = blocks[i - 1];
+    if ((b.kind !== "body" && b.kind !== "small") || b.mono || !b.lines || b.nLines > 2 || !next) continue;
+    const text = b.text.trim();
+    if (text.length > 60 || !/^\p{Lu}/u.test(text) || /[.,;:]$/.test(text) || /\d/.test(text)) continue;
+    if (/^[\u2014\u2013-]/.test(next.text) || next.kind === "heading" || next.kind === "large") continue;
+    const centred = b.lines.every((l) => {
+      const mid = ((l.pageLeft ?? 0) + (l.pageRight ?? 0)) / 2;
+      return Math.abs((l.x + l.x2) / 2 - mid) < 1.5 * l.size && l.x - (l.pageLeft ?? 0) > 2 * l.size;
+    });
+    const leftAligned = b.nLines === 1 && Math.abs(b.lines[0].x - (b.lines[0].pageLeft ?? 0)) < 0.5 * b.size;
+    if (centred) {
+      if (/[!?]$/.test(text) && text.length > 30) continue; // a centred quotation, not a title
+    } else if (leftAligned) {
+      if (/[!?"\u201D]$/.test(text) || text.split(" ").length > 8) continue;
+      if (next.text.length < 120 || !/^[\p{Lu}\u201C"]/u.test(next.text)) continue; // must introduce a real paragraph
+      if (prev && prev.kind !== "heading" && prev.kind !== "large" && !TERMINAL_RE.test(prev.text)) continue;
+    } else continue;
+    b.kind = "heading";
+    b.level = b.size >= stats.bodySize * 0.97 && centred ? 2 : 3;
+  }
 }
 
 function paragraphBreak(prev, l, pg, stats, cur = null) {
@@ -1007,8 +1171,12 @@ function paragraphBreak(prev, l, pg, stats, cur = null) {
   // centred text (epigraphs, subtitles): ragged on both sides, so x shifts mean nothing
   const centred =
     l.x - pg.leftEdge > 1.5 * l.size && Math.abs((prev.x + prev.x2) / 2 - (l.x + l.x2) / 2) < 0.8 * l.size && pg.rightEdge - l.x2 > 1.5 * l.size;
-  if (stats.indentStyle && !hanging && !centred && indentNow > 0.6 * l.size && indentNow < 6 * l.size) return true;
-  if (BULLET_RE.test(l.text) && TERMINAL_RE.test(prev.text)) return true;
+  // a first-line indent only starts a paragraph if the previous one plausibly ended
+  // (bibliographies and wrapped list items use hanging indents after an unfinished line)
+  const prevEnded = TERMINAL_RE.test(prev.text) || pg.rightEdge - prev.x2 > Math.max(3 * l.size, 0.12 * (pg.rightEdge - pg.leftEdge));
+  if (stats.indentStyle && !hanging && !centred && prevEnded && indentNow > 0.6 * l.size && indentNow < 6 * l.size) return true;
+  if (BARE_MARKER_RE.test(prev.text)) return false; // "3." on its own line, item text below it
+  if ((BULLET_RE.test(l.text) || BARE_MARKER_RE.test(l.text)) && TERMINAL_RE.test(prev.text)) return true;
   if (/\s\d{1,4}$/.test(prev.text) && /\s\d{1,4}$/.test(l.text) && pg.rightEdge - prev.x2 > 2 * l.size) return true; // table of contents rows
   // lists and verse: a line ending well short of the measure, followed by a capitalised line
   if (prev.x2 - pg.leftEdge < 0.6 * (pg.rightEdge - pg.leftEdge) && /^\p{Lu}/u.test(l.text) && !/[,;\-\u2013\u2014]$/.test(prev.text)) return true;
@@ -1022,7 +1190,7 @@ function continuesAcrossPage(cur, l, pg, stats) {
   if (l.size < 0.85 * cur.size || l.size > 1.15 * cur.size) return false;
   // a sentence cut mid-way that resumes in lowercase is the strongest signal there is
   if (!TERMINAL_RE.test(cur.text) && /^\p{Ll}/u.test(l.text)) return true;
-  if (BULLET_RE.test(l.text)) return false;
+  if (BULLET_RE.test(l.text) || BARE_MARKER_RE.test(l.text)) return false;
   // indentation relative to each page's own text edge (odd/even pages have different margins)
   const prev = cur.lastLine;
   const prevRel = prev.x - (prev.pageLeft ?? pg.leftEdge);
@@ -1054,14 +1222,14 @@ function assemble(blocks, starts, numPages) {
   if (k > 1) {
     const merged = { title: "Front Matter", startPage: list[0].startPage, y: null, blocks: list.slice(0, k).flatMap((c) => c.blocks) };
     list = [merged, ...list.slice(k)];
-  } else if (k === 1 && list[0] !== pre && chars(list[0]) < 1500) list[0].title = list[0].title || "Front Matter";
+  }
 
   // tiny chapters (part title pages, book-title pages) merge forward into the next chapter
   const out = [];
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
     const next = list[i + 1];
-    if (next && i > 0 && chars(c) < 400 && !(i === 0)) {
+    if (next && i > 0 && chars(c) < 400) {
       next.blocks = [...c.blocks, ...next.blocks];
       next.startPage = Math.min(c.startPage, next.startPage);
       next.y = c.y;
@@ -1128,20 +1296,20 @@ export async function parsePdf(filePath, options = {}) {
   const ex = await extract(filePath, o, warnings);
   const { pages, numPages } = ex;
 
+  if (numPages === 0) throw new PdfParseError("empty", "The PDF has no pages.");
   // scanned / garbled detection before any layout work
   const perPage = pages.map((p) => p.items.reduce((n, it) => n + it.s.replace(/\s/g, "").length, 0));
   const textPages = perPage.filter((n) => n >= 40).length;
   const totalChars = perPage.reduce((a, b) => a + b, 0);
-  if (numPages === 0) throw new PdfParseError("empty", "The PDF has no pages.");
   if (textPages < Math.max(1, 0.15 * numPages)) {
     throw new PdfParseError(
       "scanned",
-      `This PDF has no usable text layer (${Math.round(totalChars / numPages)} characters per page on average; ${textPages} of ${numPages} pages contain text). It looks like a scanned book and needs OCR before it can be read.`,
+      `This PDF has no usable text layer: only ${textPages} of ${numPages} pages contain text (${(totalChars / numPages).toFixed(1)} characters per page on average). It looks like a scanned book and needs OCR before it can be read.`,
     );
   }
   const allText = pages.map((p) => p.items.map((it) => it.s).join("")).join("");
   const letters = (allText.match(/\p{L}/gu) ?? []).length;
-  const junk = (allText.match(/[-�]/g) ?? []).length;
+  const junk = (allText.match(/[\uE000-\uF8FF\uFFFD]/g) ?? []).length;
   const visible = allText.replace(/\s/g, "").length;
   if (letters / visible < 0.5 || junk / visible > 0.1) {
     throw new PdfParseError("garbled", "This PDF's text layer is garbled (fonts without a character map). It needs OCR before it can be read.");
@@ -1172,13 +1340,51 @@ export async function parsePdf(filePath, options = {}) {
     .sort((a, b) => a.page - b.page || (b.y ?? Infinity) - (a.y ?? Infinity));
   pullBackTitlePages(starts, pages, stats);
 
-  if (process.env.DEEPREAD_DEBUG_PAGE) { const dp = pages[Number(process.env.DEEPREAD_DEBUG_PAGE) - 1]; process.stderr.write(JSON.stringify({ stats: { ...stats, isBody: undefined }, left: dp.leftEdge, right: dp.rightEdge }) + "\n"); for (const l of dp.lines) process.stderr.write(`y=${l.y} x=${l.x.toFixed(1)}-${l.x2.toFixed(1)} sz=${l.size} mono=${l.mono} h=${l.headingLevel ?? ""} ${l.text.slice(0, 90)}\n`); }
   const blocks = buildBlocks(pages, stats, starts, lex);
   const chapters = assemble(blocks, starts, numPages);
+  const keptAlnum = chapters.reduce((n, c) => n + c.blocks.reduce((m, b) => m + alnum(finalText(b.text)), 0), 0);
+  checkCoverage(pages, keptAlnum, warnings);
 
-  const title = finalText(String(ex.info?.Title ?? "")) || basename(filePath).replace(/\.pdf$/i, "").replace(/[_]+/g, " ");
+  const title =
+    finalText(String(ex.info?.Title ?? ""))
+      .replace(/^microsoft word\s*-\s*/i, "")
+      .replace(/\s+\|\s+[^|]{2,40}$/, "") // "The Problems of Philosophy | Project Gutenberg"
+      .replace(/\s*[-\u2013|(]\s*[\w.-]+\.(?:com|org|net|io|ru)\s*\)?$/i, "") || // "... - PDFDrive.com"
+    basename(filePath).replace(/\.pdf$/i, "").replace(/[_]+/g, " ");
   const author = finalText(String(ex.info?.Author ?? "")) || null;
   return toBook(chapters, { title, author, pageCount: numPages, warnings });
+}
+
+/**
+ * Text-coverage self-check: letters and digits that reached the blocks vs. those in the PDF's text
+ * layer, minus what was dropped on purpose (running heads, page numbers, footnote markers, duplicate
+ * overprints). Counting characters rather than words keeps the check immune to de-hyphenation and
+ * fake-space repair, which change word boundaries but not letters. Below 97%, warn and name the pages.
+ */
+function checkCoverage(pages, keptAlnum, warnings) {
+  const expected = pages.reduce((n, pg) => n + pg.rawAlnum - pg.hfAlnum - pg.droppedAlnum, 0);
+  if (expected <= 0) return;
+  const ratio = keptAlnum / expected;
+  if (ratio >= 0.97) return;
+  // localise: per page, what the emitted lines carried vs. what the page's text layer had
+  const lossy = [];
+  for (const pg of pages) {
+    const want = pg.rawAlnum - pg.hfAlnum - pg.droppedAlnum;
+    const got = pg.lines.reduce((n, l) => n + alnum(l.text), 0);
+    if (want - got >= 40 && got < 0.85 * want) lossy.push(pg.num);
+  }
+  const ranges = [];
+  for (const p of lossy) {
+    const last = ranges.at(-1);
+    if (last && last[1] === p - 1) last[1] = p;
+    else ranges.push([p, p]);
+  }
+  const where = ranges.length
+    ? `text was lost on page${lossy.length > 1 ? "s" : ""} ${ranges.slice(0, 12).map(([a, b]) => (a === b ? `${a}` : `${a}\u2013${b}`)).join(", ")}${ranges.length > 12 ? ", ..." : ""}`
+    : "the loss is spread across the book";
+  warnings.push(
+    `Text coverage check: only ${(ratio * 100).toFixed(1)}% of the text layer (${keptAlnum.toLocaleString("en-US")} of ${expected.toLocaleString("en-US")} letters/digits) made it into the book; ${where}.`,
+  );
 }
 
 /** A chapter whose title sits at the top of page P often has a decorative opener on P-1
