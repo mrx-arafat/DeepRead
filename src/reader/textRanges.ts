@@ -13,16 +13,24 @@ export type SentenceAt = { blockId: string; start: number };
 const words = new Intl.Segmenter("en", { granularity: "word" });
 const sentences = new Intl.Segmenter("en", { granularity: "sentence" });
 
-/** The word touching `offset`, or null when the offset sits in spaces or punctuation. */
+// A single hyphen between two words makes one term ("sense-data", "self-evident"); a dash or "--" does not.
+const HYPHENS = new Set(["-", "\u2010", "\u2011"]);
+
+/** The word touching `offset`, or null when the offset sits in spaces or punctuation. A hyphenated term is one word. */
 export function wordAt(text: string, offset: number): Span | null {
-  for (const part of words.segment(text)) {
-    const end = part.index + part.segment.length;
-    if (part.isWordLike && offset >= part.index && offset <= end) {
-      return { start: part.index, end };
-    }
-    if (part.index > offset) break;
-  }
-  return null;
+  const parts = [...words.segment(text)];
+  const hit = parts.findIndex(
+    (part) => part.isWordLike && offset >= part.index && offset <= part.index + part.segment.length,
+  );
+  if (hit === -1) return null;
+  const joins = (i: number) =>
+    HYPHENS.has(parts[i]?.segment ?? "") && Boolean(parts[i - 1]?.isWordLike && parts[i + 1]?.isWordLike);
+  let first = hit;
+  while (joins(first - 1)) first -= 2;
+  let last = hit;
+  while (joins(last + 1)) last += 2;
+  const end = parts[last]!;
+  return { start: parts[first]!.index, end: end.index + end.segment.length };
 }
 
 /** Sentences of `text` with surrounding whitespace trimmed off. */

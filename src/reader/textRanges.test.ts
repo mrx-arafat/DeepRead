@@ -23,6 +23,20 @@ describe("wordAt", () => {
     const dashed = "one  -  two";
     expect(wordAt(dashed, dashed.indexOf("-") + 1)).toBeNull();
   });
+
+  it("should return the whole hyphenated term when tapped in either part or on the hyphen", () => {
+    const term = "the name of 'sense-data' to the things";
+    for (const offset of [term.indexOf("sense") + 1, term.indexOf("-"), term.indexOf("data") + 2]) {
+      expect(cut(term, wordAt(term, offset))).toBe("sense-data");
+    }
+    expect(cut(text, wordAt(text, text.indexOf("known")))).toBe("well-known");
+  });
+
+  it("should not join words across a double hyphen or a dash", () => {
+    const dashes = "colour--oblong and sense-data\u2014brown";
+    expect(cut(dashes, wordAt(dashes, 1))).toBe("colour");
+    expect(cut(dashes, wordAt(dashes, dashes.indexOf("brown") + 1))).toBe("brown");
+  });
 });
 
 describe("sentenceSpans", () => {
