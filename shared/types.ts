@@ -45,6 +45,10 @@ export type ReadingProgress = {
   chapterId: string;
   blockId: string;
   updatedAt: string;
+  /** Title of that chapter, so the library can say where the reader stopped. */
+  chapterTitle: string;
+  /** How far through the whole book the reader is, 0 to 100, counted the way the reader's top bar counts it. */
+  percent: number;
 };
 
 export type BookSummary = {

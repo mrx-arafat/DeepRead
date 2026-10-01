@@ -311,6 +311,8 @@ select {
 
 .shelf-link {
   display: grid;
+  /* `minmax(0, ...)` lets a long chapter name shrink to an ellipsis instead of widening the row. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.125rem;
   flex: 1;
   min-width: 0;
@@ -328,6 +330,27 @@ select {
 
 .shelf-link:hover .shelf-title {
   color: var(--pen);
+}
+
+/* Where the reader stopped, the way back in: "Continue" and how far take the pen colour and never shrink; the chapter name gives way. */
+.shelf-continue {
+  display: flex;
+  gap: 0.375rem;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+
+.shelf-continue-lead {
+  flex: none;
+  color: var(--pen);
+  font-weight: 600;
+}
+
+.shelf-continue-chapter {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .shelf-meta {

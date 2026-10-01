@@ -30,7 +30,7 @@ The explanation appears beside the paragraph you are reading, and you keep going
 | **Make it concrete** | **Example** restates the idea as an everyday situation. |
 | **Chapter companion** | A short preview with the words to watch before a chapter, and a summary of the key ideas after it. |
 | **Listen** | Reads the book aloud and highlights the sentence and the word being spoken. |
-| **Your library** | Add, rename and remove books. Notes stay beside their paragraphs and survive a reload. |
+| **Your library** | Add, rename and remove books. Each book shows the chapter and percentage where you stopped, and opens right there. Notes stay beside their paragraphs and survive a reload. |
 
 Reading languages for explanations: Bangla (default), Hindi, Urdu, Arabic, Spanish, French, Indonesian and Turkish.
 

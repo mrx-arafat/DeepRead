@@ -14,6 +14,7 @@ import type {
   ReadingProgress,
 } from "../shared/types.ts";
 import { writeFileAtomic } from "./atomic-write.ts";
+import { describePosition } from "./progress.ts";
 
 // Ids are a lowercase slug plus a hash. Anything else cannot be a book, so it never reaches the filesystem.
 const BOOK_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -54,6 +55,19 @@ type BookMeta = BookSummary & {
   sha256: string;
   chapterWordCounts: Record<string, number>;
 };
+
+/** Progress saved before it carried a chapter title and a percentage: those are filled in from the book. */
+function lacksDetails(meta: BookMeta): boolean {
+  return meta.progress !== null && typeof meta.progress.percent !== "number";
+}
+
+function withDetails(meta: BookMeta, book: ParsedBook): BookMeta {
+  const { progress } = meta;
+  if (!progress || !lacksDetails(meta)) return meta;
+  const where = describePosition(book, meta.chapterWordCounts, progress.chapterId, progress.blockId);
+  // A spot that is no longer in the book cannot be named, so the library shows the book as unstarted.
+  return { ...meta, progress: where && { ...progress, ...where } };
+}
 
 export type NewBook = {
   /** A finished upload on disk; it is moved into the library. */
@@ -156,6 +170,19 @@ export function createLibrary(dataDir: string): Library {
     };
   }
 
+  /** Fills in an old meta.json once, so listing never has to open the parsed book again. */
+  async function completed(meta: BookMeta): Promise<BookMeta> {
+    if (!lacksDetails(meta)) return meta;
+    return serialized(meta.id, async () => {
+      const fresh = await readMeta(meta.id);
+      const book = fresh && (await loadBook(meta.id));
+      if (!fresh || !book) return meta;
+      const next = withDetails(fresh, book);
+      if (next.progress) await writeFileAtomic(join(dirOf(meta.id), "meta.json"), JSON.stringify(next));
+      return next;
+    });
+  }
+
   async function bookIds(): Promise<string[]> {
     await ready();
     const entries = await readdir(booksDir, { withFileTypes: true });
@@ -182,7 +209,7 @@ export function createLibrary(dataDir: string): Library {
       for (const id of await bookIds()) {
         try {
           const meta = await readMeta(id);
-          if (meta) metas.push(meta);
+          if (meta) metas.push(await completed(meta));
         } catch (error) {
           console.warn(`skipping unreadable book ${id}:`, error);
         }
@@ -253,7 +280,7 @@ export function createLibrary(dataDir: string): Library {
         endPage: chapter.endPage,
         wordCount: meta.chapterWordCounts[chapter.id] ?? chapterWords(chapter),
       }));
-      return { ...toSummary(meta), chapters, warnings: book.warnings };
+      return { ...toSummary(withDetails(meta, book)), chapters, warnings: book.warnings };
     },
 
     async book(id) {
@@ -278,8 +305,10 @@ export function createLibrary(dataDir: string): Library {
       return serialized(id, async () => {
         await ready();
         const meta = await readMeta(id);
-        if (!meta) return null;
-        const progress: ReadingProgress = { chapterId, blockId, updatedAt: new Date().toISOString() };
+        const book = meta && (await loadBook(id));
+        const where = meta && book && describePosition(book, meta.chapterWordCounts, chapterId, blockId);
+        if (!meta || !where) return null;
+        const progress: ReadingProgress = { chapterId, blockId, updatedAt: new Date().toISOString(), ...where };
         await writeFileAtomic(join(dirOf(id), "meta.json"), JSON.stringify({ ...meta, progress }));
         return progress;
       });

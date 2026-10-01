@@ -1,6 +1,6 @@
 // Functional test of the HTTP API: real routes and real disk storage in a temp dir,
 // with the PDF parser, the model and the translator replaced by fakes (no network, no model process).
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Hono } from "hono";
@@ -169,8 +169,10 @@ describe("DeepRead API", () => {
 
       const saved = await send("PUT", `/api/books/${id}/progress`, { chapterId: "c1", blockId: "c1-b3" });
       expect(saved.status).toBe(200);
-      const relisted = (await (await app.request("/api/books")).json()) as Array<{ progress: { blockId: string } }>;
-      expect(relisted[0]?.progress.blockId).toBe("c1-b3");
+      // The reader's block 3 of 3 is two thirds into the 19 words of chapter one, out of 24 in the book.
+      expect(await saved.json()).toMatchObject({ blockId: "c1-b3", chapterTitle: "First Chapter", percent: 52 });
+      const relisted = (await (await app.request("/api/books")).json()) as BookSummary[];
+      expect(relisted[0]?.progress).toMatchObject({ blockId: "c1-b3", chapterTitle: "First Chapter", percent: 52 });
 
       const ranged = await app.request(`/api/books/${id}/pdf`, { headers: { Range: "bytes=0-4" } });
       expect(ranged.status).toBe(206);
@@ -182,6 +184,18 @@ describe("DeepRead API", () => {
       expect((await app.request(`/api/books/${id}`)).status).toBe(404);
       expect(await (await app.request("/api/books")).json()).toEqual([]);
       expect(await entries(join(dataDir, "books"))).toEqual([]);
+    });
+
+    it("should say where the reader stopped for a book whose progress was saved without it", async () => {
+      const id = await addBook();
+      const metaPath = join(dataDir, "books", id, "meta.json");
+      const meta = JSON.parse(await readFile(metaPath, "utf8")) as Record<string, unknown>;
+      const legacy = { chapterId: "c2", blockId: "c2-b1", updatedAt: "2026-01-01T00:00:00.000Z" };
+      await writeFile(metaPath, JSON.stringify({ ...meta, progress: legacy }));
+
+      const list = (await (await app.request("/api/books")).json()) as BookSummary[];
+      // Chapter two starts after the 19 words of chapter one, out of 24.
+      expect(list[0]?.progress).toEqual({ ...legacy, chapterTitle: "Second Chapter", percent: 79 });
     });
 
     it("should return the existing book when the same PDF is uploaded again", async () => {
