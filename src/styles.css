@@ -266,6 +266,12 @@ select {
   font-size: 1.125rem;
 }
 
+/* What kind of book works is part of the welcome, not something to find out from an error. */
+.library-head p + p {
+  margin-top: 0.5rem;
+  font-size: 1rem;
+}
+
 .drop {
   display: flex;
   flex-wrap: wrap;

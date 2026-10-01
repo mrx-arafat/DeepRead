@@ -1,11 +1,13 @@
 import { FileUp, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
+import { LANGUAGES } from "../shared/types.ts";
 import type { BookSummary, BookUpdate } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
 import { addFailure, shortTitle } from "./library/bookText.ts";
+import { usePrefs } from "./prefs.ts";
 
 const ADD_BUTTON = "add";
 
@@ -31,6 +33,7 @@ function forgetNotes(bookId: string): void {
 
 export function LibraryPage() {
   const [, navigate] = useLocation();
+  const { lang } = usePrefs();
   const [books, setBooks] = useState<BookSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -129,6 +132,7 @@ export function LibraryPage() {
       <header className="library-head">
         <h1>DeepRead</h1>
         <p>Read a book in English. Tap any word, select any passage, and get it explained right there.</p>
+        <p>Meanings in {LANGUAGES[lang]} and simple English. Works with PDFs whose text you can select, not scans.</p>
       </header>
 
       <div
