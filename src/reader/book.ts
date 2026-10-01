@@ -14,6 +14,21 @@ export function readableBlocks(chapter: Chapter): Block[] {
 }
 
 /**
+ * Of items stacked top to bottom, the one at `line`: the first whose bottom edge is below it. A line above them all
+ * gives the first, a line in the gap between two gives the next; `count` when every item ends above the line.
+ */
+export function indexAtLine(count: number, bottomOf: (index: number) => number, line: number): number {
+  let low = 0;
+  let high = count;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (bottomOf(mid) > line) high = mid;
+    else low = mid + 1;
+  }
+  return low;
+}
+
+/**
  * Whole-book progress in percent: the words of every chapter before `chapterId`, plus `fraction` (0 to 1) of
  * that chapter's words, over the book's total. Rounded down, so 100 means the very end.
  */

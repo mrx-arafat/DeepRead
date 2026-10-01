@@ -1,7 +1,27 @@
 import { describe, expect, it } from "vitest";
 import type { Block, ChapterSummary } from "../../shared/types.ts";
-import { bookPercent } from "./book.ts";
+import { bookPercent, indexAtLine } from "./book.ts";
 import { sentenceIndex, sentencesOf } from "./textRanges.ts";
+
+describe("indexAtLine", () => {
+  // Three chapters stacked down the page: their bottom edges, in px from the top of the window.
+  const bottoms = [400, 900, 1500];
+  const at = (line: number) => indexAtLine(bottoms.length, (index) => bottoms[index] ?? 0, line);
+
+  it("should give the first chapter when the eye line is above all of them", () => {
+    // The way back to earlier chapters sits above the first one on the page.
+    expect(at(-200)).toBe(0);
+  });
+
+  it("should give the chapter the eye line falls in", () => {
+    expect(at(400)).toBe(1);
+    expect(at(1499)).toBe(2);
+  });
+
+  it("should give the count when every item ends above the eye line", () => {
+    expect(at(1600)).toBe(3);
+  });
+});
 
 describe("bookPercent", () => {
   const chapters: ChapterSummary[] = [

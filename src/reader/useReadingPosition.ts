@@ -2,8 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import type { BookDetail, Chapter } from "../../shared/types.ts";
 import { api } from "../api.ts";
-import { bookPercent } from "./book.ts";
-import { blockOf } from "./textRanges.ts";
+import { bookPercent, indexAtLine } from "./book.ts";
 
 export type ReadingPosition = {
   /** The chapter at the top of the window. */
@@ -12,26 +11,30 @@ export type ReadingPosition = {
   percent: number;
 };
 
-type Spot = { chapter: HTMLElement; block: HTMLElement | null };
+/** The chapter at the eye line, and the block there or next below it; no block once its text is behind the reader. */
+type Spot = { chapter: HTMLElement; block: HTMLElement | null; blocks: NodeListOf<HTMLElement> };
 
 /** Where the reader's eyes are: just under the top bar. */
 const EYE_LINE = 96;
 
-/** The book block and chapter section at the eye line. */
+const bottomOf = (elements: NodeListOf<HTMLElement>, row: boolean) => (index: number) => {
+  const element = elements[index];
+  // A note under its paragraph (small screens) counts as part of that paragraph.
+  return (row ? (element?.closest(".row") ?? element) : element)?.getBoundingClientRect().bottom ?? 0;
+};
+
+/**
+ * The chapter and block at the eye line, found by their positions so that anything over the text (the way back
+ * to earlier chapters, a popover, the chapter list) cannot hide them.
+ */
 function spotAtEyeLine(): Spot | null {
-  const column = document.querySelector(".chapter-text")?.getBoundingClientRect();
-  if (!column) return null;
-  const x = column.left + 24;
-  // Look a little lower too, so the space between two paragraphs is not a miss.
-  for (const y of [EYE_LINE, EYE_LINE + 24, EYE_LINE + 48]) {
-    const hit = document.elementFromPoint(x, y);
-    // A note under its paragraph (small screens) counts as that paragraph.
-    const block = blockOf(hit) ?? hit?.closest(".row")?.querySelector<HTMLElement>("[data-block]") ?? null;
-    const chapter = block?.closest<HTMLElement>("[data-chapter]");
-    if (block && chapter) return { chapter, block };
-  }
-  const chapter = document.elementFromPoint(x, EYE_LINE)?.closest<HTMLElement>("[data-chapter]");
-  return chapter ? { chapter, block: null } : null;
+  const chapters = document.querySelectorAll<HTMLElement>("[data-chapter]");
+  if (chapters.length === 0) return null;
+  // Above the first chapter on the page counts as its start, below the last as its end.
+  const chapter = chapters[Math.min(indexAtLine(chapters.length, bottomOf(chapters, false), EYE_LINE), chapters.length - 1)];
+  if (!chapter) return null;
+  const blocks = chapter.querySelectorAll<HTMLElement>("[data-block]");
+  return { chapter, block: blocks[indexAtLine(blocks.length, bottomOf(blocks, true), EYE_LINE)] ?? null, blocks };
 }
 
 /** The book block at the top of the window, if any. */
@@ -39,16 +42,9 @@ export function blockAtTop(): HTMLElement | null {
   return spotAtEyeLine()?.block ?? null;
 }
 
-/** How far into its chapter the spot is, 0 to 1, or null when that cannot be told (between two paragraphs). */
-function fractionRead({ chapter, block }: Spot): number | null {
-  if (block) {
-    const blocks = Array.from(chapter.querySelectorAll("[data-block]"));
-    return blocks.indexOf(block) / blocks.length;
-  }
-  // Off the text: the heading and preview come before it, the recap after it.
-  const text = chapter.querySelector(".chapter-text")?.getBoundingClientRect();
-  if (!text || text.top > EYE_LINE) return 0;
-  return text.bottom < EYE_LINE ? 1 : null;
+/** How far into its chapter the spot is, 0 to 1. Above the text (heading, preview) is 0; the recap after it is 1. */
+function fractionRead({ block, blocks }: Spot): number {
+  return block ? Array.prototype.indexOf.call(blocks, block) / blocks.length : 1;
 }
 
 /** Scrolled to the very bottom with the book's last chapter on the page: the whole book has been read. */
@@ -98,7 +94,10 @@ export function useReadingPosition(
 
   useEffect(() => {
     if (!book || !first) {
-      setPosition((prev) => (prev.chapterId === null ? prev : { ...prev, chapterId: null }));
+      // While a chapter opens, the top bar already names it and where it starts in the book.
+      const id = book && inUrl.current;
+      const opening = id ? { chapterId: id, percent: bookPercent(book.chapters, book.wordCount, id, 0) } : { chapterId: null, percent: 0 };
+      setPosition((prev) => (prev.chapterId === opening.chapterId && prev.percent === opening.percent ? prev : opening));
       return;
     }
     let measuring: number | undefined;
@@ -109,9 +108,8 @@ export function useReadingPosition(
       measuring = undefined;
       const spot = spotAtEyeLine();
       const id = spot?.chapter.dataset.chapter;
-      const fraction = spot ? fractionRead(spot) : null;
-      if (!id || fraction === null) return;
-      const percent = atBookEnd(book) ? 100 : bookPercent(book.chapters, book.wordCount, id, fraction);
+      if (!spot || !id) return;
+      const percent = atBookEnd(book) ? 100 : bookPercent(book.chapters, book.wordCount, id, fractionRead(spot));
       // Unchanged rounded values keep the same state object, so scrolling does not re-render the book.
       setPosition((prev) => (prev.chapterId === id && prev.percent === percent ? prev : { chapterId: id, percent }));
       // A URL chapter that is not on the page is still being opened: leave the URL to it.
