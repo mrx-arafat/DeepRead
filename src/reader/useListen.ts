@@ -154,13 +154,16 @@ export function useListen(blocks: Block[], rate: number): Listen {
   }, [playing, place, rate, again]);
 
   const move = useCallback(
-    (step: number) =>
+    (step: number) => {
       setAt((current) => {
         const from = current ? sentenceIndex(sentences, current) : -1;
         if (from === -1) return current;
         const target = sentences[Math.min(Math.max(from + step, 0), sentences.length - 1)];
         return target ? { blockId: target.blockId, start: target.start } : current;
-      }),
+      });
+      // The reader asked for it from the player: show where the voice is, wherever the page was left.
+      setReveal((count) => count + 1);
+    },
     [sentences],
   );
 
@@ -178,8 +181,10 @@ export function useListen(blocks: Block[], rate: number): Listen {
 
   const toggle = useCallback(() => {
     setError(null);
-    setPlaying((value) => !value);
-  }, []);
+    // Pressing Play brings the sentence about to be read into view, so the page and the voice agree.
+    if (!playing) setReveal((count) => count + 1);
+    setPlaying(!playing);
+  }, [playing]);
 
   const stop = useCallback(() => {
     setPlaying(false);

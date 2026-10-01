@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
-id: listening-bug-play-offscreen
-description: Expected to fail until fixed - pressing Play while the paused sentence is scrolled out of view must bring it back into view, desktop 1440 (stubbed speech)
+id: listening-play-offscreen
+description: Pressing Play while the paused sentence is scrolled out of view must bring it back into view, desktop 1440 (stubbed speech)
 viewport:
   width: 1440
   height: 900
