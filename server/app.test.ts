@@ -2,7 +2,7 @@
 // with the PDF parser, the model and the translator replaced by fakes (no network, no model process).
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiError, BookDetail, BookSummary, ParsedBook } from "../shared/types.ts";
@@ -47,11 +47,13 @@ const sampleBook = (title = "Sample Book"): ParsedBook => ({
 const pdfBytes = (content: ParsedBook | "SCANNED") =>
   `%PDF-1.4\n${content === "SCANNED" ? content : JSON.stringify(content)}`;
 
+// Like the real parser, a book without a title in the PDF is named after the file it reads.
 const fakeParsePdf: ParsePdf = async (path) => {
   const text = await readFile(path, "utf8");
   const body = text.slice(text.indexOf("\n") + 1);
   if (body.startsWith("SCANNED")) throw new ParseError("scanned", "This PDF looks like a scan.");
-  return JSON.parse(body) as ParsedBook;
+  const book = JSON.parse(body) as ParsedBook;
+  return { ...book, title: book.title || basename(path).replace(/\.pdf$/i, "") };
 };
 
 type Script = (request: LlmRequest, call: number) => Iterable<string> | AsyncIterable<string>;
@@ -196,6 +198,13 @@ describe("DeepRead API", () => {
       const list = (await (await app.request("/api/books")).json()) as BookSummary[];
       // Chapter two starts after the 19 words of chapter one, out of 24.
       expect(list[0]?.progress).toEqual({ ...legacy, chapterTitle: "Second Chapter", percent: 79 });
+    });
+
+    it("should name a book without a title after the file the reader chose", async () => {
+      const response = await upload(sampleBook(""), "The_Problems_of_Philosophy.pdf");
+      expect(response.status).toBe(201);
+      expect(await response.json()).toMatchObject({ title: "The Problems of Philosophy" });
+      expect(await entries(join(dataDir, "tmp"))).toEqual([]);
     });
 
     it("should return the existing book when the same PDF is uploaded again", async () => {

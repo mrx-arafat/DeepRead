@@ -3,7 +3,7 @@
 // leave a half-written book; meta.json carries everything the list view needs so listing never opens book.json.
 import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type {
   BookDetail,
   BookSummary,
@@ -77,8 +77,13 @@ export type NewBook = {
 };
 
 export type Library = {
-  /** Where the next upload should be written; same filesystem as the library so moving it is atomic. */
-  newUploadPath(): Promise<string>;
+  /**
+   * Where the next upload should be written; same filesystem as the library so moving it is atomic.
+   * The file is named `title`, which is what the parser calls a book whose PDF has no title of its own.
+   */
+  newUploadPath(title: string): Promise<string>;
+  /** Removes an upload that was not added to the library. */
+  discardUpload(uploadPath: string): Promise<void>;
   list(): Promise<BookSummary[]>;
   findBySha(sha256: string): Promise<string | null>;
   add(book: NewBook): Promise<{ id: string; created: boolean }>;
@@ -199,9 +204,16 @@ export function createLibrary(dataDir: string): Library {
   }
 
   return {
-    async newUploadPath() {
+    async newUploadPath(title) {
       await ready();
-      return join(tempDir, `upload-${randomUUID()}.pdf`);
+      // A folder of its own, so two uploads with the same name never meet.
+      const folder = join(tempDir, `upload-${randomUUID()}`);
+      await mkdir(folder);
+      return join(folder, `${title}.pdf`);
+    },
+
+    async discardUpload(uploadPath) {
+      await rm(dirname(uploadPath), { recursive: true, force: true });
     },
 
     async list() {

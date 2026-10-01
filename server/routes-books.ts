@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { rm } from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
@@ -22,6 +21,7 @@ import {
 import { isBookId } from "./library.ts";
 import type { Library } from "./library.ts";
 import { ParseError } from "./parser/errors.ts";
+import { titleFromFileName } from "./upload-name.ts";
 
 export const MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
 // Multipart framing adds a little to the file itself; the exact file size is checked after parsing.
@@ -154,7 +154,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf }): Hon
         return apiError(c, 415, "not_pdf", "That file is not a PDF. Choose a file that ends in .pdf.");
       }
 
-      const uploadPath = await library.newUploadPath();
+      const uploadPath = await library.newUploadPath(titleFromFileName(file.name));
       try {
         const sha256 = await saveUpload(file, uploadPath);
 
@@ -178,8 +178,8 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf }): Hon
         if (!detail) throw new Error(`book ${id} vanished right after it was added`);
         return c.json(detail, created ? 201 : 200);
       } finally {
-        // The upload is moved into the library on success; this removes it on every other path.
-        await rm(uploadPath, { force: true });
+        // The upload is moved into the library on success; this removes what is left of it on every path.
+        await library.discardUpload(uploadPath);
       }
     },
   );
