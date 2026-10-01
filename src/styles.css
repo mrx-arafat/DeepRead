@@ -418,6 +418,10 @@ select {
   font: inherit;
 }
 
+.shelf-field input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
 .shelf-edit-actions {
   display: flex;
   flex-wrap: wrap;

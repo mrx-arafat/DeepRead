@@ -15,11 +15,13 @@ type Props = {
 
 export function BookEditForm({ book, saving, onSave, onClose }: Props) {
   const titleId = useId();
+  const titleErrorId = useId();
   const authorId = useId();
   const titleInput = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(book.title);
   const [author, setAuthor] = useState(book.author ?? "");
   const [error, setError] = useState<string | null>(null);
+  const emptyTitle = title.trim() === "";
 
   useEffect(() => {
     titleInput.current?.focus();
@@ -27,7 +29,12 @@ export function BookEditForm({ book, saving, onSave, onClose }: Props) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saving || title.trim() === "") return;
+    if (saving) return;
+    if (emptyTitle) {
+      // The reason is already on screen under the field; bring the reader back to it.
+      titleInput.current?.focus();
+      return;
+    }
     const update: BookUpdate = { title: title.trim(), author: author.trim() === "" ? null : author.trim() };
     if (update.title === book.title && update.author === book.author) {
       onClose();
@@ -51,6 +58,8 @@ export function BookEditForm({ book, saving, onSave, onClose }: Props) {
     <form
       className="shelf-edit"
       aria-label={`Edit ${book.title}`}
+      // The browser's own "fill out this field" bubble would stand in for the sentence shown under the field.
+      noValidate
       onSubmit={(event) => void submit(event)}
       onKeyDown={handleKeyDown}
     >
@@ -61,11 +70,18 @@ export function BookEditForm({ book, saving, onSave, onClose }: Props) {
           id={titleId}
           value={title}
           maxLength={MAX_TITLE_CHARS}
-          required
+          aria-required
+          aria-invalid={emptyTitle}
+          aria-describedby={emptyTitle ? titleErrorId : undefined}
           readOnly={saving}
           autoComplete="off"
           onChange={(event) => setTitle(event.target.value)}
         />
+        {emptyTitle && (
+          <p id={titleErrorId} className="inline-error" role="alert">
+            The title cannot be empty. Type a title for this book.
+          </p>
+        )}
       </div>
       <div className="shelf-field">
         <label htmlFor={authorId}>Author</label>
@@ -84,7 +100,7 @@ export function BookEditForm({ book, saving, onSave, onClose }: Props) {
         </p>
       )}
       <div className="shelf-edit-actions">
-        <button type="submit" className="button" disabled={saving || title.trim() === ""}>
+        <button type="submit" className="button" disabled={saving}>
           {saving ? "Saving..." : "Save"}
         </button>
         <button type="button" className="quiet-button" disabled={saving} onClick={onClose}>
