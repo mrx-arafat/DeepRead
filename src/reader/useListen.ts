@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Block } from "../../shared/types.ts";
 import { speak, whenVoiceFree } from "./speech.ts";
+import { placeInView, scrollTopFor, type Place } from "./sentenceView.ts";
 import { rangeInBlock, sentenceIndex, sentencesOf, setHighlight, wordAt, type SentenceAt } from "./textRanges.ts";
 
 export type Listen = {
@@ -8,6 +9,10 @@ export type Listen = {
   active: boolean;
   playing: boolean;
   error: string | null;
+  /** The sentence being read is out of the reader's view, above or below it. */
+  away: Exclude<Place, "in"> | null;
+  /** Bring the sentence being read back into view. */
+  showSentence: () => void;
   toggle: () => void;
   stop: () => void;
   next: () => void;
@@ -27,6 +32,12 @@ export function useListen(blocks: Block[], rate: number): Listen {
   const [error, setError] = useState<string | null>(null);
   // Bumped to speak the sentence again after something else (a word from its card) had the voice.
   const [again, setAgain] = useState(0);
+  const [away, setAway] = useState<Listen["away"]>(null);
+  // Bumped to scroll the sentence into view because the reader asked for it (Play, Next, the back button).
+  const [reveal, setReveal] = useState(0);
+  const shown = useRef<Range | null>(null);
+  // When the player last scrolled the page: a smooth scroll still under way is not the reader leaving.
+  const scrolledAt = useRef(-Infinity);
 
   const index = useMemo(() => (at ? sentenceIndex(sentences, at) : -1), [sentences, at]);
   const sentence = index === -1 ? null : (sentences[index] ?? null);
@@ -48,19 +59,64 @@ export function useListen(blocks: Block[], rate: number): Listen {
     setError(null);
   }, [at, index]);
 
+  const scrollTo = useCallback((range: Range) => {
+    const top = scrollTopFor(range.getBoundingClientRect(), window.innerHeight, window.scrollY);
+    if (top === null) return;
+    scrolledAt.current = performance.now();
+    window.scrollTo({ top, behavior: "smooth" });
+  }, []);
+
   useEffect(() => {
     if (!sentence) {
+      shown.current = null;
       setHighlight("dr-sentence", null);
       return;
     }
     const range = rangeInBlock(sentence.blockId, sentence);
     setHighlight("dr-sentence", range);
-    const rect = range?.getBoundingClientRect();
-    // Keep the spoken sentence inside the comfortable middle of the window.
-    if (rect && (rect.top < 90 || rect.bottom > window.innerHeight - 140)) {
-      window.scrollTo({ top: window.scrollY + rect.top - window.innerHeight * 0.3, behavior: "smooth" });
-    }
+    const before = shown.current;
+    shown.current = range;
+    // The page follows the voice only while the reader is still with it. One who scrolled away to read
+    // ahead or look at a note is left where they are: the player offers a way back instead.
+    const withReader =
+      !before ||
+      placeInView(before.getBoundingClientRect(), window.innerHeight) === "in" ||
+      performance.now() - scrolledAt.current < 1500;
+    if (range && withReader) scrollTo(range);
     return () => setHighlight("dr-sentence", null);
+  }, [place]);
+
+  // Asked for by the reader: show the sentence wherever the page is. Declared after the effect above, which
+  // has set `shown` by the time a request for a new sentence runs.
+  useEffect(() => {
+    if (reveal && shown.current) scrollTo(shown.current);
+  }, [reveal]);
+
+  // Tell the reader when the sentence is out of view. Waits for scrolling to settle, so the page following
+  // the voice does not make the answer flicker.
+  useEffect(() => {
+    if (!sentence) {
+      setAway(null);
+      return;
+    }
+    let timer: number | undefined;
+    const measure = () => {
+      const range = shown.current;
+      const where = range ? placeInView(range.getBoundingClientRect(), window.innerHeight) : "in";
+      setAway(where === "in" ? null : where);
+    };
+    const soon = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(measure, 150);
+    };
+    soon();
+    window.addEventListener("scroll", soon, { passive: true });
+    window.addEventListener("resize", soon);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("scroll", soon);
+      window.removeEventListener("resize", soon);
+    };
   }, [place]);
 
   useEffect(() => {
@@ -132,6 +188,7 @@ export function useListen(blocks: Block[], rate: number): Listen {
 
   const next = useCallback(() => move(1), [move]);
   const previous = useCallback(() => move(-1), [move]);
+  const showSentence = useCallback(() => setReveal((count) => count + 1), []);
 
-  return { active: sentence !== null, playing, error, toggle, stop, next, previous, startAt };
+  return { active: sentence !== null, playing, error, away, showSentence, toggle, stop, next, previous, startAt };
 }

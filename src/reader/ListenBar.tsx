@@ -1,4 +1,4 @@
-import { Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
 import type { Ref } from "react";
 import { setPrefs } from "../prefs.ts";
 import type { Listen } from "./useListen.ts";
@@ -19,6 +19,14 @@ export function ListenBar({
 }) {
   return (
     <div className="listen-bar" role="region" aria-label="Read aloud">
+      {listen.away && (
+        <div className="listen-status">
+          <button type="button" className="listen-back" onClick={listen.showSentence}>
+            {listen.away === "above" ? <ArrowUp size={16} aria-hidden /> : <ArrowDown size={16} aria-hidden />}
+            Back to the sentence being read
+          </button>
+        </div>
+      )}
       {listen.error && <p className="inline-error">{listen.error}</p>}
       <div className="listen-controls">
         <button type="button" className="icon-button" aria-label="Previous sentence" onClick={listen.previous}>

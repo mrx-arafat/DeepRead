@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
-id: listening-bug-scroll-away
-description: Expected to fail until fixed - while listening, the reader scrolls away; the page must not be pulled back every sentence, and Play must not speak a sentence that is out of view. Desktop 1440 (stubbed speech)
+id: listening-scroll-away
+description: While listening, the reader scrolls away; the page must not be pulled back every sentence. Desktop 1440 (stubbed speech)
 viewport:
   width: 1440
   height: 900

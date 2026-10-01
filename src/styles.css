@@ -1267,6 +1267,8 @@ h4[data-block] {
 }
 
 .listen-bar {
+  --lift: 0 1px 2px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.14);
+
   position: fixed;
   left: 50%;
   bottom: 1.25rem;
@@ -1277,10 +1279,43 @@ h4[data-block] {
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   background: var(--raised);
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.08),
-    0 8px 24px rgb(0 0 0 / 0.14);
+  box-shadow: var(--lift);
   transform: translateX(-50%);
+}
+
+/* A line above the player, out of its flow: what the reader needs to know, or a way back to the sentence. */
+.listen-status {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  width: max-content;
+  max-width: min(24rem, calc(100vw - 2rem));
+  padding: 0.25rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--raised);
+  box-shadow: var(--lift);
+  transform: translateX(-50%);
+}
+
+.listen-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--pen);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.listen-back:hover {
+  background: var(--pen-wash);
 }
 
 .listen-bar .inline-error {
