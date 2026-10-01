@@ -1,4 +1,4 @@
-import { FileUp } from "lucide-react";
+import { FileUp, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import type { BookSummary, BookUpdate } from "../shared/types.ts";
@@ -158,9 +158,13 @@ export function LibraryPage() {
           }}
         />
         {uploading ? (
-          <p className="drop-busy" role="status">
-            Reading <strong>{uploading}</strong> and splitting it into chapters. A long book can take a minute.
-          </p>
+          <div className="drop-busy" role="status">
+            <LoaderCircle className="drop-spinner" size={20} aria-hidden />
+            <span className="drop-busy-text">
+              <strong className="drop-busy-name">Reading {uploading}</strong>
+              <span>Splitting it into chapters. A long book can take a minute.</span>
+            </span>
+          </div>
         ) : (
           <>
             <button ref={addButton} type="button" className="button" onClick={() => input.current?.click()}>
@@ -195,7 +199,7 @@ export function LibraryPage() {
         </div>
       )}
 
-      {books?.length === 0 && <p className="library-empty">No books yet. Add a PDF to start reading.</p>}
+      {books?.length === 0 && !uploading && <p className="library-empty">No books yet. Add a PDF to start reading.</p>}
 
       {books && books.length > 0 && (
         <section aria-label="Your books">

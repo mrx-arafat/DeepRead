@@ -273,8 +273,17 @@ select {
   gap: 1rem;
   margin-top: 2rem;
   padding: 1.5rem;
+  /* Tall enough for the "reading your book" state too, so the page below never jumps when a book is added. */
+  min-height: 6.25rem;
   border: 1px dashed var(--ink-faint);
   border-radius: var(--radius);
+}
+
+@media (max-width: 40rem) {
+  .drop {
+    /* The "reading" sentence takes three lines here, and "or drop a PDF here" wraps under the button. */
+    min-height: 8.375rem;
+  }
 }
 
 .drop[data-dragging] {
@@ -286,6 +295,45 @@ select {
 .drop-hint,
 .drop-busy {
   color: var(--ink-soft);
+}
+
+.drop-busy {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.drop-busy-text {
+  display: grid;
+  min-width: 0;
+}
+
+/* One line, so a long file name cannot change the height of the box. */
+.drop-busy-name {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drop-spinner {
+  flex: none;
+  color: var(--pen);
+  animation: drop-spin 1s linear infinite;
+}
+
+@keyframes drop-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drop-spinner {
+    animation: none;
+  }
 }
 
 .inline-notice {
