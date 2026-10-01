@@ -364,10 +364,29 @@ select {
   font-size: 0.9375rem;
 }
 
+/* Under the row, so the title above never changes width or wraps differently while the reader decides. */
 .shelf-confirm {
   display: flex;
+  flex: 0 0 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  border-radius: var(--radius);
+  background: var(--wash);
+}
+
+.shelf-confirm p {
+  flex: 1 1 16rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.shelf-confirm-actions {
+  display: flex;
   gap: 0.5rem;
-  flex: none;
 }
 
 /* Remove sits next to Keep and deletes for good, so both are a full thumb tall and apart. */
@@ -380,6 +399,11 @@ select {
 .shelf-confirm .link-button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.shelf-item .icon-button[aria-expanded="true"] {
+  background: var(--wash);
+  color: var(--danger);
 }
 
 .shelf-item-error {

@@ -1,10 +1,10 @@
 import { Pencil, Trash2 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import { Link } from "wouter";
 import type { BookSummary, BookUpdate } from "../../shared/types.ts";
 import { BookEditForm } from "./BookEditForm.tsx";
-import { lengthLabel } from "./bookText.ts";
+import { lengthLabel, shortTitle } from "./bookText.ts";
 
 export type Mode = "view" | "edit" | "delete";
 
@@ -22,6 +22,7 @@ type Props = {
 };
 
 export function BookRow({ book, mode, pending, deleteError, focusLink, onMode, onSave, onRemove }: Props) {
+  const questionId = useId();
   const link = useRef<HTMLAnchorElement>(null);
   const editButton = useRef<HTMLButtonElement>(null);
   const removeButton = useRef<HTMLButtonElement>(null);
@@ -87,38 +88,40 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, onMode, o
           {lengthLabel(book)}
         </span>
       </Link>
-      {mode === "delete" ? (
-        <span className="shelf-confirm">
-          <button type="button" className="link-button danger" disabled={busy} onClick={() => void onRemove(book.id)}>
-            {busy ? "Removing..." : "Remove"}
-          </button>
-          <button ref={keepButton} type="button" className="link-button" disabled={busy} onClick={() => close("remove")}>
-            Keep
-          </button>
-        </span>
-      ) : (
-        <>
-          <button
-            ref={editButton}
-            type="button"
-            className="icon-button"
-            aria-label={`Edit ${book.title}`}
-            disabled={pending !== null}
-            onClick={() => onMode("edit")}
-          >
-            <Pencil size={18} aria-hidden />
-          </button>
-          <button
-            ref={removeButton}
-            type="button"
-            className="icon-button"
-            aria-label={`Remove ${book.title}`}
-            disabled={pending !== null}
-            onClick={() => onMode("delete")}
-          >
-            <Trash2 size={18} aria-hidden />
-          </button>
-        </>
+      {/* The icons stay where they are while the question is open, so the title keeps its line breaks. */}
+      <button
+        ref={editButton}
+        type="button"
+        className="icon-button"
+        aria-label={`Edit ${book.title}`}
+        disabled={pending !== null || mode === "delete"}
+        onClick={() => onMode("edit")}
+      >
+        <Pencil size={18} aria-hidden />
+      </button>
+      <button
+        ref={removeButton}
+        type="button"
+        className="icon-button"
+        aria-label={`Remove ${book.title}`}
+        aria-expanded={mode === "delete"}
+        disabled={pending !== null}
+        onClick={() => (mode === "delete" ? close("remove") : onMode("delete"))}
+      >
+        <Trash2 size={18} aria-hidden />
+      </button>
+      {mode === "delete" && (
+        <div className="shelf-confirm" role="group" aria-labelledby={questionId}>
+          <p id={questionId}>Remove “{shortTitle(book.title)}” and the notes you made in it? This cannot be undone.</p>
+          <div className="shelf-confirm-actions">
+            <button type="button" className="link-button danger" disabled={busy} onClick={() => void onRemove(book.id)}>
+              {busy ? "Removing..." : "Remove"}
+            </button>
+            <button ref={keepButton} type="button" className="link-button" disabled={busy} onClick={() => close("remove")}>
+              Keep
+            </button>
+          </div>
+        </div>
       )}
       {deleteError && (
         <p className="inline-error shelf-item-error" role="alert">

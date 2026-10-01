@@ -83,7 +83,7 @@ steps:
       saveAs: T_LONG
   - click: the bin (remove) icon button on the book row
   - checkPageContains: Keep
-  - assertVisually: The row shows the red word Remove and the blue word Keep at the right of the long title. They are clearly separate, readable, and inside the screen
+  - assertVisually: Under the long title a grey box asks whether to remove the book and its notes, with the red word Remove and the blue word Keep. They are clearly separate, readable, and inside the screen, and the title did not re-wrap
   - javascript:
       environment: browser
       code: return window.__measure();

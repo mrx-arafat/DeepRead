@@ -15,7 +15,7 @@ steps:
       code: return document.querySelector(".shelf-link").getAttribute("href");
   - click: Remove The Problems of Philosophy
   - checkPageContains: Keep
-  - assertVisually: The book row now shows the words Remove (in red) and Keep at the right instead of the icons. The row layout is stable and nothing overflows
+  - assertVisually: Under the book row a grey box asks whether to remove the book and the notes made in it, and offers Remove (in red) and Keep. The title above did not move and nothing overflows
   - javascript:
       code: |-
         const row = document.querySelector(".shelf-item");
@@ -29,6 +29,7 @@ steps:
         return { confirmStillShown: !!document.querySelector(".shelf-confirm"), focus: document.activeElement.innerText };
       environment: browser
       saveAs: AFTER_ESCAPE
+  - click: Remove The Problems of Philosophy
   - click: Keep
   - checkPageContains: The Problems of Philosophy
   - javascript:
@@ -37,7 +38,7 @@ steps:
       environment: browser
       saveAs: AFTER_KEEP
   - click: Remove The Problems of Philosophy
-  - click: Remove
+  - click: the red Remove button in the question under the row
   - checkPageContains: No books yet. Add a PDF to start reading.
   - javascript:
       code: |-
