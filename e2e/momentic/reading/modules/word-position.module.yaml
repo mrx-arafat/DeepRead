@@ -1,0 +1,18 @@
+fileType: momentic/module/v2
+id: dr-read-m-word-pos
+name: Find the screen position of the word daily
+steps:
+  - javascript:
+      environment: browser
+      saveAs: WORDPOS_JSON
+      code: |-
+        const block = document.querySelector('[data-block="c3-b3"]');
+        block.scrollIntoView({ block: 'center' });
+        const node = block.firstChild; const at = node.textContent.indexOf('daily');
+        const range = document.createRange(); range.setStart(node, at + 2); range.setEnd(node, at + 3);
+        const b = range.getBoundingClientRect();
+        return JSON.stringify({ x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) });
+  - javascript: |-
+      const p = JSON.parse(env.WORDPOS_JSON);
+      setVariable('WORDX', String(p.x));
+      setVariable('WORDY', String(p.y));

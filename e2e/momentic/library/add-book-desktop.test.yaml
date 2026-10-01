@@ -1,0 +1,29 @@
+fileType: momentic/test/v2
+id: library-add-book-desktop
+description: A reader adds the fixture book with the Add a book (PDF) button, sees progress feedback, lands in the reader, returns to the library and checks how the book is listed. Run from the repo root (fileUpload paths are relative to it).
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
+  - click: Add a book (PDF) button
+  - checkPageContains: and splitting it into chapters
+  - waitForUrl: /book/
+  - assertVisually: The reader page has opened for The Problems of Philosophy and shows readable book text near the top of the page
+  - javascript:
+      code: |-
+        return { url: location.href, title: document.title, topbar: document.querySelector("header")?.innerText.split("\n").slice(0, 3).join(" | ") };
+      environment: browser
+      saveAs: LANDING
+  - click: Back to your books
+  - checkPageContains: Your books
+  - assertVisually: The Your books list has one entry for The Problems of Philosophy. Title is large, the line under it is smaller grey text, and the pencil and bin icons sit at the right. Everything is aligned and nothing overflows
+  - javascript:
+      code: |-
+        const row = document.querySelector(".shelf-item");
+        return { rowText: row?.innerText, buttons: [...row.querySelectorAll("button, a")].map((e) => e.getAttribute("aria-label") || e.innerText) };
+      environment: browser
+      saveAs: ROW
+  - checkPageContains: 19 chapters
+  - checkPageContains: of reading

@@ -1,0 +1,42 @@
+fileType: momentic/test/v2
+id: listening-a11y-structure-desktop
+description: Journey 7 - landmarks, heading order, accessible names of every control and state attributes on the reader page with the player open, desktop 1440 (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 800; return 'slow';
+  - click:
+      coords: 1119, 25
+  - wait: 600
+  - javascript:
+      environment: browser
+      saveAs: LANDMARKS_AND_NAMES
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        need(document.querySelector('body > #root header'), 'a header landmark exists');
+        need(document.querySelector('main'), 'a main landmark exists');
+        need(document.querySelectorAll('main').length === 1, 'exactly one main');
+        const region = document.querySelector('[role=region][aria-label="Read aloud"]');
+        need(region, 'the player is a labelled region');
+        for (const s of document.querySelectorAll('section')) need(s.getAttribute('aria-label'), 'every section has a name');
+        need(document.querySelector('article[aria-labelledby]'), 'each chapter is an article named by its title');
+        const name = (e) => e.getAttribute('aria-label') || (e.labels && e.labels.length ? [...e.labels].map((l) => l.textContent).join(' ').trim() : '') || (e.textContent || '').trim() || e.getAttribute('title') || '';
+        const unnamed = [...document.querySelectorAll('a[href],button,select,input,textarea')].filter((e) => !name(e));
+        need(unnamed.length === 0, 'every control has an accessible name, unnamed: ' + unnamed.map((e) => e.outerHTML.slice(0, 60)).join(' '));
+        const listen = document.querySelector('.topbar-tools .quiet-button');
+        need(listen.getAttribute('aria-pressed') === 'true', 'the Listen toggle reports pressed while listening');
+        need(document.querySelector('button[aria-label=Chapters]').getAttribute('aria-expanded') === 'false', 'Chapters reports collapsed');
+        need([...document.querySelectorAll('svg')].every((s) => s.getAttribute('aria-hidden') === 'true'), 'icons are hidden from assistive tech');
+        const hs = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map((h) => Number(h.tagName[1]));
+        need(hs[0] === 1, 'first heading is an h1');
+        for (let i = 1; i < hs.length; i++) need(hs[i] - hs[i - 1] <= 1, 'no skipped heading levels');
+        const sel = document.querySelector('.topbar-lang select');
+        need(name(sel).startsWith('Your language'), 'language picker is labelled');
+        const speed = document.querySelector('.listen-bar select');
+        need(name(speed).startsWith('Speed'), 'speed picker is labelled');
+        return JSON.stringify({ controls: document.querySelectorAll('a[href],button,select').length, headings: hs.join('') });

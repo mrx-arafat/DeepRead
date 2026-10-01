@@ -1,0 +1,55 @@
+fileType: momentic/test/v2
+id: dr-read-resume-desktop
+description: "Journey 4 at desktop 1440: read part of a later chapter, reload the page, go back to the library and reopen the book, and check the reader lands where they stopped."
+viewport: "1440, 900"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - click:
+      css: button[aria-label="Chapters"]
+  - click:
+      css: a.toc-link[href$="/c8"]
+  - waitForUrl:
+      substring: /c8
+      timeout: 10000
+  - wait: 800
+  - scrollDown: 2600
+  - wait: 400
+  - scrollDown: 1900
+  - wait: 400
+  - scrollDown: 210
+  - wait: 2600
+  - module: ./modules/spot.module.yaml
+  - javascript: setVariable('SPOT1', env.SPOT)
+  - refresh
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - wait: 1500
+  - module: ./modules/spot.module.yaml
+  - javascript: setVariable('SPOT2', env.SPOT)
+  - javascript: |-
+      const a = JSON.parse(env.SPOT1), b = JSON.parse(env.SPOT2);
+      assert(a.block === b.block, `after reload the reader is in ${b.block} ("${b.snippet}") but was in ${a.block} ("${a.snippet}")`)
+  - click:
+      coords: "32, 26"
+  - checkPageContains:
+      text: Your books
+      timeout: 10000
+  - javascript:
+      environment: browser
+      saveAs: SHELF
+      code: return Array.from(document.querySelectorAll('.shelf-item')).map((li) => li.textContent).join(' | ')
+  - click:
+      css: a.shelf-link
+  - waitForUrl:
+      substring: /book/
+      timeout: 15000
+  - wait: 1800
+  - module: ./modules/spot.module.yaml
+  - javascript: setVariable('SPOT3', env.SPOT)
+  - javascript: |-
+      const a = JSON.parse(env.SPOT1), c = JSON.parse(env.SPOT3);
+      assert(a.block === c.block, `after leaving and reopening the book the reader is in ${c.block} ("${c.snippet}") but was in ${a.block} ("${a.snippet}")`)
+  - javascript: |-
+      const a = JSON.parse(env.SPOT1), b = JSON.parse(env.SPOT2);
+      assert(a.eyeText === b.eyeText, `after reload the line under the reader's eyes is "${b.eyeText}" (${b.intoBlockPx}px into its paragraph) but it was "${a.eyeText}" (${a.intoBlockPx}px into its paragraph)`)

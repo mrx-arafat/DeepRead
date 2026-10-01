@@ -1,0 +1,20 @@
+fileType: momentic/test/v2
+id: listening-a11y-axe-phone
+description: Journey 7 and 8 - axe-core scan of the reader with the player bar open, light then dark theme, phone 390x844 (stubbed speech)
+viewport:
+  width: 390
+  height: 844
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 800; return 'slow';
+  - click:
+      coords: 297, 26
+  - wait: 600
+  - module: ../modules/axe-scan.module.yaml
+  - click:
+      coords: 358, 25
+  - wait: 500
+  - module: ../modules/axe-scan.module.yaml

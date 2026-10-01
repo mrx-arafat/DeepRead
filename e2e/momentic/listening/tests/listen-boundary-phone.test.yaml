@@ -1,0 +1,38 @@
+fileType: momentic/test/v2
+id: listening-boundary-phone
+description: Journey 4 on a phone - keep listening from the Preface into the next chapter, phone 390x844 (stubbed speech)
+viewport:
+  width: 390
+  height: 844
+steps:
+  - module:
+      path: ../modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER:
+          string: c2
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 25; return 'fast words';
+  - click:
+      css: '.topbar-tools button[aria-pressed]'
+  - wait: 9000
+  - javascript:
+      environment: browser
+      saveAs: CROSSING
+      code: |-
+        const st = window.__stub;
+        const h = (n) => { const hl = CSS.highlights.get(n); return hl ? [...hl].map((r) => r.toString().slice(0, 30)).join('|') : null; };
+        const bar = document.querySelector('.listen-bar');
+        return JSON.stringify({ spoken: st.spoken.map((s) => s.text.slice(0, 22)), sentence: h('dr-sentence'), sy: Math.round(scrollY), title: document.querySelector('.topbar-title').textContent, url: location.pathname, play: bar && bar.querySelector('.listen-play').getAttribute('aria-label') });
+  - javascript:
+      environment: browser
+      saveAs: BOUNDARY_ASSERT
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const texts = window.__stub.spoken.map((s) => s.text);
+        need(texts.indexOf('1912') !== -1 && texts[texts.indexOf('1912') + 1].startsWith('Is there any knowledge'), 'reading should carry on from the Preface into chapter I');
+        need(location.pathname.endsWith('/c3'), 'the address should follow into the next chapter');
+        need(document.querySelector('.listen-bar'), 'the player stays open across the boundary');
+        return 'ok';
+  - assert: The player bar is still showing and the highlighted green sentence is in the next chapter, CHAPTER I. APPEARANCE AND REALITY

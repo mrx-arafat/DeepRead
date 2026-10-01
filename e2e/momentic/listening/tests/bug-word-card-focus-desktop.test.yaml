@@ -1,0 +1,22 @@
+fileType: momentic/test/v2
+id: listening-bug-word-card-focus
+description: Expected to fail until fixed - opening a word card must move focus into it (or announce it), desktop 1440
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - click:
+      coords: 370, 622
+  - checkElementVisible:
+      css: '.word-popover'
+      timeout: 5000
+  - javascript:
+      environment: browser
+      saveAs: FOCUS_IN_WORD_CARD
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const a = document.activeElement;
+        const p = document.querySelector('.word-popover');
+        need(p.contains(a), 'the word card opened but focus is on ' + a.tagName + '; the card is the last element in the page');
+        return 'ok';

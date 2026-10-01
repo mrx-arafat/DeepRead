@@ -1,0 +1,40 @@
+fileType: momentic/module/v2
+id: dr-read-m-metrics
+name: Measure the reading page
+steps:
+  - javascript:
+      environment: browser
+      saveAs: METRICS
+      code: |-
+        const q = (s) => document.querySelector(s);
+        const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; };
+        const cs = (el, p) => (el ? getComputedStyle(el)[p] : null);
+        const para = Array.from(document.querySelectorAll('p[data-block]')).sort((a, b) => b.textContent.length - a.textContent.length)[0];
+        const lines = new Map();
+        if (para && para.firstChild) {
+          const node = para.firstChild; const range = document.createRange();
+          for (let i = 0; i < node.length; i++) {
+            range.setStart(node, i); range.setEnd(node, i + 1);
+            const rects = range.getClientRects(); if (!rects.length) continue;
+            const top = Math.round(rects[0].top); lines.set(top, (lines.get(top) || 0) + 1);
+          }
+        }
+        const perLine = Array.from(lines.values()).sort((a, b) => a - b);
+        const controls = Array.from(document.querySelectorAll('.topbar button, .topbar a, .topbar select')).map((el) => ({ label: el.getAttribute("aria-label") || el.textContent.trim().slice(0, 20), disabled: !!el.disabled, ...r(el) }));
+        const over = Array.from(document.querySelectorAll('.topbar *, .chapter *')).filter((el) => el.getBoundingClientRect().right > innerWidth + 1 && getComputedStyle(el).position !== 'fixed').slice(0, 6).map((el) => el.tagName + '.' + el.className + ' right=' + Math.round(el.getBoundingClientRect().right));
+        const title = q('.topbar-title');
+        return JSON.stringify({
+          viewport: { w: innerWidth, h: innerHeight }, docScrollWidth: document.documentElement.scrollWidth,
+          scrollY: Math.round(scrollY), scrollHeight: document.documentElement.scrollHeight,
+          theme: document.documentElement.dataset.theme, bookSizeVar: document.documentElement.style.getPropertyValue('--book-size'),
+          bookFont: cs(q('.chapter-text'), 'fontFamily'), bookSize: cs(q('.chapter-text'), 'fontSize'), bookLineHeight: cs(q('.chapter-text'), 'lineHeight'),
+          color: cs(q('.chapter-text'), 'color'), bg: cs(document.body, 'backgroundColor'), h1Size: cs(q('.chapter h1'), 'fontSize'),
+          column: r(q('.chapter')), text: r(q('.chapter-text')), topbar: r(q('.topbar')), controls,
+          titleText: title && title.textContent, titleClipped: title ? title.scrollWidth > title.clientWidth : null, percent: q('.topbar-percent') && q('.topbar-percent').textContent,
+          progressbar: q('.reading-progress') && q('.reading-progress').getAttribute('aria-valuenow'),
+          sections: Array.from(document.querySelectorAll('[data-chapter]')).map((a) => a.dataset.chapter),
+          metas: Array.from(document.querySelectorAll('.chapter-meta')).map((m) => m.textContent), h1s: Array.from(document.querySelectorAll('.chapter h1')).map((h) => h.textContent),
+          flowEnd: q('.flow-end') && q('.flow-end').textContent, flowBack: q('.flow-back') && q('.flow-back').textContent, tocOpen: !!q('.toc'),
+          aid: r(q('.aid')), charsPerLineMedian: perLine.length ? perLine[Math.floor(perLine.length / 2)] : null, charsPerLineMax: perLine.length ? perLine[perLine.length - 1] : null,
+          overflowing: over, docTitle: document.title, lang: document.documentElement.lang, url: location.pathname,
+        });

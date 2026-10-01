@@ -1,0 +1,64 @@
+fileType: momentic/test/v2
+id: dr-read-language-desktop
+description: "Journey 6 at desktop 1440: what the language picker is, what changing it does to a word lookup, and whether the choice survives a reload."
+viewport: "1440, 900"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - navigate: /book/{{ env.BOOK_ID }}/c3
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - javascript:
+      environment: browser
+      saveAs: LANGUI
+      code: |-
+        const sel = document.querySelector('.topbar-lang select'); const label = document.querySelector('.topbar-lang span');
+        const b = sel.getBoundingClientRect();
+        return JSON.stringify({ selected: sel.options[sel.selectedIndex].text, options: Array.from(sel.options).map((o) => o.text), hiddenLabel: label && label.textContent, labelIsVisuallyHidden: label && label.className, visibleTextNearby: document.querySelector('.topbar-lang').innerText, title: sel.title || null, rect: { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }, stored: localStorage.getItem('deepread.prefs') });
+  - module: ./modules/word-position.module.yaml
+  - click:
+      x: "{{ env.WORDX }}"
+      y: "{{ env.WORDY }}"
+  - checkElementVisible:
+      css: '[role="dialog"][aria-label^="Meaning of"]'
+      timeout: 10000
+  - wait: 7000
+  - javascript:
+      environment: browser
+      saveAs: POP_BN
+      code: return document.querySelector('[role="dialog"][aria-label^="Meaning of"]').innerText
+  - assertVisually:
+      that: A small card next to the tapped word shows the word, a meaning in Bangla script, a simple English meaning and an example sentence
+      timeout: 20000
+  - press: Escape
+  - select:
+      css: .topbar-lang select
+      label: Spanish
+  - javascript:
+      environment: browser
+      saveAs: AFTER_SWITCH
+      code: |-
+        return JSON.stringify({ selected: document.querySelector('.topbar-lang select').selectedOptions[0].text, dialogOpen: !!document.querySelector('[role="dialog"]'), bodyLang: document.documentElement.lang, toasts: document.querySelectorAll('[role="status"],[role="alert"]').length, stored: localStorage.getItem('deepread.prefs') });
+  - module: ./modules/word-position.module.yaml
+  - click:
+      x: "{{ env.WORDX }}"
+      y: "{{ env.WORDY }}"
+  - checkElementVisible:
+      css: '[role="dialog"][aria-label^="Meaning of"]'
+      timeout: 10000
+  - wait: 7000
+  - javascript:
+      environment: browser
+      saveAs: POP_ES
+      code: return document.querySelector('[role="dialog"][aria-label^="Meaning of"]').innerText
+  - assertVisually:
+      that: The word card now shows the meaning in Spanish instead of Bangla
+      timeout: 20000
+  - refresh
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - javascript:
+      environment: browser
+      saveAs: LANG_AFTER_RELOAD
+      code: return document.querySelector('.topbar-lang select').selectedOptions[0].text

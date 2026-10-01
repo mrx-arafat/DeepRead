@@ -1,0 +1,30 @@
+fileType: momentic/test/v2
+id: listening-topbar-real-desktop
+description: Journey 1 with the real browser voice - Listen from the top bar at the start of a chapter, sentence and word highlight, desktop 1440. This test makes sound for about 8 seconds.
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/spy-speech.module.yaml
+  - click:
+      css: '.topbar-tools button[aria-pressed]'
+  - wait: 2500
+  - assert: A player bar with previous, pause, next, speed and stop controls is visible at the bottom of the window, and the first sentence of the chapter is highlighted green with one word highlighted yellow
+  - wait: 4000
+  - javascript:
+      environment: browser
+      saveAs: REAL_SPEECH
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const h = (n) => { const hl = CSS.highlights.get(n); return hl ? [...hl].map((r) => r.toString().slice(0, 40)).join('|') : null; };
+        const log = window.__spy.log;
+        const out = { sentence: h('dr-sentence'), word: h('dr-spoken'), spoken: log.map((e) => [e.voice, e.lang, e.boundaries, e.ended, e.error]) };
+        need(log.length >= 2, 'the second sentence should have started within 6.5 s, spoke ' + log.length);
+        need(log[0].ended === true && log[0].boundaries > 5, 'first sentence should end after word boundary events');
+        need(h('dr-sentence'), 'a sentence must be highlighted while speaking');
+        need(h('dr-spoken'), 'a word must be highlighted while speaking');
+        return JSON.stringify(out);
+  - click:
+      css: '.listen-bar button[aria-label="Stop listening"]'
+  - assert: The player bar is gone and nothing is highlighted green

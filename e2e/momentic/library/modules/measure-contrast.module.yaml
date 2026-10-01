@@ -1,0 +1,41 @@
+fileType: momentic/module/v2
+id: deepread-library-contrast
+name: measure-contrast
+description: Reads the computed colours of the library page's text and control borders and saves WCAG contrast ratios (and control sizes) to env.CONTRAST. Text needs 4.5:1, control borders 3:1.
+steps:
+  - javascript:
+      environment: browser
+      saveAs: CONTRAST
+      code: |-
+        const parse = (c) => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p[3] ?? 1 }; };
+        const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+        const lum = (c) => 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+        const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100; };
+        const bgOf = (el) => { for (let e = el; e; e = e.parentElement) { const c = parse(getComputedStyle(e).backgroundColor); if (c && c.a > 0.99) return c; } return parse(getComputedStyle(document.body).backgroundColor); };
+        const out = { theme: document.documentElement.dataset.theme, text: {}, borders: {}, sizes: {} };
+        const text = (name, sel) => { const el = document.querySelector(sel); if (!el) return; const cs = getComputedStyle(el); out.text[name] = ratio(parse(cs.color), bgOf(el)); };
+        const border = (name, sel) => { const el = document.querySelector(sel); if (!el) return; const cs = getComputedStyle(el); const b = parse(cs.borderTopColor); if (b) out.borders[name] = ratio(b, bgOf(el.parentElement || el)); };
+        text("intro", ".library-head p");
+        text("dropHint", ".drop-hint");
+        text("buttonLabel", ".drop .button");
+        text("sectionHeading", ".library-section");
+        text("bookTitle", ".shelf-title");
+        text("bookMeta", ".shelf-meta");
+        text("emptyState", ".library-empty");
+        text("error", ".inline-error");
+        text("editLabel", ".shelf-field label");
+        text("cancelLabel", ".shelf-edit-actions .quiet-button");
+        text("keepLink", ".shelf-confirm .link-button:not(.danger)");
+        text("removeLink", ".shelf-confirm .link-button.danger");
+        text("editIcon", ".icon-button");
+        border("dropBox", ".drop");
+        border("textField", ".shelf-field input");
+        border("cancelButton", ".shelf-edit-actions .quiet-button");
+        const size = (name, sel) => { const el = document.querySelector(sel); if (!el) return; const r = el.getBoundingClientRect(); out.sizes[name] = `${Math.round(r.width)}x${Math.round(r.height)}`; };
+        size("editIcon", ".icon-button");
+        size("addButton", ".drop .button");
+        size("removeLink", ".shelf-confirm .link-button.danger");
+        size("keepLink", ".shelf-confirm .link-button:not(.danger)");
+        size("rowLink", ".shelf-link");
+        out.overflowX = document.documentElement.scrollWidth - window.innerWidth;
+        return out;

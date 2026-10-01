@@ -1,0 +1,12 @@
+fileType: momentic/module/v2
+id: dr-read-m-nav-state
+name: Where the app is after a navigation
+steps:
+  - javascript:
+      environment: browser
+      saveAs: NAV
+      code: |-
+        const col = document.querySelector('.chapter-text');
+        let block = null;
+        if (col) { const x = col.getBoundingClientRect().left + 24; for (const y of [96, 120, 144]) { const hit = document.elementFromPoint(x, y); block = hit && hit.closest('[data-block]'); if (block) break; } }
+        return JSON.stringify({ docTitle: document.title, path: location.pathname.replace(/^\/book\/[^/]+/, '/book/ID'), historyLength: history.length, scrollY: Math.round(scrollY), sections: Array.from(document.querySelectorAll('[data-chapter]')).map((a) => a.dataset.chapter), block: block && block.dataset.block, title: (document.querySelector('.topbar-title') || {}).textContent, percent: (document.querySelector('.topbar-percent') || {}).textContent, library: !!document.querySelector('.library'), message: (document.querySelector('.page-message') || {}).innerText || null, wait: (document.querySelector('.page-wait') || {}).textContent || null });

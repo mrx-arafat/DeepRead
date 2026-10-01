@@ -1,0 +1,65 @@
+fileType: momentic/test/v2
+id: dr-read-contracts-desktop
+description: "Regression contract for the reading journeys at desktop 1440. Collects the state of the reader at several moments, then checks every contract at once so one run lists every problem still open."
+viewport: "1440, 900"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - wait: 800
+  - javascript:
+      environment: browser
+      saveAs: C_OPEN
+      code: |-
+        return JSON.stringify({ visibleText: document.body.innerText.slice(0, 1500), docTitle: document.title, h1: (document.querySelector('.chapter h1') || {}).textContent });
+  - navigate: /book/{{ env.BOOK_ID }}/c3
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - wait: 1500
+  - javascript:
+      environment: browser
+      saveAs: C_C3
+      code: |-
+        return JSON.stringify({ meta: (document.querySelector('.chapter-meta') || {}).textContent, h1: (document.querySelector('.chapter h1') || {}).textContent, title: (document.querySelector('.topbar-title') || {}).textContent, percent: (document.querySelector('.topbar-percent') || {}).textContent, docTitle: document.title });
+  - navigate: /book/{{ env.BOOK_ID }}/c7
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - wait: 1500
+  - javascript:
+      environment: browser
+      saveAs: C_C7
+      code: |-
+        return JSON.stringify({ title: (document.querySelector('.topbar-title') || {}).textContent, percent: (document.querySelector('.topbar-percent') || {}).textContent, bar: (document.querySelector('.reading-progress') || {}).getAttribute('aria-valuenow'), h1: (document.querySelector('.chapter h1') || {}).textContent });
+  - navigate: /book/{{ env.BOOK_ID }}/c19
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - click:
+      css: button[aria-label="Chapters"]
+  - module: ./modules/toc-state.module.yaml
+  - javascript: setVariable('C_TOC', env.TOC)
+  - press: Escape
+  - click:
+      coords: "32, 26"
+  - checkPageContains:
+      text: Your books
+      timeout: 10000
+  - javascript:
+      environment: browser
+      saveAs: C_SHELF
+      code: return Array.from(document.querySelectorAll('.shelf-item')).map((li) => li.innerText).join(' | ')
+  - javascript: |-
+      const roman = (s) => { const v = { I: 1, V: 5, X: 10, L: 50 }; let n = 0; for (let i = 0; i < s.length; i++) { const a = v[s[i]], b = v[s[i + 1]] || 0; n += a < b ? -a : a; } return n; };
+      const open = JSON.parse(env.C_OPEN), c3 = JSON.parse(env.C_C3), c7 = JSON.parse(env.C_C7), toc = JSON.parse(env.C_TOC);
+      const failures = [];
+      if (/START OF THE PROJECT GUTENBERG EBOOK/.test(open.visibleText)) failures.push('opening the book shows Project Gutenberg legal text ("*** START OF THE PROJECT GUTENBERG EBOOK ...") on the first screens');
+      const label = /^Chapter (\d+) of/.exec(c3.meta || ''); const heading = /^CHAPTER ([IVXL]+)\./.exec(c3.h1 || '');
+      if (label && heading && Number(label[1]) !== roman(heading[1])) failures.push(`the small line says "${c3.meta}" above the heading "${c3.h1}"`);
+      if (!/CHAPTER V/.test(c7.title || '')) failures.push(`after jumping to Chapter V the top bar says "${c7.title}" with no chapter name`);
+      if (parseInt(c7.percent, 10) < 20) failures.push(`after jumping to Chapter V (about 24% of the book) the top bar says ${c7.percent}`);
+      if (!toc.currentVisibleInList) failures.push('the chapter list opened at the last chapter does not show the current chapter without scrolling');
+      if (!toc.activeInsideToc) failures.push('keyboard focus stays on the page behind the chapter list when it opens');
+      if (!/Problems of Philosophy/.test(c3.docTitle || '')) failures.push(`the browser tab title is "${c3.docTitle}" while reading`);
+      if (toc.titles.some((t) => /Project Gutenberg License/.test(t))) failures.push('the Project Gutenberg license is listed as a chapter of the book');
+      if (!/Continue|Resume|\d+%|Chapter \d+ of|You are in/i.test(env.C_SHELF)) failures.push(`the library row gives no sign of where the reader stopped: "${env.C_SHELF}"`);
+      assert(failures.length === 0, failures.join('; '))

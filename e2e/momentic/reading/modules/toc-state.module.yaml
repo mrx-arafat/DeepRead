@@ -1,0 +1,28 @@
+fileType: momentic/module/v2
+id: dr-read-m-toc-state
+name: Read the chapter list and page state
+steps:
+  - javascript:
+      environment: browser
+      saveAs: TOC
+      code: |-
+        const toc = document.querySelector('.toc');
+        const rows = toc ? Array.from(toc.querySelectorAll('.toc-link')) : [];
+        const cur = toc && toc.querySelector('[aria-current="page"]');
+        const ol = toc && toc.querySelector('ol');
+        const ae = document.activeElement;
+        const rect = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; };
+        const fe = document.querySelector('.flow-end');
+        return JSON.stringify({
+          open: !!toc, rows: rows.length, current: cur ? cur.textContent : null,
+          currentVisibleInList: cur && ol ? cur.getBoundingClientRect().bottom <= ol.getBoundingClientRect().bottom && cur.getBoundingClientRect().top >= ol.getBoundingClientRect().top : null,
+          listScrollTop: ol ? Math.round(ol.scrollTop) : null, listScrollHeight: ol ? ol.scrollHeight : null, listClientHeight: ol ? ol.clientHeight : null,
+          toc: rect(toc), firstRow: rect(rows[0]), scrim: rect(document.querySelector('.scrim')), closeButton: rect(toc && toc.querySelector('button')),
+          active: ae ? ae.tagName + '[' + (ae.getAttribute('aria-label') || (ae.textContent || '').slice(0, 24)) + ']' : null, activeInsideToc: !!(toc && toc.contains(ae)),
+          tocRole: toc ? toc.getAttribute('role') : null, tocAriaModal: toc ? toc.getAttribute('aria-modal') : null,
+          titles: rows.map((r) => r.textContent),
+          scrollY: Math.round(scrollY), url: location.pathname.split('/').pop(), sections: Array.from(document.querySelectorAll('[data-chapter]')).map((a) => a.dataset.chapter),
+          percent: (document.querySelector('.topbar-percent') || {}).textContent, title: (document.querySelector('.topbar-title') || {}).textContent,
+          flowBack: (document.querySelector('.flow-back') || {}).textContent, flowEnd: fe && fe.textContent,
+          h1Tops: Array.from(document.querySelectorAll('.chapter h1')).map((h) => h.textContent + '@' + Math.round(h.getBoundingClientRect().top)),
+        });

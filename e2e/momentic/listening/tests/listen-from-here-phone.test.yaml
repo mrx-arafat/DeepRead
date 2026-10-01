@@ -1,0 +1,67 @@
+fileType: momentic/test/v2
+id: listening-from-here-phone
+description: Journey 3 on a phone - Listen from here in the word card and the headphones button in the selection bar, phone 390x844 (stubbed speech)
+viewport:
+  width: 390
+  height: 844
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 700; return 'slow';
+  - click:
+      coords: 130, 591
+  - checkElementVisible:
+      css: '.word-popover'
+      timeout: 5000
+  - wait: 1200
+  - javascript:
+      environment: browser
+      saveAs: PHONE_WORD_CARD
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const r = document.querySelector('.word-popover').getBoundingClientRect();
+        need(r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight, 'word card must fit the phone screen');
+        return JSON.stringify({ rect: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)] });
+  - assert: The word card shows the word any, its Bangla meaning, a Meaning line, an Example line and a Listen from here button
+  - click:
+      css: '.word-popover .quiet-button'
+  - wait: 1000
+  - javascript:
+      environment: browser
+      saveAs: PHONE_FROM_WORD
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const h = (n) => { const hl = CSS.highlights.get(n); return hl ? [...hl].map((r) => r.toString()).join('|') : null; };
+        need(h('dr-sentence').startsWith('Is there any knowledge'), 'should start at the sentence holding the tapped word, got ' + h('dr-sentence'));
+        return 'ok';
+  - click:
+      css: '.listen-bar button[aria-label="Stop listening"]'
+  - wait: 300
+  - mouseDrag:
+      coords: 24, 720
+      delta: 250, 0
+      steps: 12
+  - checkElementVisible:
+      css: '.selection-bar'
+      timeout: 5000
+  - javascript:
+      environment: browser
+      saveAs: PHONE_SELBAR
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const r = document.querySelector('.selection-bar').getBoundingClientRect();
+        need(r.left >= 0 && r.right <= innerWidth, 'selection bar must fit the phone width');
+        return JSON.stringify({ rect: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)] });
+  - click:
+      css: '.selection-bar button[aria-label="Listen from here"]'
+  - wait: 1000
+  - javascript:
+      environment: browser
+      saveAs: PHONE_FROM_SELECTION
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const h = (n) => { const hl = CSS.highlights.get(n); return hl ? [...hl].map((r) => r.toString()).join('|') : null; };
+        need(h('dr-sentence').startsWith('This question'), 'should start at the sentence holding the selection, got ' + h('dr-sentence'));
+        return 'ok';

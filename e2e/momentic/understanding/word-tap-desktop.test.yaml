@@ -1,0 +1,121 @@
+fileType: momentic/test/v2
+id: dr-und-word-tap-desktop
+description: Journey 2 at desktop 1440. Tap a hard word in Chapter I and judge the word card, how fast it fills in, the speaker button, every way of closing it, and tapping a second word while it is open.
+viewport: "1440, 900"
+steps:
+  - module:
+      path: ./modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+  # Time the card from the moment the reader lets go of the mouse.
+  - javascript:
+      environment: browser
+      code: |-
+        window.__drTimes = {};
+        document.addEventListener("mouseup", () => {
+          const t0 = performance.now();
+          window.__drTimes = { t0 };
+          const mark = (key) => {
+            if (!(key in window.__drTimes)) window.__drTimes[key] = Math.round(performance.now() - t0);
+          };
+          const observer = new MutationObserver(() => {
+            const pop = document.querySelector(".word-popover");
+            if (!pop) return;
+            mark("card");
+            if (pop.querySelector(".word-native")?.textContent.trim()) mark("native");
+            if (pop.querySelector(".word-lines dd")?.textContent.trim()) mark("meaning");
+            if (pop.querySelectorAll(".word-lines dd")[1]?.textContent.trim()) mark("example");
+          });
+          observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+          setTimeout(() => observer.disconnect(), 60000);
+        }, { capture: true, once: true });
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+        PHRASE:
+          string: scrutiny
+  - click:
+      x: "{{ env.TEXT_AT.cx }}"
+      y: "{{ env.TEXT_AT.cy }}"
+  - checkElementVisible:
+      css: .word-popover
+      timeout: 5000
+  - assertVisually:
+      that: A small word card has opened right next to the tapped word "scrutiny". The word is marked with a yellow highlight in the paragraph, and the card shows "scrutiny" as its title
+      timeout: 10000
+  - module: ./modules/read-word-card.module.yaml
+  - javascript:
+      environment: browser
+      saveAs: WORD_TIMES
+      code: return window.__drTimes
+  - assert:
+      that: The word card shows a meaning written in Bangla script, a line labelled Meaning with a short simple English definition, and a line labelled Example with an everyday example sentence
+      timeout: 15000
+  # The speaker button says the word aloud.
+  - javascript:
+      environment: browser
+      code: |-
+        window.__drSpoken = [];
+        const original = speechSynthesis.speak.bind(speechSynthesis);
+        speechSynthesis.speak = (utterance) => {
+          window.__drSpoken.push(utterance.text);
+          original(utterance);
+        };
+  - click:
+      css: .word-popover button[aria-label="Say scrutiny"]
+  - javascript:
+      environment: browser
+      code: |-
+        if (!window.__drSpoken.includes("scrutiny")) throw new Error(`speaker did not say the word: ${JSON.stringify(window.__drSpoken)}`);
+  # Close with X.
+  - click:
+      css: .word-popover button[aria-label="Close"]
+  - checkElementDoesNotExist:
+      css: .word-popover
+  # Close with Escape.
+  - click:
+      x: "{{ env.TEXT_AT.cx }}"
+      y: "{{ env.TEXT_AT.cy }}"
+  - checkElementVisible:
+      css: .word-popover .word-native:not(:has(.skeleton))
+      timeout: 30000
+  - press: Escape
+  - checkElementDoesNotExist:
+      css: .word-popover
+  # A second word while the first card is open: the card moves to the new word.
+  - click:
+      x: "{{ env.TEXT_AT.cx }}"
+      y: "{{ env.TEXT_AT.cy }}"
+  - checkElementVisible:
+      css: .word-popover
+      timeout: 5000
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+        PHRASE:
+          string: contradictions
+  - click:
+      x: "{{ env.TEXT_AT.cx }}"
+      y: "{{ env.TEXT_AT.cy }}"
+  - checkElementVisible:
+      css: .word-popover[aria-label="Meaning of contradictions"]
+      timeout: 5000
+  - module: ./modules/read-word-card.module.yaml
+  - javascript:
+      environment: browser
+      code: |-
+        if (document.querySelectorAll(".word-popover").length !== 1) throw new Error("more than one word card is open");
+  - assertVisually:
+      that: Only one word card is open, for the word "contradictions", and only that word is highlighted in yellow in the text
+      timeout: 10000
+  # Clicking away from the card, on the empty page beside the text, should close it.
+  - click:
+      x: 1150
+      y: "{{ env.TEXT_AT.cy }}"
+  - checkElementDoesNotExist:
+      css: .word-popover

@@ -1,0 +1,32 @@
+fileType: momentic/test/v2
+id: listening-bug-say-word-resume
+description: Expected to fail until fixed - after the word card's Say button speaks a word during read-aloud, reading aloud must carry on. Real speech, desktop 1440, makes sound for about 15 seconds.
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/spy-speech.module.yaml
+  - click:
+      css: '.topbar-tools button[aria-pressed]'
+  - wait: 1500
+  - click:
+      coords: 370, 622
+  - checkElementVisible:
+      css: '.word-popover'
+      timeout: 5000
+  - click:
+      css: '.word-popover button[aria-label^="Say "]'
+  - wait: 10000
+  - javascript:
+      environment: browser
+      saveAs: AFTER_SAY_WORD
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const log = window.__spy.log;
+        const bar = document.querySelector('.listen-bar');
+        const info = JSON.stringify({ utterances: log.map((e) => [e.text.slice(0, 18), e.ended, e.error]), play: bar && bar.querySelector('.listen-play').getAttribute('aria-label'), speaking: speechSynthesis.speaking });
+        need(log.length >= 3, 'reading aloud should resume after the word was spoken, but nothing was spoken after it. ' + info);
+        return info;
+  - click:
+      css: '.listen-bar button[aria-label="Stop listening"]'

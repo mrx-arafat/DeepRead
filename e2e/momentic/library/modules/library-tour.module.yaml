@@ -1,0 +1,118 @@
+fileType: momentic/module/v2
+id: deepread-library-tour
+name: library-tour
+description: One pass through every visible state of the library page (empty, error, list, edit form, long title, remove confirm, drag highlight) in the given theme (light or dark), judging layout and recording WCAG contrast ratios per state in env.T_*. The viewport comes from the calling test. The file paths are relative to the repo root.
+parameters:
+  - name: THEME
+steps:
+  - localStorage:
+      key: deepread.prefs
+      value: '{"theme":"{{ env.THEME }}"}'
+  - refresh
+  - javascript:
+      environment: browser
+      code: |-
+        const parse = (c) => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p[3] ?? 1 }; };
+        const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+        const lum = (c) => 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+        const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100; };
+        const bgOf = (el) => { for (let e = el; e; e = e.parentElement) { const c = parse(getComputedStyle(e).backgroundColor); if (c && c.a > 0.99) return c; } return parse(getComputedStyle(document.body).backgroundColor); };
+        window.__measure = () => {
+          const out = { theme: document.documentElement.dataset.theme, viewport: `${innerWidth}x${innerHeight}`, text: {}, borders: {}, sizes: {} };
+          const text = (name, sel) => { const el = document.querySelector(sel); if (!el) return; out.text[name] = ratio(parse(getComputedStyle(el).color), bgOf(el)); };
+          const border = (name, sel) => { const el = document.querySelector(sel); if (!el) return; const b = parse(getComputedStyle(el).borderTopColor); if (b) out.borders[name] = ratio(b, bgOf(el.parentElement || el)); };
+          const size = (name, sel) => { const el = document.querySelector(sel); if (!el) return; const r = el.getBoundingClientRect(); out.sizes[name] = `${Math.round(r.width)}x${Math.round(r.height)}`; };
+          text("intro", ".library-head p"); text("dropHint", ".drop-hint"); text("addLabel", ".drop .button"); text("sectionHeading", ".library-section");
+          text("bookTitle", ".shelf-title"); text("bookMeta", ".shelf-meta"); text("emptyState", ".library-empty"); text("error", ".inline-error");
+          text("editLabel", ".shelf-field label"); text("cancelLabel", ".shelf-edit-actions .quiet-button"); text("keepLink", ".shelf-confirm .link-button:not(.danger)");
+          text("removeLink", ".shelf-confirm .link-button.danger"); text("rowIcon", ".icon-button");
+          border("dropBox", ".drop"); border("textField", ".shelf-field input"); border("cancelButton", ".shelf-edit-actions .quiet-button");
+          size("addButton", ".drop .button"); size("rowIcon", ".icon-button"); size("removeLink", ".shelf-confirm .link-button.danger"); size("keepLink", ".shelf-confirm .link-button:not(.danger)"); size("rowLink", ".shelf-link");
+          out.overflowX = document.documentElement.scrollWidth - innerWidth;
+          return out;
+        };
+        return document.documentElement.dataset.theme;
+      saveAs: T_THEME
+  - assertVisually: The library page has a bold DeepRead title, a short grey intro, a dashed drop box with a blue Add a book (PDF) button and the hint or drop a PDF here, and a small No books yet sentence. Text is readable against the background, spacing is even and nothing is cut off
+  - javascript:
+      environment: browser
+      code: return window.__measure();
+      saveAs: T_EMPTY
+  - fileUpload: data/e2e-library/notes.txt
+  - click:
+      on: Add a book (PDF) button
+      retries: 2
+  - checkPageContains: That file is not a PDF
+  - assertVisually: A readable red error sentence sits under the drop box, the layout has not jumped, and the No books yet sentence is still below it
+  - javascript:
+      environment: browser
+      code: return window.__measure();
+      saveAs: T_ERROR
+  - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
+  - click:
+      on: Add a book (PDF) button
+      retries: 2
+  - waitForUrl: /book/
+  - checkPageContains: Front Matter
+  - click: Back to your books
+  - checkPageContains: Your books
+  - assertVisually: Under the Your books heading there is one book row. The title is in a serif face, the meta line is smaller grey text, and the pencil and bin icons are aligned at the right. Contrast is comfortable and nothing overlaps
+  - javascript:
+      environment: browser
+      code: return window.__measure();
+      saveAs: T_LIST
+  - click: Edit The Problems of Philosophy
+  - checkElementFocused: Title input
+  - assertVisually: The row has become a form with Title and Author fields, a filled Save button and a Cancel button. The field borders, labels and buttons are all clearly visible against the background
+  - javascript:
+      environment: browser
+      code: return window.__measure();
+      saveAs: T_EDIT
+  - fill:
+      text: "The Problems of Philosophy - A Complete Introduction to Knowledge, Matter, Universals and the Value of Philosophy (Illustrated Annotated Edition)"
+      into: Title input
+  - fill:
+      text: "Bertrand Arthur William Russell, Third Earl Russell, with a foreword by the editors of the Home University Library"
+      into: Author input
+  - click: Save button
+  - checkPageContains: Illustrated Annotated Edition
+  - assertVisually: The book row shows a very long title wrapped over several lines and a long author line, with the pencil and bin icons still inside the page at the right. Nothing is cut off, overlaps, or runs past the screen edge
+  - javascript:
+      environment: browser
+      code: return window.__measure();
+      saveAs: T_LONG
+  - click: the bin (remove) icon button on the book row
+  - checkPageContains: Keep
+  - assertVisually: The row shows the red word Remove and the blue word Keep at the right of the long title. They are clearly separate, readable, and inside the screen
+  - javascript:
+      environment: browser
+      code: return window.__measure();
+      saveAs: T_CONFIRM
+  - click: Keep
+  - javascript:
+      environment: browser
+      saveAs: T_DRAG
+      code: |-
+        const file = new File([new Blob(["%PDF-1.4"])], "x.pdf", { type: "application/pdf" });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        document.querySelector(".drop").dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }));
+        await new Promise((r) => setTimeout(r, 200));
+        return { dragging: document.querySelector(".drop").dataset.dragging ?? null, measure: window.__measure() };
+  - assertVisually: The drop box is highlighted with a solid blue border and a tinted background, and its text and button are still easy to read
+  - javascript:
+      code: |-
+        const states = { empty: env.T_EMPTY, error: env.T_ERROR, list: env.T_LIST, edit: env.T_EDIT, long: env.T_LONG, confirm: env.T_CONFIRM, drag: env.T_DRAG.measure };
+        const phone = parseInt(env.T_EMPTY.viewport, 10) < 600;
+        const minTarget = phone ? 44 : 24;
+        const problems = new Set();
+        for (const [state, m] of Object.entries(states)) {
+          for (const [k, v] of Object.entries(m.text)) if (v < 4.5) problems.add(`text "${k}" has contrast ${v}:1, needs 4.5:1 (${state})`);
+          for (const [k, v] of Object.entries(m.borders)) if (v < 3) problems.add(`border of "${k}" has contrast ${v}:1, needs 3:1 (${state})`);
+          if (m.overflowX > 0) problems.add(`page scrolls sideways by ${m.overflowX}px (${state})`);
+          for (const [k, v] of Object.entries(m.sizes)) {
+            const [w, h] = v.split("x").map(Number);
+            if (["rowIcon", "removeLink", "keepLink"].includes(k) && Math.min(w, h) < minTarget) problems.add(`"${k}" target is ${v}px, needs ${minTarget}px (${state})`);
+          }
+        }
+        if (problems.size) throw new Error(`Polish checks failed in the ${env.THEME} theme at ${env.T_EMPTY.viewport}: ` + [...problems].join("; "));

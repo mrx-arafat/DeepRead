@@ -1,0 +1,105 @@
+fileType: momentic/test/v2
+id: dr-und-word-terms-desktop
+description: Journey 2 at desktop 1440, hard philosophy terms. Tap "induction", "a priori" and "sense-data" the way a reader would and check the card explains the whole term.
+viewport: "1440, 900"
+steps:
+  - module:
+      path: ./modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c10
+  # induction: one plain word.
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c10
+        PHRASE:
+          string: induction
+  - click:
+      x: "{{ env.TEXT_AT.cx }}"
+      y: "{{ env.TEXT_AT.cy }}"
+  - checkElementVisible:
+      css: .word-popover[aria-label="Meaning of induction"]
+      timeout: 5000
+  - module: ./modules/read-word-card.module.yaml
+  - javascript:
+      saveAs: INDUCTION_CARD
+      code: return env.WORD_CARD
+  - assert:
+      that: The word card for "induction" shows a Bangla meaning, a simple English meaning about reaching a general rule from particular cases, and an example sentence
+      timeout: 15000
+  - press: Escape
+  # a priori: a reader taps the strange-looking word "priori".
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c10
+        PHRASE:
+          string: priori
+  - click:
+      x: "{{ env.TEXT_AT.cx }}"
+      y: "{{ env.TEXT_AT.cy }}"
+  - checkElementVisible:
+      css: .word-popover
+      timeout: 5000
+  - module: ./modules/read-word-card.module.yaml
+  - javascript:
+      saveAs: PRIORI_CARD
+      code: return env.WORD_CARD
+  - press: Escape
+  # A reader who selects the two words "a priori" gets the passage toolbar, not a word card.
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c10
+        PHRASE:
+          string: a priori
+  - dragAndDrop:
+      fromX: "{{ env.TEXT_AT.sx }}"
+      fromY: "{{ env.TEXT_AT.sy }}"
+      toX: "{{ env.TEXT_AT.ex }}"
+      toY: "{{ env.TEXT_AT.ey }}"
+      steps: 8
+  - javascript:
+      environment: browser
+      saveAs: A_PRIORI_SELECTED
+      code: |-
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return {
+          selected: window.getSelection()?.toString() ?? null,
+          wordCard: Boolean(document.querySelector(".word-popover")),
+          passageToolbar: Boolean(document.querySelector(".selection-bar")),
+        };
+  - press: Escape
+  # sense-data: a reader taps the middle of the hyphenated term.
+  - module:
+      path: ./modules/go-to-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+        PHRASE:
+          string: "'sense-data'"
+  - click:
+      x: "{{ env.TEXT_AT.cx }}"
+      y: "{{ env.TEXT_AT.cy }}"
+  - checkElementVisible:
+      css: .word-popover
+      timeout: 5000
+  - module: ./modules/read-word-card.module.yaml
+  - javascript:
+      saveAs: SENSE_DATA_CARD
+      code: return env.WORD_CARD
+  - assertVisually:
+      that: The word card is titled "sense-data" and the whole term sense-data is highlighted in the paragraph
+      timeout: 10000
+  - javascript:
+      code: |-
+        if (env.PRIORI_CARD.title !== "a priori") throw new Error(`tapping "priori" looked up "${env.PRIORI_CARD.title}", not the term "a priori"`);

@@ -1,0 +1,42 @@
+fileType: momentic/module/v2
+id: dr-und-m-measure-notes
+name: measure-notes
+description: Save where every explanation card sits compared with its own paragraph (NOTES_LAYOUT)
+steps:
+  - javascript:
+      environment: browser
+      saveAs: NOTES_LAYOUT
+      code: |-
+        const notes = [...document.querySelectorAll(".note")].map((note) => {
+          const block = note.closest(".row").querySelector("[data-block]");
+          const n = note.getBoundingClientRect();
+          const b = block.getBoundingClientRect();
+          return {
+            block: block.dataset.block,
+            label: note.querySelector(".note-label")?.textContent,
+            noteTop: Math.round(n.top + scrollY),
+            noteBottom: Math.round(n.bottom + scrollY),
+            paragraphTop: Math.round(b.top + scrollY),
+            paragraphBottom: Math.round(b.bottom + scrollY),
+            // How far below the top of its own paragraph the card starts.
+            drift: Math.round(n.top - b.top),
+            startsBelowItsParagraph: n.top > b.bottom,
+          };
+        });
+        const overlaps = [];
+        for (let i = 0; i < notes.length; i += 1) {
+          for (let j = i + 1; j < notes.length; j += 1) {
+            const a = notes[i];
+            const c = notes[j];
+            if (a.noteTop < c.noteBottom && c.noteTop < a.noteBottom) overlaps.push([a.block, c.block]);
+          }
+        }
+        let saved = null;
+        try {
+          saved = Object.entries(localStorage)
+            .filter(([key]) => key.startsWith("deepread.notes."))
+            .map(([key, value]) => ({ key, count: JSON.parse(value).length }));
+        } catch {
+          saved = "unreadable";
+        }
+        return { notes, overlaps, saved };

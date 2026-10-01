@@ -1,0 +1,34 @@
+fileType: momentic/test/v2
+id: dr-read-back-after-jump
+description: "Journey 8 at desktop 1440: read part of a chapter, peek at a later chapter through the chapter list, press the browser Back button, and check the reader is back where they were reading."
+viewport: "1440, 900"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - click:
+      css: button[aria-label="Chapters"]
+  - click:
+      css: a.toc-link[href$="/c7"]
+  - waitForUrl:
+      substring: /c7
+      timeout: 10000
+  - wait: 800
+  - scrollDown: 2500
+  - wait: 2500
+  - module: ./modules/spot.module.yaml
+  - javascript: setVariable('SPOT_READING', env.SPOT)
+  - click:
+      coords: "76, 26"
+  - click:
+      css: a.toc-link[href$="/c10"]
+  - waitForUrl:
+      substring: /c10
+      timeout: 10000
+  - wait: 800
+  - scrollDown: 700
+  - wait: 2500
+  - goBack
+  - wait: 1800
+  - module: ./modules/spot.module.yaml
+  - javascript: |-
+      const a = JSON.parse(env.SPOT_READING), b = JSON.parse(env.SPOT);
+      assert(a.block === b.block, `after peeking at another chapter and pressing Back the reader is at ${b.block || b.url} ("${b.snippet}") but was reading ${a.block} ("${a.snippet}")`)

@@ -1,0 +1,72 @@
+fileType: momentic/test/v2
+id: library-keyboard-flow
+description: "A keyboard-only reader tabs through the library. Records the order of focus stops and checks every stop shows a visible focus ring. Run from the repo root."
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - module: ./modules/add-fixture-book.module.yaml
+  - click: Back to your books
+  - checkPageContains: Your books
+  - javascript:
+      environment: browser
+      code: |-
+        document.activeElement?.blur();
+        window.scrollTo(0, 0);
+        return document.activeElement.tagName;
+  - press: Tab
+  - javascript:
+      environment: browser
+      saveAs: STOP_1
+      code: |-
+        const e = document.activeElement; const cs = getComputedStyle(e);
+        return { name: e.getAttribute("aria-label") || e.innerText.split("\n")[0], outline: cs.outlineStyle + " " + cs.outlineWidth + " " + cs.outlineColor };
+  - press: Tab
+  - javascript:
+      environment: browser
+      saveAs: STOP_2
+      code: |-
+        const e = document.activeElement; const cs = getComputedStyle(e);
+        return { name: e.getAttribute("aria-label") || e.innerText.split("\n")[0], tag: e.tagName, outline: cs.outlineStyle + " " + cs.outlineWidth + " " + cs.outlineColor };
+  - assertVisually: The book title link in the Your books list shows a clearly visible keyboard focus indicator (outline or ring)
+  - press: Tab
+  - javascript:
+      environment: browser
+      saveAs: STOP_3
+      code: |-
+        const e = document.activeElement; const cs = getComputedStyle(e);
+        return { name: e.getAttribute("aria-label") || e.innerText.split("\n")[0], outline: cs.outlineStyle + " " + cs.outlineWidth + " " + cs.outlineColor };
+  - assertVisually: The pencil (edit) icon button on the book row shows a clearly visible keyboard focus indicator
+  - press: Tab
+  - javascript:
+      environment: browser
+      saveAs: STOP_4
+      code: |-
+        const e = document.activeElement; const cs = getComputedStyle(e);
+        return { name: e.getAttribute("aria-label") || e.innerText.split("\n")[0], outline: cs.outlineStyle + " " + cs.outlineWidth + " " + cs.outlineColor };
+  - assertVisually: The bin (remove) icon button on the book row shows a clearly visible keyboard focus indicator
+  - press: Shift+Tab
+  - press: Enter
+  - checkElementFocused: Title input
+  - press: Escape
+  - javascript:
+      environment: browser
+      saveAs: AFTER_ESCAPE
+      code: |-
+        return { focus: document.activeElement.getAttribute("aria-label"), formOpen: !!document.querySelector("form.shelf-edit") };
+  - press: Tab
+  - press: Enter
+  - checkPageContains: Keep
+  - javascript:
+      environment: browser
+      saveAs: CONFIRM_FOCUS
+      code: |-
+        return { focus: document.activeElement.innerText };
+  - press: Enter
+  - checkPageContains: The Problems of Philosophy
+  - javascript:
+      environment: browser
+      saveAs: AFTER_KEEP
+      code: |-
+        return { focus: document.activeElement.getAttribute("aria-label"), confirmShown: !!document.querySelector(".shelf-confirm") };

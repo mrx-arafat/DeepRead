@@ -1,0 +1,47 @@
+fileType: momentic/test/v2
+id: library-edit-book-save
+description: A reader opens the edit form on a library row, checks focus and field order, changes the title and adds the missing author, saves, and sees the new title in the library and in the reader top bar. Run from the repo root.
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - module: ./modules/add-fixture-book.module.yaml
+  - click: Back to your books
+  - checkPageContains: Your books
+  - click: Edit The Problems of Philosophy
+  - checkElementFocused: Title input
+  - assertVisually: The row has turned into a small form with a Title field holding The Problems of Philosophy, an empty Author field, a blue Save button and a Cancel button. Labels sit above the fields, spacing is even and nothing overflows
+  - javascript:
+      code: |-
+        const f = document.querySelector("form.shelf-edit");
+        return { fields: [...f.querySelectorAll("input")].map((i) => ({ label: i.labels?.[0]?.innerText, value: i.value, required: i.required })), buttons: [...f.querySelectorAll("button")].map((b) => b.innerText), focus: document.activeElement.labels?.[0]?.innerText };
+      environment: browser
+      saveAs: EDIT_FORM
+  - press: Tab
+  - javascript:
+      code: |-
+        return { focusAfterTab: document.activeElement.labels?.[0]?.innerText || document.activeElement.innerText };
+      environment: browser
+      saveAs: TAB_1
+  - fill:
+      text: Philosophy for Beginners
+      into: Title input
+  - fill:
+      text: Bertrand Russell
+      into: Author input
+  - click: Save button
+  - checkPageContains: Bertrand Russell
+  - javascript:
+      code: |-
+        const row = document.querySelector(".shelf-item");
+        return { rowText: row.innerText, focus: document.activeElement.getAttribute("aria-label") || document.activeElement.tagName };
+      environment: browser
+      saveAs: AFTER_SAVE
+  - assertVisually: The library row now reads Philosophy for Beginners with the line Bertrand Russell, 19 chapters, about 4 h of reading underneath, and the edit and bin icons are back at the right
+  - click: Philosophy for Beginners book title in the list
+  - waitForUrl: /book/
+  - checkPageContains: Philosophy for Beginners
+  - assertVisually: The reader top bar names the book Philosophy for Beginners followed by the chapter name
+  - refresh
+  - checkPageContains: Philosophy for Beginners

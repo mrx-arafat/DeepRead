@@ -1,0 +1,39 @@
+fileType: momentic/test/v2
+id: library-server-unreachable
+description: "The library when the DeepRead server answers with an error, and when the reader goes offline while the page is open. Checks that the messages are plain words and that Try again works. Run from the repo root."
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - mock:
+      substring: /api/books
+      method: get
+      key: BOOKS_DOWN
+      responseGenerator: |-
+        return new Response("<html>Bad gateway</html>", { status: 502, headers: { "content-type": "text/html" } });
+  - refresh
+  - checkPageContains: Try again
+  - javascript:
+      environment: browser
+      saveAs: LOAD_ERROR
+      code: |-
+        return { alert: document.querySelector("[role=alert]")?.innerText, hasEmptyState: document.body.innerText.includes("No books yet") };
+  - assertVisually: The library shows a red error message and a Try again button, and the page does not claim there are no books
+  - removeRouteMock: BOOKS_DOWN
+  - click: Try again button
+  - checkPageContains: No books yet
+  - offline
+  - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
+  - click:
+      on: Add a book (PDF) button
+      retries: 2
+  - javascript:
+      environment: browser
+      saveAs: OFFLINE_UPLOAD
+      code: |-
+        await new Promise((r) => setTimeout(r, 800));
+        return { alert: document.querySelector("[role=alert]")?.innerText, busy: !!document.querySelector(".drop-busy") };
+  - online
+  - javascript:
+      code: |-
+        if (/failed to fetch/i.test(env.OFFLINE_UPLOAD.alert || "")) throw new Error(`The reader sees the browser's raw network error "${env.OFFLINE_UPLOAD.alert}" instead of a plain sentence saying the book could not be added because DeepRead cannot be reached`);

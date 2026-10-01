@@ -1,0 +1,30 @@
+fileType: momentic/test/v2
+id: listening-bug-play-offscreen
+description: Expected to fail until fixed - pressing Play while the paused sentence is scrolled out of view must bring it back into view, desktop 1440 (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 250; return 'medium words';
+  - click:
+      css: '.topbar-tools button[aria-pressed]'
+  - wait: 800
+  - click:
+      css: '.listen-bar button[aria-label="Pause"]'
+  - scrollDown: 2500
+  - wait: 500
+  - click:
+      css: '.listen-bar button[aria-label="Play"]'
+  - wait: 1200
+  - javascript:
+      environment: browser
+      saveAs: SENTENCE_VISIBLE
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const r = [...CSS.highlights.get('dr-sentence')][0].getBoundingClientRect();
+        need(r.bottom > 52 && r.top < innerHeight - 90, 'Play is speaking a sentence that is not on screen: top=' + Math.round(r.top) + ' bottom=' + Math.round(r.bottom));
+        return 'ok';

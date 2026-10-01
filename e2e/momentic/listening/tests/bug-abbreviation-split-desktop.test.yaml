@@ -1,0 +1,28 @@
+fileType: momentic/test/v2
+id: listening-bug-abbreviation-split
+description: Expected to fail until fixed - initials such as G. E. Moore must not be read and highlighted as separate sentences, desktop 1440 (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module:
+      path: ../modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER:
+          string: c2
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 20; return 'fast';
+  - click:
+      css: '.topbar-tools button[aria-pressed]'
+  - wait: 5000
+  - javascript:
+      environment: browser
+      saveAs: SPOKEN_SENTENCES
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const texts = window.__stub.spoken.map((s) => s.text.trim());
+        const info = JSON.stringify(texts.slice(0, 8));
+        need(!texts.some((t) => /^[A-Z]\.$/.test(t)), 'a lone initial was read as its own sentence: ' + info);
+        return info;

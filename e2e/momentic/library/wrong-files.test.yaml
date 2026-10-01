@@ -1,0 +1,46 @@
+fileType: momentic/test/v2
+id: library-wrong-files
+description: "A reader adds a file that is not a PDF and a scanned (image-only) PDF and reads the error messages. Fixtures live in data/e2e-library: notes.txt is any small text file, broken.pdf is a text file that starts with %PDF-1.4, scanned.pdf is an image-only PDF made by taking a headless Chrome --screenshot of one line of text and printing an HTML page that contains only that image with --print-to-pdf. Run from the repo root."
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - fileUpload: data/e2e-library/notes.txt
+  - click: Add a book (PDF) button
+  - checkPageContains: That file is not a PDF
+  - assertVisually: A red error sentence is shown just under the dashed drop box and the Add a book (PDF) button is still available to try again
+  - javascript:
+      environment: browser
+      saveAs: TXT_ERROR
+      code: |-
+        const e = document.querySelector(".inline-error");
+        return { text: e?.innerText, role: e?.getAttribute("role"), addButtonVisible: !!document.querySelector(".drop .button"), uploadingMessage: !!document.querySelector(".drop-busy") };
+  - module: ./modules/measure-contrast.module.yaml
+  - fileUpload: data/e2e-library/scanned.pdf
+  - click:
+      on: Add a book (PDF) button
+      retries: 2
+  - checkPageContains: scanned
+  - assertVisually: A red error message is shown under the drop box about the PDF being a scan, with the drop box and Add button back in their normal state
+  - javascript:
+      environment: browser
+      saveAs: SCAN_ERROR
+      code: |-
+        const e = document.querySelector(".inline-error");
+        return { text: e?.innerText, count: document.querySelectorAll(".inline-error").length };
+  - fileUpload: data/e2e-library/broken.pdf
+  - click:
+      on: Add a book (PDF) button
+      retries: 2
+  - checkPageContains: Not a readable PDF
+  - javascript:
+      environment: browser
+      saveAs: BROKEN_ERROR
+      code: |-
+        return { text: document.querySelector(".inline-error")?.innerText };
+  - javascript:
+      code: |-
+        const t = env.SCAN_ERROR.text || "";
+        const jargon = ["text layer", "OCR", "characters per page", "0 of 1 pages"].filter((w) => t.includes(w));
+        if (jargon.length) throw new Error(`The scanned-PDF error uses technical wording a reader cannot act on (${jargon.join(", ")}): "${t}"`);

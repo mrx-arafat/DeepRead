@@ -1,0 +1,17 @@
+fileType: momentic/test/v2
+id: dr-read-through-desktop
+description: "Journey 2 at desktop 1440: scroll the whole book from Front Matter to End of the book, probing chapter loading, boundaries and progress at every step."
+viewport: "1440, 900"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - module: ./modules/install-monitor.module.yaml
+  - module: ./modules/metrics.module.yaml
+  - while:
+      maxIterations: 200
+      do:
+        - scrollDown: 1000
+        - module: ./modules/probe.module.yaml
+  - module: ./modules/metrics.module.yaml
+  - assertVisually:
+      that: The very end of the book is on screen, with a quiet "End of the book" line under the last section and no spinner or error
+      timeout: 20000

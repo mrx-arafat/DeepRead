@@ -1,0 +1,24 @@
+fileType: momentic/module/v2
+id: dr-und-m-open-chapter
+name: open-chapter
+description: Open a chapter of the Russell book from the library through the chapter list
+parameters:
+  - name: CHAPTER_ID
+    default:
+      string: c3
+steps:
+  - click:
+      css: a.shelf-link
+  - waitForUrl:
+      substring: /book/
+      timeout: 15000
+  - checkPageContains:
+      text: Before you read
+      timeout: 20000
+  - click:
+      css: button[aria-label="Chapters"]
+  - click:
+      css: nav.toc a[href$="/{{ env.CHAPTER_ID }}"]
+  - checkElementVisible:
+      css: article[data-chapter="{{ env.CHAPTER_ID }}"] h1
+      timeout: 20000

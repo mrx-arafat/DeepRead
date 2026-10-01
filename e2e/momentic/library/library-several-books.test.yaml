@@ -1,0 +1,45 @@
+fileType: momentic/test/v2
+id: library-several-books
+description: "Three books in the library: newest first ordering, row spacing and dividers, and editing the middle row. book-two.pdf and book-three.pdf in data/e2e-library are made with pdfunite from two and three copies of the fixture. Run from the repo root."
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
+  - click: Add a book (PDF) button
+  - waitForUrl: /book/
+  - click: Back to your books
+  - checkPageContains: Your books
+  - fileUpload: data/e2e-library/book-two.pdf
+  - click:
+      on: Add a book (PDF) button
+      retries: 2
+  - waitForUrl: /book/
+  - click: Back to your books
+  - checkPageContains: Your books
+  - fileUpload: data/e2e-library/book-three.pdf
+  - click:
+      on: Add a book (PDF) button
+      retries: 2
+  - waitForUrl: /book/
+  - click: Back to your books
+  - checkPageContains: Your books
+  - javascript:
+      environment: browser
+      saveAs: ROWS
+      code: |-
+        return [...document.querySelectorAll(".shelf-item")].map((r) => r.innerText.replace(/\n/g, " | "));
+  - assertVisually: The Your books list shows three book rows, each with a serif title, a grey meta line, and pencil and bin icons at the right. Rows are evenly spaced with thin dividers between them and nothing overlaps
+  - click: the Edit (pencil) button of the second book row in the list
+  - fill:
+      text: Second Book
+      into: Title input
+  - click: Save button
+  - checkPageContains: Second Book
+  - assertVisually: The second row is now titled Second Book and the other two rows are unchanged, and all three rows keep the same spacing
+  - javascript:
+      environment: browser
+      saveAs: ROWS_AFTER_EDIT
+      code: |-
+        return [...document.querySelectorAll(".shelf-item")].map((r) => r.innerText.replace(/\n/g, " | "));

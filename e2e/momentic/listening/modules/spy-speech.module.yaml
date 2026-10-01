@@ -1,0 +1,26 @@
+fileType: momentic/module/v2
+id: listening-spy-speech
+name: spy-speech
+steps:
+  - javascript:
+      environment: browser
+      saveAs: SPY
+      code: |-
+        if (!window.__spy) {
+          const log = [];
+          window.__spy = { log, cancels: 0 };
+          const synth = window.speechSynthesis;
+          const origSpeak = synth.speak.bind(synth);
+          const origCancel = synth.cancel.bind(synth);
+          synth.speak = (u) => {
+            const e = { t: Date.now(), text: u.text.slice(0, 50), rate: u.rate, voice: u.voice ? u.voice.name : null, lang: u.lang, boundaries: 0, ended: false, error: null, words: [] };
+            log.push(e);
+            const ob = u.onboundary, oe = u.onend, oer = u.onerror;
+            u.onboundary = (ev) => { e.boundaries++; if (e.words.length < 4) e.words.push(u.text.substr(ev.charIndex, ev.charLength || 0)); if (ob) ob(ev); };
+            u.onend = (ev) => { e.ended = true; if (oe) oe(ev); };
+            u.onerror = (ev) => { e.error = ev.error; if (oer) oer(ev); };
+            return origSpeak(u);
+          };
+          synth.cancel = () => { window.__spy.cancels++; return origCancel(); };
+        }
+        return 'spy ready';

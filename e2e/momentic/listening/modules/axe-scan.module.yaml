@@ -1,0 +1,23 @@
+fileType: momentic/module/v2
+id: listening-axe-scan
+name: axe-scan
+steps:
+  - javascript:
+      environment: browser
+      timeout: 60000
+      saveAs: AXE
+      code: |-
+        if (!window.axe) {
+          await new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.10.2/axe.min.js';
+            s.onload = resolve;
+            s.onerror = () => reject(new Error('axe-core did not load from cdnjs'));
+            document.head.appendChild(s);
+          });
+        }
+        const res = await window.axe.run(document, { resultTypes: ['violations'] });
+        const v = res.violations.map((x) => [x.id, x.impact, x.nodes.length, (x.nodes[0].target || []).join(' ').slice(0, 50), (x.nodes[0].any[0] || x.nodes[0].all[0] || x.nodes[0].none[0] || {}).message ? ((x.nodes[0].any[0] || x.nodes[0].all[0] || x.nodes[0].none[0]).message || '').slice(0, 110) : '']);
+        const summary = { theme: document.documentElement.dataset.theme, vw: innerWidth, count: v.length, v };
+        if (v.length) throw new Error('axe violations: ' + JSON.stringify(summary));
+        return JSON.stringify(summary);

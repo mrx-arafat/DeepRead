@@ -1,0 +1,27 @@
+fileType: momentic/test/v2
+id: listening-bug-keyboard-player
+description: Expected to fail until fixed - a keyboard user who starts Listen with Enter must reach the player controls within three Tab presses, desktop 1440 (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 600; return 'slow';
+  - focus:
+      css: '.topbar-tools button[aria-pressed]'
+  - press: Enter
+  - wait: 500
+  - press:
+      key: Tab
+      repeat: 3
+  - javascript:
+      environment: browser
+      saveAs: FOCUS_AFTER_THREE_TABS
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const a = document.activeElement;
+        need(a.closest('.listen-bar'), 'three Tab presses after Listen did not reach the player; focus is on ' + (a.getAttribute('aria-label') || a.textContent.trim().slice(0, 24)));
+        return 'ok';

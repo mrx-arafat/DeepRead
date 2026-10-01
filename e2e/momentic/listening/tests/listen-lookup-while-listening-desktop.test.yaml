@@ -1,0 +1,32 @@
+fileType: momentic/test/v2
+id: listening-lookup-in-playback-desktop
+description: Journeys 2 and 3 - tapping a word while the book is being read aloud; the word card and the two yellow marks, desktop 1440 (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 1100; return 'slow';
+  - click:
+      css: '.topbar-tools button[aria-pressed]'
+  - wait: 1500
+  - click:
+      coords: 370, 622
+  - checkElementVisible:
+      css: '.word-popover'
+      timeout: 5000
+  - wait: 1500
+  - module: ../modules/read-listen-state.module.yaml
+  - javascript:
+      environment: browser
+      saveAs: CARD_VS_SENTENCE
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const s = [...CSS.highlights.get('dr-sentence')][0].getBoundingClientRect();
+        const c = document.querySelector('.word-popover').getBoundingClientRect();
+        const overlap = !(c.right < s.left || c.left > s.right || c.bottom < s.top || c.top > s.bottom);
+        need(!overlap, 'the word card covers the sentence being read aloud. sentence=' + [s.left, s.top, s.right, s.bottom].map(Math.round) + ' card=' + [c.left, c.top, c.right, c.bottom].map(Math.round));
+        return 'ok';

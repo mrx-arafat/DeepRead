@@ -1,0 +1,60 @@
+fileType: momentic/test/v2
+id: dr-read-back-forward-desktop
+description: "Journey 8 at desktop 1440: browser back and forward between the library, the reader, chapter-list jumps and scrolling, plus broken links."
+viewport: "1440, 900"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - wait: 1500
+  - module: ./modules/nav-state.module.yaml
+  - click:
+      css: button[aria-label="Chapters"]
+  - click:
+      css: a.toc-link[href$="/c2"]
+  - wait: 900
+  - module: ./modules/nav-state.module.yaml
+  - click:
+      css: button[aria-label="Chapters"]
+  - click:
+      css: a.toc-link[href$="/c7"]
+  - waitForUrl:
+      substring: /c7
+      timeout: 10000
+  - wait: 800
+  - scrollDown: 2500
+  - wait: 2500
+  - module: ./modules/nav-state.module.yaml
+  - goBack
+  - wait: 1500
+  - module: ./modules/nav-state.module.yaml
+  - assertVisually:
+      that: After pressing the browser Back button the reader is still in the book, on a chapter page, not on a blank page or an error
+      timeout: 20000
+  - goForward
+  - wait: 1800
+  - module: ./modules/nav-state.module.yaml
+  - goBack
+  - wait: 800
+  - goBack
+  - wait: 1000
+  - module: ./modules/nav-state.module.yaml
+  - goBack
+  - wait: 1200
+  - module: ./modules/nav-state.module.yaml
+  - assertVisually:
+      that: The browser Back button has brought the reader back to the library list of books
+      timeout: 20000
+  - goForward
+  - wait: 1800
+  - module: ./modules/nav-state.module.yaml
+  - navigate: /book/{{ env.BOOK_ID }}/c99
+  - wait: 1500
+  - module: ./modules/nav-state.module.yaml
+  - assertVisually:
+      that: The page tells the reader in plain words that the chapter could not be found and offers a way back to the books, without technical jargon
+      timeout: 20000
+  - navigate: /book/not-a-real-book-00000000
+  - wait: 1500
+  - module: ./modules/nav-state.module.yaml
+  - assertVisually:
+      that: The page tells the reader in plain words that the book could not be found and offers a way back to the books, without technical jargon
+      timeout: 20000

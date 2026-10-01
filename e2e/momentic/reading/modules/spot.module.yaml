@@ -1,0 +1,24 @@
+fileType: momentic/module/v2
+id: dr-read-m-spot
+name: Where the reader's eyes are
+steps:
+  - javascript:
+      environment: browser
+      saveAs: SPOT
+      code: |-
+        const col = document.querySelector('.chapter-text');
+        if (!col) return JSON.stringify({ error: 'no chapter text on page', url: location.pathname });
+        const x = col.getBoundingClientRect().left + 24;
+        let block = null;
+        for (const y of [96, 120, 144]) { const hit = document.elementFromPoint(x, y); block = hit && hit.closest('[data-block]'); if (block) break; }
+        const rect = block ? block.getBoundingClientRect() : null;
+        const caret = document.caretPositionFromPoint ? document.caretPositionFromPoint(x + 120, 130) : null;
+        let eyeText = null;
+        if (caret && caret.offsetNode && caret.offsetNode.nodeType === 3) { const t = caret.offsetNode.textContent; eyeText = t.slice(Math.max(0, caret.offset - 25), caret.offset + 25); }
+        return JSON.stringify({
+          block: block && block.dataset.block, snippet: block && block.textContent.slice(0, 70), blockTopPx: rect && Math.round(rect.top), blockHeightPx: rect && Math.round(rect.height),
+          intoBlockPx: rect && Math.max(0, Math.round(96 - rect.top)), eyeText,
+          percent: (document.querySelector('.topbar-percent') || {}).textContent, title: (document.querySelector('.topbar-title') || {}).textContent,
+          url: location.pathname.split('/').pop(), scrollY: Math.round(scrollY), sections: Array.from(document.querySelectorAll('[data-chapter]')).map((a) => a.dataset.chapter),
+          fontPx: getComputedStyle(col).fontSize, theme: document.documentElement.dataset.theme,
+        });

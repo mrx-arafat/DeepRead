@@ -1,0 +1,57 @@
+fileType: momentic/test/v2
+id: library-edit-cancel-escape-empty
+description: Cancel with the button, cancel with Escape, and try to save an empty title. Checks that nothing is saved, where focus returns, and whether the reader is told why an empty title cannot be saved. Run from the repo root.
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - module: ./modules/add-fixture-book.module.yaml
+  - click: Back to your books
+  - checkPageContains: Your books
+  - click: Edit The Problems of Philosophy
+  - checkElementFocused: Title input
+  - type:
+      text: " DRAFT"
+      into: Title input
+  - click: Cancel button
+  - checkPageDoesNotContain: DRAFT
+  - javascript:
+      code: |-
+        return { rowText: document.querySelector(".shelf-item").innerText, focus: document.activeElement.getAttribute("aria-label") || document.activeElement.tagName, formOpen: !!document.querySelector("form.shelf-edit") };
+      environment: browser
+      saveAs: AFTER_CANCEL_BUTTON
+  - click: Edit The Problems of Philosophy
+  - checkElementFocused: Title input
+  - type:
+      text: " DRAFT"
+      into: Title input
+  - press: Escape
+  - checkPageDoesNotContain: DRAFT
+  - javascript:
+      code: |-
+        return { rowText: document.querySelector(".shelf-item").innerText, focus: document.activeElement.getAttribute("aria-label") || document.activeElement.tagName, formOpen: !!document.querySelector("form.shelf-edit") };
+      environment: browser
+      saveAs: AFTER_ESCAPE
+  - click: Edit The Problems of Philosophy
+  - checkElementFocused: Title input
+  - fill:
+      text: ""
+      into: Title input
+  - javascript:
+      code: |-
+        const f = document.querySelector("form.shelf-edit");
+        const save = [...f.querySelectorAll("button")].find((b) => b.innerText.startsWith("Save"));
+        const title = f.querySelector("input");
+        return { saveDisabled: save.disabled, titleValue: title.value, titleRequired: title.required, formText: f.innerText, alerts: [...f.querySelectorAll("[role=alert]")].map((a) => a.innerText), describedBy: title.getAttribute("aria-describedby"), invalid: title.getAttribute("aria-invalid") };
+      environment: browser
+      saveAs: EMPTY_TITLE
+  - assertVisually: The edit form is open with an empty Title field and a greyed out Save button
+  - press: Enter
+  - javascript:
+      code: |-
+        const f = document.querySelector("form.shelf-edit");
+        return { formStillOpen: !!f, alerts: [...document.querySelectorAll("[role=alert]")].map((a) => a.innerText), focus: document.activeElement.labels?.[0]?.innerText };
+      environment: browser
+      saveAs: AFTER_ENTER_EMPTY
+  - assert: The form tells the reader in words why the book cannot be saved yet (for example that the title cannot be empty)

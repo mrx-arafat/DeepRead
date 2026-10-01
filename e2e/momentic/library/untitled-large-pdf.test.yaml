@@ -1,0 +1,32 @@
+fileType: momentic/test/v2
+id: library-untitled-large-pdf
+description: A 636 page PDF with no title in its metadata. Checks the processing feedback on a slower upload and what title the book gets. data/e2e-library/big.pdf is made with pdfunite from twelve copies of the fixture (pdfunite drops the title metadata). Run from the repo root.
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - fileUpload: data/e2e-library/big.pdf
+  - click: Add a book (PDF) button
+  - checkPageContains: and splitting it into chapters
+  - assertVisually: The drop box has been replaced by a sentence saying the book is being read and split into chapters. The sentence names the file big.pdf
+  - waitForUrl:
+      substring: /book/
+      timeout: 90000
+  - javascript:
+      environment: browser
+      saveAs: TITLE_AFTER_UPLOAD
+      code: |-
+        await new Promise((r) => setTimeout(r, 1000));
+        return { topbar: document.querySelector("header")?.innerText.split("\n")[0] };
+  - click: Back to your books
+  - checkPageContains: Your books
+  - javascript:
+      environment: browser
+      saveAs: ROW
+      code: |-
+        return { rowText: document.querySelector(".shelf-item")?.innerText };
+  - assertVisually: The Your books list has one book whose title is a readable name, not a long random-looking id
+  - javascript:
+      code: |-
+        if (/^upload-[0-9a-f-]{20,}/.test(env.ROW.rowText)) throw new Error(`The book was named after an internal temp file: ${env.ROW.rowText.split("\n")[0]}`);

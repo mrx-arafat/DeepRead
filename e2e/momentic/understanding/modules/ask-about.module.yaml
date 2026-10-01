@@ -1,0 +1,75 @@
+fileType: momentic/module/v2
+id: dr-und-m-ask-about
+name: ask-about
+description: Select a phrase of the book with the mouse and press one button of the toolbar that appears (1 Explain, 2 Example, 3 In your language)
+parameters:
+  - name: CHAPTER_ID
+    default:
+      string: c3
+  - name: PHRASE
+  - name: BUTTON
+    default:
+      string: "1"
+steps:
+  - javascript:
+      environment: browser
+      saveAs: TEXT_AT
+      code: |-
+        const phrase = env.PHRASE;
+        // The reader restores its scroll position after a chapter opens; wait for the page to stop moving first.
+        const settle = async () => {
+          let last = window.scrollY;
+          let still = 0;
+          for (let i = 0; i < 60 && still < 6; i += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            still = window.scrollY === last ? still + 1 : 0;
+            last = window.scrollY;
+          }
+        };
+        await settle();
+        const root = document.querySelector(`article[data-chapter="${env.CHAPTER_ID}"]`);
+        if (!root) throw new Error(`chapter ${env.CHAPTER_ID} is not on the page`);
+        for (const block of root.querySelectorAll("[data-block]")) {
+          const node = block.firstChild;
+          const at = node ? node.data.indexOf(phrase) : -1;
+          if (at < 0) continue;
+          const range = document.createRange();
+          range.setStart(node, at);
+          range.setEnd(node, at + phrase.length);
+          range.startContainer.parentElement.scrollIntoView({ block: "center" });
+          const box = range.getBoundingClientRect();
+          // Keep the phrase clear of the sticky top bar and of the screen edges.
+          if (box.top < 120) window.scrollBy(0, box.top - 200);
+          await settle();
+          const rects = [...range.getClientRects()].filter((r) => r.width > 0);
+          const first = rects[0];
+          const last = rects[rects.length - 1];
+          const whole = range.getBoundingClientRect();
+          const round = (n) => Math.round(n);
+          const startX = first.left + 2;
+          const startY = first.top + first.height / 2;
+          const endX = last.right - 1;
+          const endY = last.top + last.height / 2;
+          return {
+            block: block.dataset.block,
+            cx: round(whole.left + whole.width / 2),
+            cy: round(whole.top + whole.height / 2),
+            sx: round(startX),
+            sy: round(startY),
+            ex: round(endX),
+            ey: round(endY),
+            lines: rects.length,
+          };
+        }
+        throw new Error(`phrase not found in ${env.CHAPTER_ID}: ${phrase}`);
+  - dragAndDrop:
+      fromX: "{{ env.TEXT_AT.sx }}"
+      fromY: "{{ env.TEXT_AT.sy }}"
+      toX: "{{ env.TEXT_AT.ex }}"
+      toY: "{{ env.TEXT_AT.ey }}"
+      steps: 12
+  - checkElementVisible:
+      css: .selection-bar
+      timeout: 5000
+  - click:
+      css: .selection-bar button:nth-child({{ env.BUTTON }})

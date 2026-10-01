@@ -1,0 +1,13 @@
+fileType: momentic/module/v2
+id: dr-read-m-probe
+name: Probe the reading flow
+steps:
+  - javascript:
+      environment: browser
+      saveAs: PROBE
+      code: |-
+        const m = window.__mon || { waitFrames: 0, hitBottomFrames: 0, cls: 0 };
+        const secs = Array.from(document.querySelectorAll('[data-chapter]'));
+        const heads = Array.from(document.querySelectorAll('.chapter-head')).map((h) => ({ id: h.parentElement.dataset.chapter, top: Math.round(h.getBoundingClientRect().top) })).filter((h) => h.top > -150 && h.top < innerHeight);
+        const fe = document.querySelector('.flow-end');
+        return JSON.stringify({ y: Math.round(scrollY), h: document.documentElement.scrollHeight, pct: (document.querySelector('.topbar-percent') || {}).textContent, title: (document.querySelector('.topbar-title') || {}).textContent, n: secs.length, last: secs.length ? secs[secs.length - 1].dataset.chapter : null, heads, end: fe && fe.textContent, endTop: fe ? Math.round(fe.getBoundingClientRect().top) : null, waitFrames: m.waitFrames, hitBottom: m.hitBottomFrames, cls: Math.round(m.cls * 1000) / 1000, url: location.pathname.split('/').pop(), t: Math.round(performance.now()) });

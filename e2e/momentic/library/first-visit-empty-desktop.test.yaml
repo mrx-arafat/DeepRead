@@ -1,0 +1,18 @@
+fileType: momentic/test/v2
+id: library-first-visit-desktop
+description: A reader opens DeepRead for the first time with an empty library, on a 1440 wide desktop in the default (light) theme.
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - checkPageContains: No books yet. Add a PDF to start reading.
+  - assert: The page shows the app name DeepRead as a heading, a sentence saying what the app does, an Add a book (PDF) button, and a hint about dropping a PDF
+  - assertVisually: The page has a clear hierarchy - a title, a short intro sentence, a dashed drop area with a blue Add a book (PDF) button, and an empty-state sentence below. Nothing is cut off or overlapping, spacing looks even, and the page does not look empty or unfinished
+  - javascript:
+      code: |-
+        return { title: document.title, h1: document.querySelector("h1")?.textContent, bodyWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth, theme: document.documentElement.dataset.theme };
+      environment: browser
+      saveAs: FIRST_VISIT
+  - press: Tab
+  - assertVisually: One control on the page shows a clearly visible keyboard focus ring (the Add a book (PDF) button)

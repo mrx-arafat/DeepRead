@@ -1,0 +1,34 @@
+fileType: momentic/test/v2
+id: listening-bug-start-eyeline
+description: Expected to fail until fixed - Listen pressed mid-paragraph should start at the sentence being read, not the first sentence of that paragraph above it. Desktop 1440 (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 500; return 'slow';
+  - javascript:
+      environment: browser
+      saveAs: EYE_LINE
+      code: |-
+        window.scrollTo({ top: 1700, behavior: 'instant' });
+        const caret = document.caretRangeFromPoint(212, 110);
+        window.__eye = { block: caret.startContainer.parentElement.dataset.block, offset: caret.startOffset };
+        return JSON.stringify(window.__eye);
+  - wait: 600
+  - click:
+      coords: 1119, 25
+  - wait: 1200
+  - javascript:
+      environment: browser
+      saveAs: STARTED_AT
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const r = [...CSS.highlights.get('dr-sentence')][0];
+        const block = r.startContainer.parentElement.dataset.block;
+        const info = JSON.stringify({ eye: window.__eye, startedBlock: block, sentenceEnd: r.endOffset });
+        need(block === window.__eye.block && r.endOffset > window.__eye.offset, 'listening started above where the reader was reading. ' + info);
+        return info;

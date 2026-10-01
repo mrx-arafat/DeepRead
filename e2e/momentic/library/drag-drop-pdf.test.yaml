@@ -1,0 +1,34 @@
+fileType: momentic/test/v2
+id: library-drag-drop-pdf
+description: Momentic cannot drag a file in from the operating system, so this test simulates a drop with synthetic dragover and drop events on the drop area (a File is built in the page from the fixture served by the dev server). It checks the drop area's highlight while a file is over it and that dropping the PDF adds the book and opens the reader.
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - javascript:
+      environment: browser
+      saveAs: DRAGOVER
+      code: |-
+        const res = await fetch("/e2e/fixtures/problems-of-philosophy.pdf");
+        const blob = await res.blob();
+        const file = new File([blob], "problems-of-philosophy.pdf", { type: "application/pdf" });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        window.__deepreadDt = dt;
+        const drop = document.querySelector(".drop");
+        drop.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: dt }));
+        drop.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }));
+        await new Promise((r) => setTimeout(r, 200));
+        return { fileBytes: blob.size, dragging: drop.dataset.dragging ?? null, hintText: drop.innerText };
+  - assertVisually: The dashed drop box has changed to a solid blue-outlined box with a light blue tint, showing that a file is hovering over it
+  - javascript:
+      environment: browser
+      saveAs: DROP
+      code: |-
+        const drop = document.querySelector(".drop");
+        drop.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: window.__deepreadDt }));
+        return { draggingAfterDrop: drop.dataset.dragging ?? null };
+  - waitForUrl: /book/
+  - checkPageContains: Front Matter
+  - assertVisually: The reader has opened for The Problems of Philosophy

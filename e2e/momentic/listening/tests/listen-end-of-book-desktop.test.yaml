@@ -1,0 +1,34 @@
+fileType: momentic/test/v2
+id: listening-end-of-book-desktop
+description: Journey 4 edge - reading aloud reaches the last sentence of the book, desktop 1440 (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module:
+      path: ../modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER:
+          string: c18
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 8; return 'very fast';
+  - click:
+      coords: 1119, 25
+  - wait: 5000
+  - module: ../modules/read-listen-state.module.yaml
+  - wait: 40000
+  - module: ../modules/read-listen-state.module.yaml
+  - assert: The page says End of the book and the player bar is still showing at the bottom
+  - javascript:
+      environment: browser
+      saveAs: END_STATE
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const end = [...document.querySelectorAll('.flow-end')].pop();
+        const bar = document.querySelector('.listen-bar');
+        need(window.__stub.spoken.length > 150, 'the whole last chapter (about 180 sentences) should have been read, got ' + window.__stub.spoken.length);
+        need(bar && bar.querySelector('.listen-play').getAttribute('aria-label') === 'Play', 'at the end the player is paused with a Play button');
+        need(end && end.textContent.trim() === 'End of the book', 'the page ends with the End of the book line');
+        return JSON.stringify({ flowEnd: end.textContent.trim(), spoken: window.__stub.spoken.length, last: window.__stub.spoken.slice(-1).map((s) => s.text.slice(0, 40)) });

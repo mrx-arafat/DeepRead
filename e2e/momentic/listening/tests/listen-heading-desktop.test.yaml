@@ -1,0 +1,55 @@
+fileType: momentic/test/v2
+id: listening-heading-desktop
+description: Journey 4 - listening reaches headings inside the text (Front Matter chapter), desktop 1440 (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module:
+      path: ../modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER:
+          string: c1
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      saveAs: TRAP
+      code: |-
+        window.__stub.wordMs = 40;
+        window.__seen = [];
+        let last = '';
+        window.__trap = setInterval(() => {
+          const hl = CSS.highlights.get('dr-sentence');
+          const r = hl && [...hl][0];
+          if (!r) return;
+          const el = r.startContainer.parentElement;
+          const text = r.toString().slice(0, 28);
+          if (text === last) return;
+          last = text;
+          const b = r.getBoundingClientRect();
+          window.__seen.push([el.tagName, text, Math.round(b.top), Math.round(scrollY)]);
+          if (el.dataset.block === 'c1-b10') window.__stub.wordMs = 1200;
+          if (el.dataset.block === 'c1-b12') window.__stub.wordMs = 40;
+        }, 60);
+        return 'trap set';
+  - click:
+      coords: 1119, 25
+  - wait: 9000
+  - javascript:
+      environment: browser
+      saveAs: SEEN
+      code: |-
+        const heads = window.__seen.filter((s) => s[0] !== 'P');
+        return JSON.stringify({ total: window.__seen.length, firstThree: window.__seen.slice(0, 3), headings: heads, lastTwo: window.__seen.slice(-2) });
+  - javascript:
+      environment: browser
+      saveAs: HEADING_ASSERT
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const heads = window.__seen.filter((s) => s[0] === 'H2' || s[0] === 'H3');
+        need(heads.some((s) => s[1].startsWith('THE PROBLEMS OF PHILOSOPHY')), 'the h2 heading inside the text should be read and highlighted');
+        const hs = window.__seen.find((s) => s[0] === 'H2');
+        need(hs[2] > 60 && hs[2] < innerHeight - 140, 'the highlighted heading is kept in the comfortable middle of the window, top=' + hs[2]);
+        need(document.querySelector('.listen-bar'), 'player still open');
+        return JSON.stringify(heads);
+  - assert: The heading THE PROBLEMS OF PHILOSOPHY is highlighted green with one word highlighted yellow, and the player bar is showing

@@ -1,0 +1,14 @@
+fileType: momentic/module/v2
+id: dr-und-m-go-to-chapter
+name: go-to-chapter
+description: From inside the reader, open the chapter list and go to one chapter
+parameters:
+  - name: CHAPTER_ID
+steps:
+  - click:
+      css: button[aria-label="Chapters"]
+  - click:
+      css: nav.toc a[href$="/{{ env.CHAPTER_ID }}"]
+  - checkElementVisible:
+      css: article[data-chapter="{{ env.CHAPTER_ID }}"] h1
+      timeout: 20000

@@ -1,0 +1,26 @@
+fileType: momentic/test/v2
+id: dr-read-first-phone-light
+description: Journey 1 at phone 390 wide, light theme.
+viewport: "390, 844"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - assertVisually:
+      that: The reading page shows a top bar, then a chapter heading, then a "Before you read" box with a "Preview this chapter" button, and then the book text, with no overlapping elements
+      timeout: 20000
+  - module: ./modules/metrics.module.yaml
+  - scrollDown: 700
+  - assertVisually:
+      that: The text on screen is book prose or front matter set in a serif typeface with comfortable spacing between paragraphs, and nothing overlaps
+      timeout: 20000
+  - navigate: /book/{{ env.BOOK_ID }}/c3
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - assertVisually:
+      that: A chapter opens with a clear heading, a small line above it, a "Before you read" box and then paragraphs of book text
+      timeout: 20000
+  - scrollDown: 450
+  - module: ./modules/metrics.module.yaml
+  - assertVisually:
+      that: Paragraphs of book text are easy to read, with even line spacing, readable text size, and enough contrast between the text and the background
+      timeout: 20000

@@ -1,0 +1,37 @@
+fileType: momentic/test/v2
+id: listening-contrast-phone
+description: Journey 8 - computed colour contrast of body text, muted text, player bar, word card, selection bar and the highlight colours in both themes, phone 390x844 (stubbed speech)
+viewport:
+  width: 390
+  height: 844
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 900; return 'slow';
+  - click:
+      coords: 297, 26
+  - wait: 700
+  - module: ../modules/contrast-scan.module.yaml
+  - click:
+      css: '.listen-bar button[aria-label="Stop listening"]'
+  - click:
+      coords: 130, 591
+  - checkElementVisible:
+      css: '.word-popover'
+      timeout: 5000
+  - wait: 1500
+  - module: ../modules/contrast-scan.module.yaml
+  - click:
+      coords: 358, 25
+  - wait: 500
+  - module: ../modules/contrast-scan.module.yaml
+  - mouseDrag:
+      coords: 24, 720
+      delta: 250, 0
+      steps: 12
+  - checkElementVisible:
+      css: '.selection-bar'
+      timeout: 5000
+  - module: ../modules/contrast-scan.module.yaml

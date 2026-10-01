@@ -1,0 +1,28 @@
+fileType: momentic/test/v2
+id: listening-bug-keyboard-lookup
+description: Expected to fail until fixed - a keyboard-only reader must be able to reach the book text to look up a word or explain a passage, desktop 1440
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - javascript:
+      environment: browser
+      code: |-
+        window.__focused = [];
+        document.addEventListener('focusin', (e) => window.__focused.push(!!e.target.closest('.chapter-text') ? 'TEXT' : (e.target.getAttribute('aria-label') || e.target.textContent.trim().slice(0, 20))), true);
+        return 'listening for focus';
+  - press:
+      key: Tab
+      repeat: 14
+  - press:
+      key: Shift+ArrowRight
+      repeat: 6
+  - javascript:
+      environment: browser
+      saveAs: KEYBOARD_REACH
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const info = JSON.stringify({ focusOrder: window.__focused, selection: window.getSelection().toString(), selectionBar: !!document.querySelector('.selection-bar') });
+        need(window.__focused.includes('TEXT') || window.getSelection().toString() !== '', 'no way to put keyboard focus or a selection on the book text, so no word card or Explain bar can open. ' + info);
+        return info;

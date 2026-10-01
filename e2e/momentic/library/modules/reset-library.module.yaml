@@ -1,0 +1,13 @@
+fileType: momentic/module/v2
+id: deepread-library-reset
+name: reset-library
+steps:
+  - javascript:
+      code: |-
+        const base = "http://localhost:5181/api/books";
+        const list = await (await fetch(base)).json();
+        for (const book of list) {
+          await fetch(`${base}/${book.id}`, { method: "DELETE" });
+        }
+        const after = await (await fetch(base)).json();
+        if (after.length !== 0) throw new Error(`library not empty: ${after.length}`);

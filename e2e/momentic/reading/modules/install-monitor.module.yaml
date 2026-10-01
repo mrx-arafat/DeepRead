@@ -1,0 +1,19 @@
+fileType: momentic/module/v2
+id: dr-read-m-monitor
+name: Install a frame monitor
+steps:
+  - javascript:
+      environment: browser
+      code: |-
+        window.__mon = { frames: 0, waitFrames: 0, hitBottomFrames: 0, cls: 0 };
+        new PerformanceObserver((list) => { for (const e of list.getEntries()) { if (!e.hadRecentInput) window.__mon.cls += e.value; } }).observe({ type: 'layout-shift', buffered: true });
+        (function loop() {
+          const m = window.__mon; m.frames++;
+          const fe = document.querySelector('.flow-end');
+          if (fe) {
+            if (fe.getBoundingClientRect().top < innerHeight && /Opening the next/.test(fe.textContent)) m.waitFrames++;
+            const atBottom = innerHeight + scrollY >= document.documentElement.scrollHeight - 2;
+            if (atBottom && !/End of the book/.test(fe.textContent)) m.hitBottomFrames++;
+          }
+          requestAnimationFrame(loop);
+        })();

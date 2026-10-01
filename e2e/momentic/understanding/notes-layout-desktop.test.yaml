@@ -1,0 +1,98 @@
+fileType: momentic/test/v2
+id: dr-und-notes-layout-desktop
+description: Journey 4 at desktop 1440. Explain three neighbouring passages one after another, then one in a later chapter; judge how the margin cards stack, remove one, and check that the rest come back after a reload.
+viewport: "1440, 900"
+steps:
+  - module:
+      path: ./modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+  # Three questions in a row about three neighbouring paragraphs, without waiting for each answer.
+  - module:
+      path: ./modules/ask-about.module.yaml
+      inputs:
+        PHRASE:
+          string: The real table, if there is one, is not immediately known to us at all, but must be an inference from what is immediately known.
+  - module:
+      path: ./modules/ask-about.module.yaml
+      inputs:
+        PHRASE:
+          string: We shall give the name 'sensation' to the experience of being immediately aware of these things.
+  - module:
+      path: ./modules/ask-about.module.yaml
+      inputs:
+        PHRASE:
+          string: The real table, if it exists, we will call a 'physical object'.
+  - checkElementVisible:
+      css: .row:has([data-block="c3-b10"]) .note .rich-section:first-child
+      timeout: 120000
+  - checkElementVisible:
+      css: .row:has([data-block="c3-b11"]) .note .rich-section:first-child
+      timeout: 120000
+  - checkElementVisible:
+      css: .row:has([data-block="c3-b12"]) .note .rich-section:first-child
+      timeout: 120000
+  - checkElementVisible:
+      css: .row:has([data-block="c3-b12"]) .note .rich-section[data-kind="deep"]
+      timeout: 120000
+  - wait: 8000
+  - module: ./modules/measure-notes.module.yaml
+  - javascript:
+      saveAs: NOTES_THREE
+      code: return env.NOTES_LAYOUT
+  - hover:
+      css: '[data-block="c3-b11"]'
+  - assertVisually:
+      that: The explanation cards in the right margin are stacked one under another without overlapping each other or the book text
+      timeout: 15000
+  # Remove the middle card; the one below should move up.
+  - click:
+      css: .row:has([data-block="c3-b11"]) .note button[aria-label="Remove note"]
+  - checkElementDoesNotExist:
+      css: .row:has([data-block="c3-b11"]) .note
+  - module: ./modules/measure-notes.module.yaml
+  # A question in a later chapter.
+  - module:
+      path: ./modules/go-to-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c8
+  - module:
+      path: ./modules/ask-about.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c8
+        PHRASE:
+          string: We are all convinced that the sun will rise to-morrow.
+  - checkElementVisible:
+      css: .row:has([data-block="c8-b4"]) .note .rich-section:first-child
+      timeout: 120000
+  # Notes outlive a reload.
+  - refresh
+  - checkElementVisible:
+      css: article[data-chapter="c8"] h1
+      timeout: 20000
+  - checkElementVisible:
+      css: .row:has([data-block="c8-b4"]) .note .rich-section:first-child
+      timeout: 30000
+  - module:
+      path: ./modules/go-to-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+  - checkElementVisible:
+      css: .row:has([data-block="c3-b12"]) .note .rich-section:first-child
+      timeout: 30000
+  - module: ./modules/measure-notes.module.yaml
+  - checkElementExists:
+      css: .row:has([data-block="c3-b10"]) .note
+  - checkElementDoesNotExist:
+      css: .row:has([data-block="c3-b11"]) .note
+  # Last, because it fails today: each card should start level with the paragraph it explains.
+  - javascript:
+      code: |-
+        const late = env.NOTES_THREE.notes.filter((note) => note.drift > 120);
+        if (late.length) {
+          throw new Error(`cards start far below their own paragraph: ${late.map((n) => `${n.block} +${n.drift}px`).join(", ")}`);
+        }

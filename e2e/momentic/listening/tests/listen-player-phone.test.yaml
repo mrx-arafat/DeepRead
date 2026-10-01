@@ -1,0 +1,59 @@
+fileType: momentic/test/v2
+id: listening-player-phone
+description: Journeys 1 and 2 on a phone - Listen from the top bar, player controls and layout, phone 390x844 light theme (stubbed speech)
+viewport:
+  width: 390
+  height: 844
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 500; return 'slow words';
+  - click:
+      css: '.topbar-tools button[aria-pressed]'
+  - wait: 1800
+  - assert: A small player bar with previous, pause, next, speed and stop controls floats near the bottom of the phone screen and the first sentence is highlighted green
+  - javascript:
+      environment: browser
+      saveAs: PHONE_LAYOUT
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const bar = document.querySelector('.listen-bar');
+        const r = bar.getBoundingClientRect();
+        need(r.left >= 0 && r.right <= innerWidth, 'player bar must fit inside the phone width');
+        need(document.documentElement.scrollWidth <= innerWidth, 'no horizontal scrolling');
+        const sr = [...CSS.highlights.get('dr-sentence')][0].getBoundingClientRect();
+        need(sr.bottom < r.top, 'player bar must not cover the sentence being read');
+        return JSON.stringify({ bar: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)], vw: innerWidth });
+  - click:
+      css: '.listen-bar button[aria-label="Pause"]'
+  - click:
+      css: '.listen-bar button[aria-label="Next sentence"]'
+  - wait: 500
+  - javascript:
+      environment: browser
+      saveAs: PHONE_NEXT
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const h = (n) => { const hl = CSS.highlights.get(n); return hl ? [...hl].map((r) => r.toString()).join('|') : null; };
+        need(h('dr-sentence').startsWith('This question'), 'Next moves to the second sentence even while paused, got ' + h('dr-sentence'));
+        need(document.querySelector('.listen-play').getAttribute('aria-label') === 'Play', 'still paused after Next');
+        return 'ok';
+  - click:
+      css: '.listen-bar button[aria-label="Play"]'
+  - select:
+      css: '.listen-bar select'
+      label: 0.8x
+  - wait: 600
+  - javascript:
+      environment: browser
+      saveAs: PHONE_SPEED
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const S = window.__stub;
+        need(Math.abs(S.spoken[S.spoken.length - 1].rate - 0.8) < 0.01, 'slower speed should be used for the next utterance');
+        return 'ok';
+  - click:
+      css: '.listen-bar button[aria-label="Stop listening"]'
+  - assert: The player bar is gone

@@ -1,0 +1,20 @@
+fileType: momentic/test/v2
+id: listening-bug-chapters-focus
+description: Expected to fail until fixed - opening the chapter list with the keyboard must move focus into it, desktop 1440
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - focus:
+      css: 'button[aria-label="Chapters"]'
+  - press: Enter
+  - wait: 500
+  - javascript:
+      environment: browser
+      saveAs: FOCUS_IN_CHAPTER_LIST
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const a = document.activeElement;
+        need(document.querySelector('.toc') && document.querySelector('.toc').contains(a), 'the chapter list opened but keyboard focus stayed on ' + (a.getAttribute('aria-label') || a.textContent.trim().slice(0, 20)));
+        return 'ok';

@@ -1,0 +1,63 @@
+fileType: momentic/test/v2
+id: library-remove-book
+description: Remove a book from the library - open the confirm step, keep the book, then remove it for real and check it stays gone after a reload. Also records where keyboard focus goes. Run from the repo root.
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - module: ./modules/add-fixture-book.module.yaml
+  - click: Back to your books
+  - checkPageContains: Your books
+  - javascript:
+      environment: browser
+      saveAs: BOOK_HREF
+      code: return document.querySelector(".shelf-link").getAttribute("href");
+  - click: Remove The Problems of Philosophy
+  - checkPageContains: Keep
+  - assertVisually: The book row now shows the words Remove (in red) and Keep at the right instead of the icons. The row layout is stable and nothing overflows
+  - javascript:
+      code: |-
+        const row = document.querySelector(".shelf-item");
+        const rect = (e) => { const r = e.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; };
+        return { rowText: row.innerText, focus: document.activeElement.innerText, confirmButtons: [...row.querySelectorAll(".shelf-confirm button")].map((b) => ({ text: b.innerText, ...rect(b) })) };
+      environment: browser
+      saveAs: CONFIRM_STEP
+  - press: Escape
+  - javascript:
+      code: |-
+        return { confirmStillShown: !!document.querySelector(".shelf-confirm"), focus: document.activeElement.innerText };
+      environment: browser
+      saveAs: AFTER_ESCAPE
+  - click: Keep
+  - checkPageContains: The Problems of Philosophy
+  - javascript:
+      code: |-
+        return { rowText: document.querySelector(".shelf-item")?.innerText, focus: document.activeElement.getAttribute("aria-label") || document.activeElement.tagName };
+      environment: browser
+      saveAs: AFTER_KEEP
+  - click: Remove The Problems of Philosophy
+  - click: Remove
+  - checkPageContains: No books yet. Add a PDF to start reading.
+  - javascript:
+      code: |-
+        return { focusTag: document.activeElement.tagName, focusText: document.activeElement.innerText?.slice(0, 40), hasBooks: !!document.querySelector(".shelf-item") };
+      environment: browser
+      saveAs: AFTER_REMOVE
+  - refresh
+  - checkPageContains: No books yet. Add a PDF to start reading.
+  - checkPageDoesNotContain: The Problems of Philosophy
+  - javascript:
+      code: |-
+        const res = await fetch("http://localhost:5181/api/books");
+        return { status: res.status, books: (await res.json()).length };
+      saveAs: API_AFTER_REMOVE
+  - navigate: "{{ env.BOOK_HREF }}"
+  - wait: 1500
+  - assertVisually: The page tells the reader that this book is no longer in the library and offers a clear way back to the library
+  - javascript:
+      code: |-
+        const problems = [];
+        if (env.AFTER_REMOVE.focusTag === "BODY") problems.push("keyboard focus fell to the page body after the book was removed, so a keyboard reader has to Tab from the top again");
+        if (env.AFTER_ESCAPE.confirmStillShown) problems.push("Escape does not dismiss the Remove / Keep question although it closes the edit form");
+        if (problems.length) throw new Error(problems.join("; "));

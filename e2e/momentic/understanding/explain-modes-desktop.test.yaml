@@ -1,0 +1,116 @@
+fileType: momentic/test/v2
+id: dr-und-explain-modes-desktop
+description: Journey 3 at desktop 1440. Select a sentence of Chapter I and use Explain, Example and In Bangla; judge the waiting state, how the answer streams in, and the finished margin card.
+viewport: "1440, 900"
+steps:
+  - module:
+      path: ./modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+  # 1. Explain: the opening question of the chapter.
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+        PHRASE:
+          string: Is there any knowledge in the world which is so certain that no reasonable man could doubt it?
+  - dragAndDrop:
+      fromX: "{{ env.TEXT_AT.sx }}"
+      fromY: "{{ env.TEXT_AT.sy }}"
+      toX: "{{ env.TEXT_AT.ex }}"
+      toY: "{{ env.TEXT_AT.ey }}"
+      steps: 12
+  - checkElementVisible:
+      css: .selection-bar
+      timeout: 5000
+  - assertVisually:
+      that: The selected sentence is highlighted and a small toolbar with the buttons Explain, Example and "In Bangla" sits right next to it without covering the selected words
+      timeout: 10000
+  - module: ./modules/watch-answer.module.yaml
+  - click:
+      css: .selection-bar button:nth-child(1)
+  # A new answer first shows "Reading the passage..." for 6-15 s; a cached one fills in at once.
+  - checkElementVisible:
+      css: .note[aria-label^="Explanation"]
+      timeout: 5000
+  - assertVisually:
+      that: A card labelled "Explanation" has appeared in the right margin level with the selected paragraph, and it quotes the selected sentence
+      timeout: 10000
+  - checkElementVisible:
+      css: .note[aria-label^="Explanation"] .rich
+      timeout: 90000
+  - module: ./modules/read-answer.module.yaml
+  - assert:
+      that: The Explanation card in the margin has the parts "In simple words", "In context" and "Deeper meaning", each with a short label and plain English text, and the "Deeper meaning" label is marked with a yellow highlight
+      timeout: 15000
+  - javascript:
+      environment: browser
+      saveAs: EXPLAIN
+      code: return window.__drAnswerNote?.innerText ?? null
+  # 2. Example: the real table is not what we see.
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+        PHRASE:
+          string: Thus it becomes evident that the real table, if there is one, is not the same as what we immediately experience by sight or touch or hearing.
+  - dragAndDrop:
+      fromX: "{{ env.TEXT_AT.sx }}"
+      fromY: "{{ env.TEXT_AT.sy }}"
+      toX: "{{ env.TEXT_AT.ex }}"
+      toY: "{{ env.TEXT_AT.ey }}"
+      steps: 12
+  - checkElementVisible:
+      css: .selection-bar
+      timeout: 5000
+  - module: ./modules/watch-answer.module.yaml
+  - click:
+      css: .selection-bar button:nth-child(2)
+  - checkElementVisible:
+      css: .note[aria-label^="Example"] .rich-section:first-child
+      timeout: 90000
+  - module: ./modules/read-answer.module.yaml
+  - assert:
+      that: A card labelled "Example" in the right margin has the parts "Picture this" and "So here", with an everyday example and a sentence that links it back to the book
+      timeout: 15000
+  - javascript:
+      environment: browser
+      saveAs: EXAMPLE
+      code: return window.__drAnswerNote?.innerText ?? null
+  # 3. In Bangla: the definition of sense-data.
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+        PHRASE:
+          string: "Let us give the name of 'sense-data' to the things that are immediately known in sensation: such things as colours, sounds, smells, hardnesses, roughnesses, and so on."
+  - dragAndDrop:
+      fromX: "{{ env.TEXT_AT.sx }}"
+      fromY: "{{ env.TEXT_AT.sy }}"
+      toX: "{{ env.TEXT_AT.ex }}"
+      toY: "{{ env.TEXT_AT.ey }}"
+      steps: 12
+  - checkElementVisible:
+      css: .selection-bar
+      timeout: 5000
+  - module: ./modules/watch-answer.module.yaml
+  - click:
+      css: .selection-bar button:nth-child(3)
+  - checkElementVisible:
+      css: .note[aria-label^="In Bangla"] .rich-section:first-child
+      timeout: 90000
+  - module: ./modules/read-answer.module.yaml
+  - assert:
+      that: A card labelled "In Bangla" in the right margin shows a Translation and an Explanation written in Bangla script
+      timeout: 15000
+  - javascript:
+      environment: browser
+      saveAs: BANGLA
+      code: return window.__drAnswerNote?.innerText ?? null
+  - assertVisually:
+      that: The "Example" and "In Bangla" cards sit in the right margin, each one level with or just below the paragraph it explains, and no card overlaps another card or the book text
+      timeout: 15000

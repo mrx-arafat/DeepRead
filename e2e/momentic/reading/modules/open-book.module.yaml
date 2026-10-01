@@ -1,0 +1,16 @@
+fileType: momentic/module/v2
+id: dr-read-m-open-book
+name: Open the book from the library
+steps:
+  - click:
+      css: a.shelf-link
+  - waitForUrl:
+      substring: /book/
+      timeout: 15000
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - javascript:
+      environment: browser
+      saveAs: BOOK_ID
+      code: return location.pathname.split('/')[2]

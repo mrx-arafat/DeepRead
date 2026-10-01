@@ -1,0 +1,12 @@
+fileType: momentic/test/v2
+id: library-tour-desktop-dark
+description: Every visible state of the library page in the dark theme at viewport 1440, 900, judged for layout and polish, with contrast ratios and control sizes recorded per state (see modules/library-tour.module.yaml). Run from the repo root.
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - module:
+      path: ./modules/library-tour.module.yaml
+      inputs:
+        THEME:
+          string: dark

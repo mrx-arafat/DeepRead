@@ -1,0 +1,23 @@
+fileType: momentic/test/v2
+id: dr-read-previous-desktop
+description: "Journey 2/3 at desktop 1440: after jumping into a later chapter, the reader scrolls up to re-read the end of the chapter before; check the Previous link and where it lands."
+viewport: "1440, 900"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - navigate: /book/{{ env.BOOK_ID }}/c7
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - wait: 1200
+  - module: ./modules/nav-state.module.yaml
+  - scrollUp: 600
+  - assertVisually:
+      that: At the very top of the chapter the page offers a link to the previous chapter, labelled with its title
+      timeout: 20000
+  - click:
+      css: a.flow-back-link
+  - wait: 1500
+  - module: ./modules/nav-state.module.yaml
+  - assertVisually:
+      that: The reader is now at the END of the previous chapter, where the previous chapter's last paragraphs are on screen
+      timeout: 20000

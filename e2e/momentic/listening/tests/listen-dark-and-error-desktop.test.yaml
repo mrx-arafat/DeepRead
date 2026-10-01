@@ -1,0 +1,42 @@
+fileType: momentic/test/v2
+id: listening-dark-and-error-desktop
+description: Journey 2 in the dark theme, then the player when the browser's speech engine fails, desktop 1440 (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 700; return 'slow';
+  - click:
+      coords: 1408, 25
+  - click:
+      coords: 1119, 25
+  - wait: 1800
+  - assert: In the dark theme the spoken sentence has a dark green highlight and the spoken word a dark yellow highlight and both are easy to tell apart from the page
+  - click:
+      css: '.listen-bar button[aria-label="Pause"]'
+  - javascript:
+      environment: browser
+      saveAs: PLAY_BUTTON_BEFORE
+      code: |-
+        return String(Math.round(document.querySelector('.listen-bar button[aria-label="Play"]').getBoundingClientRect().left));
+  - javascript:
+      environment: browser
+      code: |-
+        window.speechSynthesis.speak = (u) => { setTimeout(() => u.onerror && u.onerror({ error: 'synthesis-failed' }), 100); };
+        return 'engine now fails';
+  - click:
+      css: '.listen-bar button[aria-label="Play"]'
+  - wait: 800
+  - assert: The player bar shows a red error message above the controls and the play button is visible again
+  - javascript:
+      environment: browser
+      saveAs: PLAY_BUTTON_AFTER
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const bar = document.querySelector('.listen-bar');
+        need(bar.querySelector('.inline-error'), 'an error message is shown');
+        return String(Math.round(bar.querySelector('.listen-play').getBoundingClientRect().left));

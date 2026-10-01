@@ -1,0 +1,40 @@
+fileType: momentic/test/v2
+id: listening-bug-next-chapter-fails
+description: Expected to fail until fixed - when the next chapter could not be fetched and later arrives, reading aloud must carry on (or say why it stopped). Desktop 1440 (stubbed speech, mocked 500 for chapter c3)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - mock:
+      substring: /chapters/c3
+      method: get
+      key: chapter-three-fails
+      fetchOriginalResponse: false
+      responseGenerator: |-
+        return new Response(JSON.stringify({ error: 'boom' }), { status: 500, headers: { 'content-type': 'application/json' } });
+  - module:
+      path: ../modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER:
+          string: c2
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 20; return 'fast';
+  - click:
+      css: '.topbar-tools button[aria-pressed]'
+  - wait: 6000
+  - removeRouteMock: chapter-three-fails
+  - click:
+      css: '.flow-end .link-button'
+  - wait: 3000
+  - javascript:
+      environment: browser
+      saveAs: AFTER_RETRY
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const bar = document.querySelector('.listen-bar');
+        const info = JSON.stringify({ chapters: document.querySelectorAll('article.chapter').length, play: bar && bar.querySelector('.listen-play').getAttribute('aria-label'), spoken: window.__stub.spoken.length });
+        need(document.querySelectorAll('article.chapter').length === 2, 'the next chapter should have loaded after Try again. ' + info);
+        need(bar && bar.querySelector('.listen-play').getAttribute('aria-label') === 'Pause', 'reading aloud did not resume after the next chapter arrived. ' + info);
+        return info;

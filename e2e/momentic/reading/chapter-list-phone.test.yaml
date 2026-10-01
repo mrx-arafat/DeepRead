@@ -1,0 +1,71 @@
+fileType: momentic/test/v2
+id: dr-read-toc-phone
+description: "Journey 3 at phone 390: the chapter list as a drawer, jumps, current mark, three ways to close, keyboard focus."
+viewport: "390, 844"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - wait: 1000
+  - scrollDown: 1500
+  - wait: 1200
+  - module: ./modules/toc-state.module.yaml
+  - scrollUp: 1500
+  - wait: 600
+  - click:
+      css: button[aria-label="Chapters"]
+  - module: ./modules/toc-state.module.yaml
+  - assertVisually:
+      that: A "Chapters" panel is open with a close button, listing the book's chapters one per row, each with a reading time, and one row is highlighted as the current chapter while the page behind is dimmed
+      timeout: 20000
+  - click:
+      css: a.toc-link[href$="/c2"]
+  - wait: 800
+  - module: ./modules/toc-state.module.yaml
+  - assertVisually:
+      that: The chapter list is closed and the heading PREFACE is at the top of the reading page right under the top bar
+      timeout: 20000
+  - click:
+      css: button[aria-label="Chapters"]
+  - module: ./modules/toc-state.module.yaml
+  - click:
+      css: a.toc-link[href$="/c7"]
+  - waitForUrl:
+      substring: /c7
+      timeout: 10000
+  - wait: 1200
+  - module: ./modules/toc-state.module.yaml
+  - assertVisually:
+      that: The chapter list is closed and the reading page shows a chapter titled CHAPTER V. KNOWLEDGE BY ACQUAINTANCE AND KNOWLEDGE BY DESCRIPTION at the top of the page
+      timeout: 20000
+  - click:
+      css: button[aria-label="Chapters"]
+  - module: ./modules/toc-state.module.yaml
+  - assertVisually:
+      that: The current chapter row in the open chapters list is clearly highlighted and the row is fully visible without scrolling the list
+      timeout: 20000
+  - click:
+      css: button[aria-label="Close chapters"]
+  - module: ./modules/toc-state.module.yaml
+  - click:
+      css: button[aria-label="Chapters"]
+  - press: Escape
+  - module: ./modules/toc-state.module.yaml
+  - click:
+      css: button[aria-label="Chapters"]
+  - click:
+      coords: "378, 450"
+  - module: ./modules/toc-state.module.yaml
+  - click:
+      css: button[aria-label="Chapters"]
+  - press: Tab
+  - module: ./modules/toc-state.module.yaml
+  - press: Escape
+  - navigate: /book/{{ env.BOOK_ID }}/c19
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - click:
+      css: button[aria-label="Chapters"]
+  - module: ./modules/toc-state.module.yaml
+  - assertVisually:
+      that: The open chapters list shows the current chapter, the last one, highlighted and fully visible without having to scroll the list
+      timeout: 20000

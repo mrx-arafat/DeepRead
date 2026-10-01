@@ -1,0 +1,44 @@
+fileType: momentic/module/v2
+id: listening-contrast-scan
+name: contrast-scan
+steps:
+  - javascript:
+      environment: browser
+      saveAs: CONTRAST
+      code: |-
+        const parse = (c) => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+        const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+        const lum = (c) => 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+        const over = (f, b) => ({ r: f.r * f.a + b.r * (1 - f.a), g: f.g * f.a + b.g * (1 - f.a), b: f.b * f.a + b.b * (1 - f.a), a: 1 });
+        const bgOf = (el) => { const stack = []; for (let e = el; e; e = e.parentElement) { const c = parse(getComputedStyle(e).backgroundColor); if (c && c.a > 0) { stack.push(c); if (c.a >= 1) break; } } let base = { r: 255, g: 255, b: 255, a: 1 }; if (!stack.length || stack[stack.length - 1].a < 1) base = parse(getComputedStyle(document.documentElement).backgroundColor).a > 0 ? parse(getComputedStyle(document.documentElement).backgroundColor) : parse(getComputedStyle(document.body).backgroundColor); let acc = base; for (let i = stack.length - 1; i >= 0; i--) acc = over(stack[i], acc); return acc; };
+        const ratio = (a, b) => { const l1 = lum(a), l2 = lum(b); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); };
+        const rows = [];
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        const seen = new Set();
+        while (walker.nextNode()) {
+          const n = walker.currentNode;
+          if (!n.textContent.trim()) continue;
+          const el = n.parentElement;
+          if (!el || seen.has(el)) continue;
+          const cs = getComputedStyle(el);
+          const r = el.getBoundingClientRect();
+          if (cs.visibility === 'hidden' || cs.display === 'none' || r.width < 2 || r.height < 2) continue;
+          if (el.closest('.visually-hidden')) continue;
+          seen.add(el);
+          const fg = parse(cs.color); const bg = bgOf(el);
+          const fgc = over(fg, bg);
+          const size = parseFloat(cs.fontSize); const bold = parseInt(cs.fontWeight, 10) >= 700;
+          const large = size >= 24 || (size >= 18.66 && bold);
+          const need = large ? 3 : 4.5;
+          const rt = ratio(fgc, bg);
+          rows.push({ rt, need, ok: rt >= need, tag: el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''), txt: n.textContent.trim().slice(0, 18), size: Math.round(size) });
+        }
+        rows.sort((a, b) => a.rt - b.rt);
+        const bad = rows.filter((x) => !x.ok);
+        const root = getComputedStyle(document.documentElement);
+        const v = (k) => parse((() => { const d = document.createElement('i'); d.style.color = root.getPropertyValue(k).trim(); document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); return c; })());
+        const pairs = { inkOnMarker: ratio(v('--ink'), v('--marker')), inkOnSpoken: ratio(v('--ink'), v('--marker-spoken')), markerVsSpoken: ratio(v('--marker'), v('--marker-spoken')), spokenVsPaper: ratio(v('--marker-spoken'), v('--paper')), markerVsPaper: ratio(v('--marker'), v('--paper')), faintOnPaper: ratio(v('--ink-faint'), v('--paper')), faintOnWash: ratio(v('--ink-faint'), v('--wash')), faintOnRaised: ratio(v('--ink-faint'), v('--raised')), softOnPenWash: ratio(v('--ink-soft'), v('--pen-wash')), penOnPenWash: ratio(v('--pen'), v('--pen-wash')), penInkOnPen: ratio(v('--pen-ink'), v('--pen')), dangerOnRaised: ratio(v('--danger'), v('--raised')), selectVsPaper: ratio(v('--select'), v('--paper')), inkOnSelect: ratio(v('--ink'), v('--select')) };
+        for (const k of Object.keys(pairs)) pairs[k] = Math.round(pairs[k] * 100) / 100;
+        const summary = { theme: root.getPropertyValue('color-scheme').trim() + '/' + document.documentElement.dataset.theme, scanned: rows.length, failing: bad.length, worst: bad.slice(0, 5).map((x) => [Math.round(x.rt * 100) / 100, x.need, x.tag, x.txt, x.size]), pairs };
+        if (bad.length) throw new Error('Low text contrast: ' + JSON.stringify(summary));
+        return JSON.stringify(summary);

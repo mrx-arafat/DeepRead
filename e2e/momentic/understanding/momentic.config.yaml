@@ -1,0 +1,34 @@
+# Momentic project for the "understanding" reader journeys. See https://momentic.ai/docs/cli/configuration
+# Each journey area has its own config so one area's lint errors cannot block another area's runs.
+name: deepread-understanding
+
+include:
+  - "**/*.test.yaml"
+  - "**/*.module.yaml"
+
+retries: 0
+parallel: 2
+recordVideo: on-fail
+gitMainBranch: main
+fileFormat: v2
+
+advanced:
+  aiActionShorthand: true
+
+browser:
+  disableSecondaryCacheResolution: true
+
+ai:
+  useMemory: true
+  failureRecovery: true
+  agentConfig:
+    locator: v5
+    assertion: v5
+    visual-assertion: v5
+    text-extraction: v3.0
+    failure-recovery: v2.1
+
+# Point a run at another instance with --url-override.
+environments:
+  - name: local
+    baseUrl: http://localhost:5173

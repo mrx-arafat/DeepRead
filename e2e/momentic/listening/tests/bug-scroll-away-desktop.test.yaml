@@ -1,0 +1,24 @@
+fileType: momentic/test/v2
+id: listening-bug-scroll-away
+description: Expected to fail until fixed - while listening, the reader scrolls away; the page must not be pulled back every sentence, and Play must not speak a sentence that is out of view. Desktop 1440 (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 250; return 'medium words';
+  - click:
+      css: '.topbar-tools button[aria-pressed]'
+  - wait: 1000
+  - scrollDown: 2500
+  - wait: 5500
+  - javascript:
+      environment: browser
+      saveAs: AFTER_NEXT_SENTENCE
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        need(scrollY > 1500, 'the page was pulled back to the spoken sentence after the reader scrolled to 2500: scrollY is now ' + Math.round(scrollY));
+        return String(Math.round(scrollY));
