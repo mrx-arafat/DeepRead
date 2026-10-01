@@ -8,13 +8,23 @@ steps:
   - checkPageContains:
       text: Before you read
       timeout: 15000
+  - click:
+      css: button[aria-label="Reading settings"]
   - javascript:
       environment: browser
       saveAs: LANGUI
       code: |-
-        const sel = document.querySelector('.topbar-lang select'); const label = document.querySelector('.topbar-lang span');
-        const b = sel.getBoundingClientRect();
-        return JSON.stringify({ selected: sel.options[sel.selectedIndex].text, options: Array.from(sel.options).map((o) => o.text), hiddenLabel: label && label.textContent, labelIsVisuallyHidden: label && label.className, visibleTextNearby: document.querySelector('.topbar-lang').innerText, title: sel.title || null, rect: { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }, stored: localStorage.getItem('deepread.prefs') });
+        const sel = document.querySelector('#reading-settings-lang'); const label = sel.labels[0]; const hint = document.getElementById(sel.getAttribute('aria-describedby'));
+        const b = sel.getBoundingClientRect(); const l = label.getBoundingClientRect();
+        return JSON.stringify({ selected: sel.options[sel.selectedIndex].text, options: Array.from(sel.options).map((o) => o.text), label: label.textContent, labelVisible: l.width > 1 && l.height > 1, hint: hint && hint.textContent, visibleTextNearby: document.querySelector('.settings').innerText, rect: { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }, stored: localStorage.getItem('deepread.prefs') });
+  - assertVisually:
+      that: An open reading settings menu shows a visible "Explain in" label over a language picker set to Bangla, and a sentence under it saying word meanings and explanations come in Bangla while the book stays in English
+      timeout: 20000
+  - javascript: |-
+      const ui = JSON.parse(env.LANGUI);
+      assert(ui.labelVisible && ui.label === 'Explain in', `the language picker label is "${ui.label}", visible: ${ui.labelVisible}`);
+      assert(ui.hint && ui.hint.includes('Bangla'), `the hint under the picker does not name the language: "${ui.hint}"`)
+  - press: Escape
   - module: ./modules/word-position.module.yaml
   - click:
       x: "{{ env.WORDX }}"
@@ -31,14 +41,20 @@ steps:
       that: A small card next to the tapped word shows the word, a meaning in Bangla script, a simple English meaning and an example sentence
       timeout: 20000
   - press: Escape
+  - click:
+      css: button[aria-label="Reading settings"]
   - select:
-      css: .topbar-lang select
+      css: "#reading-settings-lang"
       label: Spanish
   - javascript:
       environment: browser
       saveAs: AFTER_SWITCH
       code: |-
-        return JSON.stringify({ selected: document.querySelector('.topbar-lang select').selectedOptions[0].text, dialogOpen: !!document.querySelector('[role="dialog"]'), bodyLang: document.documentElement.lang, toasts: document.querySelectorAll('[role="status"],[role="alert"]').length, stored: localStorage.getItem('deepread.prefs') });
+        return JSON.stringify({ selected: document.querySelector('#reading-settings-lang').selectedOptions[0].text, hint: document.querySelector('.settings-hint').textContent, dialogOpen: !!document.querySelector('[role="dialog"]'), bodyLang: document.documentElement.lang, toasts: document.querySelectorAll('[role="status"],[role="alert"]').length, stored: localStorage.getItem('deepread.prefs') });
+  - javascript: |-
+      const after = JSON.parse(env.AFTER_SWITCH);
+      assert(after.hint.includes('Spanish'), `after choosing Spanish the hint still says: "${after.hint}"`)
+  - press: Escape
   - module: ./modules/word-position.module.yaml
   - click:
       x: "{{ env.WORDX }}"
@@ -61,4 +77,4 @@ steps:
   - javascript:
       environment: browser
       saveAs: LANG_AFTER_RELOAD
-      code: return document.querySelector('.topbar-lang select').selectedOptions[0].text
+      code: return document.querySelector('#reading-settings-lang').selectedOptions[0].text

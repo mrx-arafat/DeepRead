@@ -1,22 +1,28 @@
 fileType: momentic/test/v2
 id: dr-read-phone-controls
-description: "Journeys 5, 6 and 7 at phone 390: which top bar controls a phone reader actually has, touch target sizes, and whether text size and language can be changed."
+description: "Journeys 5, 6 and 7 at phone 390: which top bar controls a phone reader actually has, touch target sizes, and whether text size, theme and language can be changed from the Aa menu."
 viewport: "390, 844"
 steps:
   - module: ./modules/open-book.module.yaml
   - module: ./modules/metrics.module.yaml
+  - click:
+      css: button[aria-label="Reading settings"]
   - javascript:
       environment: browser
       saveAs: PHONE_CONTROLS
       code: |-
         const all = Array.from(document.querySelectorAll('.topbar button, .topbar a, .topbar select, .topbar-percent, .topbar-title'));
         return JSON.stringify(all.map((el) => { const cs = getComputedStyle(el); const b = el.getBoundingClientRect(); return { cls: el.className, label: el.getAttribute('aria-label') || (el.textContent || '').trim().slice(0, 30), display: cs.display, w: Math.round(b.width), h: Math.round(b.height), x: Math.round(b.x) }; }));
+  - press: Escape
   - scrollDown: 900
   - assertVisually:
       that: The reading column fills the phone screen with comfortable side margins and no horizontal scrolling or clipped words
       timeout: 20000
   - click:
-      coords: "358, 26"
+      css: button[aria-label="Reading settings"]
+  - click:
+      css: input[value="dark"]
+  - press: Escape
   - module: ./modules/metrics.module.yaml
   - assertVisually:
       that: The page switched to a dark theme and the text is readable

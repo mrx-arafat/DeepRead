@@ -1,14 +1,15 @@
-import { ArrowLeft, ArrowUp, Headphones, List, Moon, Sun } from "lucide-react";
+import { ArrowLeft, ArrowUp, Headphones, List } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
-import { LANGUAGES, type BookDetail, type ExplainMode, type LangCode } from "../../shared/types.ts";
+import type { BookDetail, ExplainMode } from "../../shared/types.ts";
 import { api } from "../api.ts";
-import { FONT_SIZES, setPrefs, usePrefs } from "../prefs.ts";
+import { usePrefs } from "../prefs.ts";
 import { readableBlocks } from "./book.ts";
 import { ChapterList } from "./ChapterList.tsx";
 import { ChapterSection } from "./ChapterSection.tsx";
 import type { TextActions } from "./ChapterText.tsx";
 import { ListenBar } from "./ListenBar.tsx";
+import { ReadingSettings } from "./ReadingSettings.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
 import { canSpeak } from "./speech.ts";
 import { setHighlight } from "./textRanges.ts";
@@ -183,42 +184,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
               <Headphones size={18} aria-hidden /> Listen
             </button>
           )}
-          <label className="topbar-lang">
-            <span className="visually-hidden">Your language</span>
-            <select value={prefs.lang} onChange={(event) => setPrefs({ lang: event.target.value as LangCode })}>
-              {Object.entries(LANGUAGES).map(([code, name]) => (
-                <option key={code} value={code}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="icon-button text-size"
-            aria-label="Smaller text"
-            disabled={prefs.fontSize <= FONT_SIZES.min}
-            onClick={() => setPrefs({ fontSize: prefs.fontSize - 1 })}
-          >
-            A
-          </button>
-          <button
-            type="button"
-            className="icon-button text-size text-size-large"
-            aria-label="Larger text"
-            disabled={prefs.fontSize >= FONT_SIZES.max}
-            onClick={() => setPrefs({ fontSize: prefs.fontSize + 1 })}
-          >
-            A
-          </button>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={prefs.theme === "dark" ? "Switch to light" : "Switch to dark"}
-            onClick={() => setPrefs({ theme: prefs.theme === "dark" ? "light" : "dark" })}
-          >
-            {prefs.theme === "dark" ? <Sun size={20} aria-hidden /> : <Moon size={20} aria-hidden />}
-          </button>
+          <ReadingSettings prefs={prefs} />
         </div>
         {book && (
           <div

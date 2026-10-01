@@ -33,6 +33,7 @@ The explanation appears beside the paragraph you are reading, and you keep going
 | **Your library** | Add, rename and remove books. Each book shows the chapter and percentage where you stopped, and opens right there. Notes stay beside their paragraphs and survive a reload. |
 
 Reading languages for explanations: Bangla (default), Hindi, Urdu, Arabic, Spanish, French, Indonesian and Turkish.
+Pick yours under **Aa** in the reader's top bar, next to text size and the light or dark page.
 
 ## Quick start
 

@@ -555,17 +555,132 @@ select {
   flex: none;
 }
 
-.topbar-lang {
-  margin: 0 0.25rem;
+/* Reading settings: the "Aa" button opens a small panel under the right end of the top bar. */
+.settings-button {
+  font-family: var(--font-book);
+  font-size: 1.125rem;
+  font-weight: 600;
 }
 
-.text-size {
+.topbar:has(.settings:popover-open) .settings-button {
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.settings {
+  /* A control edge clears 3:1 in both themes; the hairline --rule is only for dividers. */
+  --frame: color-mix(in srgb, var(--ink) 45%, transparent);
+
+  position: fixed;
+  inset: calc(var(--topbar) + 0.5rem) 0.75rem auto auto;
+  width: min(19rem, calc(100vw - 1.5rem));
+  margin: 0;
+  padding: 1rem 1.25rem 1.25rem;
+  color: var(--ink);
+}
+
+.settings-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.settings-group + .settings-group {
+  margin-top: 1.25rem;
+}
+
+.settings-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  padding: 0;
+  color: var(--ink-soft);
   font-size: 0.875rem;
-  font-weight: 700;
+  font-weight: 600;
+}
+
+.settings select {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border-color: var(--frame);
+  background: var(--raised);
+}
+
+.settings-hint {
+  margin-top: 0.5rem;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+/* Two choices side by side in one frame, the chosen one inked in pen blue. */
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--frame, var(--rule));
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.segmented > * {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.segmented > * + * {
+  border-left: 1px solid var(--frame, var(--rule));
+}
+
+.segmented > :hover:not(:disabled) {
+  background: var(--wash);
+}
+
+.segmented > :disabled {
+  color: var(--ink-faint);
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The radio itself is invisible but covers its whole label, so the label is what is tapped and focused. */
+.segmented > label {
+  position: relative;
+}
+
+.segmented input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.segmented > label:has(:checked) {
+  background: var(--pen-wash);
+  color: var(--pen);
+  font-weight: 600;
+}
+
+.segmented > label:has(:focus-visible) {
+  outline: 2px solid var(--pen);
+  outline-offset: -2px;
+}
+
+/* The book's own face: these buttons change the book text. */
+.text-size {
+  font-family: var(--font-book);
+  font-size: 0.9375rem;
+  font-weight: 600;
 }
 
 .text-size-large {
-  font-size: 1.25rem;
+  font-size: 1.375rem;
 }
 
 /* A modal <dialog> drawn as a drawer down the left edge, over the dimmed page. */
@@ -1112,8 +1227,6 @@ h4[data-block] {
 }
 
 @media (max-width: 40rem) {
-  .topbar-lang,
-  .text-size,
   .topbar-chapter {
     display: none;
   }

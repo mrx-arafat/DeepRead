@@ -35,8 +35,8 @@ steps:
         const hs = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map((h) => Number(h.tagName[1]));
         need(hs[0] === 1, 'first heading is an h1');
         for (let i = 1; i < hs.length; i++) need(hs[i] - hs[i - 1] <= 1, 'no skipped heading levels');
-        const sel = document.querySelector('.topbar-lang select');
-        need(name(sel).startsWith('Your language'), 'language picker is labelled');
+        const sel = document.querySelector('#reading-settings-lang');
+        need(name(sel).startsWith('Explain in'), 'language picker is labelled');
         const speed = document.querySelector('.listen-bar select');
         need(name(speed).startsWith('Speed'), 'speed picker is labelled');
         return JSON.stringify({ controls: document.querySelectorAll('a[href],button,select').length, headings: hs.join('') });

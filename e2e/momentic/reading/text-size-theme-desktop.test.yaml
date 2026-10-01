@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
 id: dr-read-size-theme-desktop
-description: "Journey 5 at desktop 1440: text size buttons and theme toggle apply instantly, persist after reload, and keep the reader's place in the text."
+description: "Journey 5 at desktop 1440: text size and theme in the Aa menu apply instantly, persist after reload, and keep the reader's place in the text."
 viewport: "1440, 900"
 steps:
   - module: ./modules/open-book.module.yaml
@@ -13,26 +13,28 @@ steps:
   - module: ./modules/spot.module.yaml
   - javascript: setVariable('SPOT_BEFORE', env.SPOT)
   - click:
-      coords: "1364, 26"
+      coords: "1408, 26"
+  - click:
+      css: button[aria-label="Larger text"]
   - module: ./modules/metrics.module.yaml
   - module: ./modules/spot.module.yaml
   - javascript: setVariable('SPOT_AFTER1', env.SPOT)
   - click:
-      coords: "1364, 26"
+      css: button[aria-label="Larger text"]
       times: 6
   - module: ./modules/metrics.module.yaml
   - assertVisually:
-      that: The book text is at its largest size, the Larger text button in the top bar looks disabled, and the paragraphs still fit the column without clipping
+      that: The book text is at its largest size, the Larger text button in the reading settings menu looks disabled, and the paragraphs still fit the column without clipping
       timeout: 20000
   - click:
-      coords: "1320, 26"
+      css: button[aria-label="Smaller text"]
       times: 11
   - module: ./modules/metrics.module.yaml
   - assertVisually:
-      that: The book text is at its smallest size and the Smaller text button in the top bar looks disabled
+      that: The book text is at its smallest size and the Smaller text button in the reading settings menu looks disabled
       timeout: 20000
   - click:
-      coords: "1364, 26"
+      css: button[aria-label="Larger text"]
       times: 8
   - module: ./modules/spot.module.yaml
   - javascript: setVariable('SPOT_23', env.SPOT)
@@ -49,6 +51,9 @@ steps:
       assert(b.fontPx === '23px', `text size after reload is ${b.fontPx}, expected 23px`)
   - click:
       coords: "1408, 26"
+  - click:
+      css: input[value="dark"]
+  - press: Escape
   - module: ./modules/metrics.module.yaml
   - assertVisually:
       that: The page is in a dark theme with light text on a dark background, and the book text is still readable
@@ -60,6 +65,9 @@ steps:
   - module: ./modules/metrics.module.yaml
   - click:
       coords: "1408, 26"
+  - click:
+      css: input[value="light"]
+  - press: Escape
   - module: ./modules/metrics.module.yaml
   - javascript: |-
       const a = JSON.parse(env.SPOT_BEFORE), b = JSON.parse(env.SPOT_AFTER1);

@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
 id: dr-read-harness-scroll
-description: "Diagnostic: does a Momentic click on a top bar button scroll the page by itself? Compares a selector click, a coordinate click and a plain page click while the reader is deep in a chapter."
+description: "Diagnostic: does a Momentic click on a reading settings button scroll the page by itself? Compares a selector click, a coordinate click and a plain page click while the reader is deep in a chapter."
 viewport: "1440, 900"
 steps:
   - module: ./modules/open-book.module.yaml
@@ -15,6 +15,8 @@ steps:
       saveAs: Y0
       code: return Math.round(scrollY)
   - click:
+      css: button[aria-label="Reading settings"]
+  - click:
       css: button[aria-label="Smaller text"]
   - javascript:
       environment: browser
@@ -27,7 +29,7 @@ steps:
       saveAs: Y1
       code: return Math.round(scrollY)
   - click:
-      coords: "1364, 26"
+      coords: "1341, 129"
   - javascript:
       environment: browser
       saveAs: Y_AFTER_COORD_CLICK
