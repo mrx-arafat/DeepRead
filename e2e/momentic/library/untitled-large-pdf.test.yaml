@@ -8,8 +8,8 @@ steps:
   - refresh
   - fileUpload: data/e2e-library/big.pdf
   - click: Add a book (PDF) button
-  - checkPageContains: Splitting it into chapters
-  - assertVisually: The drop box keeps its size and now shows a small spinner next to a line naming the file big.pdf and a sentence saying the book is being split into chapters, and the sentence No books yet is not shown
+  - checkPageContains: A long book can take a minute
+  - assertVisually: The drop box keeps its size and now shows a small spinner next to a line naming the file big.pdf and a second line saying a long book can take a minute, and the sentence No books yet is not shown
   - waitForUrl:
       substring: /book/
       timeout: 90000

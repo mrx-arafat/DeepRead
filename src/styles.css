@@ -279,12 +279,6 @@ select {
   border-radius: var(--radius);
 }
 
-@media (max-width: 40rem) {
-  .drop {
-    /* The "reading" sentence takes three lines here, and "or drop a PDF here" wraps under the button. */
-    min-height: 8.375rem;
-  }
-}
 
 .drop[data-dragging] {
   border-style: solid;
@@ -295,6 +289,13 @@ select {
 .drop-hint,
 .drop-busy {
   color: var(--ink-soft);
+}
+
+/* A finger cannot drop a file onto the page, and on a narrow window the hint would wrap under the button and make the box taller. */
+@media (pointer: coarse), (max-width: 40rem) {
+  .drop-hint {
+    display: none;
+  }
 }
 
 .drop-busy {

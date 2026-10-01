@@ -162,7 +162,7 @@ export function LibraryPage() {
             <LoaderCircle className="drop-spinner" size={20} aria-hidden />
             <span className="drop-busy-text">
               <strong className="drop-busy-name">Reading {uploading}</strong>
-              <span>Splitting it into chapters. A long book can take a minute.</span>
+              <span>A long book can take a minute.</span>
             </span>
           </div>
         ) : (
