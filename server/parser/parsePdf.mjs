@@ -11,10 +11,11 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { basename } from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
+import { separateMatter } from "./matter.mjs";
 
 /**
  * @typedef {{ id: string, type: "heading" | "paragraph", level?: 1 | 2 | 3, text: string, page: number }} Block
- * @typedef {{ id: string, title: string, startPage: number, endPage: number, blocks: Block[] }} Chapter
+ * @typedef {{ id: string, title: string, kind: "front" | "body" | "back", startPage: number, endPage: number, blocks: Block[] }} Chapter
  * @typedef {{ title: string, author: string | null, pageCount: number, chapters: Chapter[], warnings: string[] }} Book
  * @typedef {"not_found" | "invalid_pdf" | "encrypted" | "scanned" | "garbled" | "empty" | "timeout"} ParseErrorCode
  * @typedef {{
@@ -99,13 +100,10 @@ const BARE_MARKER_RE = /^(?:\(?\d{1,3}[.)]|[a-z][.)]|[\u2022\u25CF\u25A0\u25AA*-
 const CHAPTER_RE =
   /^(?:chapter|chap\.)\s*(?:\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/i;
 const PART_RE = /^(?:part|book|volume)\s+(?:\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i;
-const FRONT_MATTER_RE =
-  /^(?:cover( page| image)?|front cover|title( page)?|half[- ]title|copyright( page| notice)?|dedication|epigraph|contents|table of contents|praise( for.*)?|also by.*|other books.*|books by.*|about the publishers?|newsletter.*|frontispiece|imprint|map|maps)$/i;
 
 // section titles that open front/back matter, recognised when they share the chapter headings' style
 const MATTER_RE =
   /^(?:preface|foreword|introduction|prologue|epilogue|afterword|postscript|conclusion|appendix\b.*|notes|endnotes|bibliograph.*|references|further reading|glossary|index|acknowledge?ments|about the authors?)$/i;
-const GUTENBERG_END_RE = /^\*{3}\s*end of (?:the|this) project gutenberg/i;
 
 /** Letters and digits in a string: the unit of the text-coverage self-check. */
 const alnum = (str) => (str.match(/[\p{L}\p{N}]/gu) ?? []).length;
@@ -924,7 +922,6 @@ function structureFromText(pages, stats, numPages, warnings) {
       pg.lines.forEach((l, i) => {
         if (isLarge(l) && Math.abs(l.size - tier) <= 0.06 * tier && MATTER_RE.test(l.text.trim()) && !chapterHits.some((h) => h.page === pg.num && Math.abs(h.y - (l.y + l.size)) < 1))
           extra.push({ title: titleFrom(pg, i), page: pg.num, y: l.y + l.size });
-        if (GUTENBERG_END_RE.test(l.text)) extra.push({ title: "Project Gutenberg License", page: pg.num, y: l.y + l.size });
       });
     }
     const starts = [...chapterHits, ...uniqueParts, ...extra].sort((x, y) => x.page - y.page || y.y - x.y);
@@ -1208,28 +1205,20 @@ function continuesAcrossPage(cur, l, pg, stats) {
 function assemble(blocks, starts, numPages) {
   const chapters = starts.map((s) => ({ title: s.title, startPage: s.page, y: s.y, isPart: !!s.isPart, blocks: [] }));
   let ci = -1;
-  const pre = { title: "Front Matter", startPage: 1, y: null, blocks: [] };
+  const pre = { title: "Front Matter", untitled: true, startPage: 1, y: null, blocks: [] };
   for (const b of blocks) {
     while (ci + 1 < chapters.length && (chapters[ci + 1].startPage < b.page || (chapters[ci + 1].startPage === b.page && (chapters[ci + 1].y == null || b.y <= chapters[ci + 1].y + 1)))) ci++;
     (ci < 0 ? pre : chapters[ci]).blocks.push(b);
   }
-  let list = pre.blocks.length ? [pre, ...chapters] : chapters;
+  const list = separateMatter(pre.blocks.length ? [pre, ...chapters] : chapters);
   const chars = (c) => c.blocks.reduce((n, b) => n + b.text.length, 0);
 
-  // leading run of front matter (cover, copyright, contents, ...) -> one chapter
-  let k = 0;
-  while (k < list.length && (FRONT_MATTER_RE.test(list[k].title) || list[k] === pre)) k++;
-  if (k > 1) {
-    const merged = { title: "Front Matter", startPage: list[0].startPage, y: null, blocks: list.slice(0, k).flatMap((c) => c.blocks) };
-    list = [merged, ...list.slice(k)];
-  }
-
-  // tiny chapters (part title pages, book-title pages) merge forward into the next chapter
+  // tiny chapters (part title pages, book-title pages) merge forward into the next chapter of the same kind
   const out = [];
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
     const next = list[i + 1];
-    if (next && i > 0 && chars(c) < 400) {
+    if (next && i > 0 && chars(c) < 400 && next.kind === c.kind) {
       next.blocks = [...c.blocks, ...next.blocks];
       next.startPage = Math.min(c.startPage, next.startPage);
       next.y = c.y;
@@ -1260,6 +1249,7 @@ function toBook(chapters, meta) {
       return {
         id,
         title: finalText(c.title).slice(0, 200) || `Section ${ci + 1}`,
+        kind: c.kind,
         startPage: c.startPage,
         endPage: c.endPage,
         blocks: c.blocks

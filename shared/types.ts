@@ -13,9 +13,17 @@ export type Block = {
   page: number;
 };
 
+/**
+ * Where a section sits: the book's own text, or the matter around it (title page, copyright, contents before it;
+ * notes, index, licence after it). The reader opens past front matter, and neither kind counts as reading.
+ */
+export type SectionKind = "front" | "body" | "back";
+
 export type Chapter = {
   id: string;
   title: string;
+  /** Absent in books parsed before sections had kinds; read it as "body". */
+  kind?: SectionKind;
   startPage: number;
   endPage: number;
   blocks: Block[];
@@ -36,6 +44,8 @@ export type ParseErrorKind = "scanned" | "encrypted" | "invalid" | "empty";
 export type ChapterSummary = {
   id: string;
   title: string;
+  /** Absent in books parsed before sections had kinds; read it as "body". */
+  kind?: SectionKind;
   startPage: number;
   endPage: number;
   wordCount: number;

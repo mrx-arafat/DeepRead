@@ -18,13 +18,13 @@ export function describePosition(
   const at = blocks.findIndex((block) => block.id === blockId);
   if (at === -1) return null;
 
-  const summaries: ChapterSummary[] = book.chapters.map(({ id, title, startPage, endPage }) => ({
+  const summaries: ChapterSummary[] = book.chapters.map(({ id, title, kind, startPage, endPage }) => ({
     id,
     title,
+    kind,
     startPage,
     endPage,
     wordCount: wordCounts[id] ?? 0,
   }));
-  const totalWords = summaries.reduce((sum, summary) => sum + summary.wordCount, 0);
-  return { chapterTitle: chapter.title, percent: bookPercent(summaries, totalWords, chapterId, at / blocks.length) };
+  return { chapterTitle: chapter.title, percent: bookPercent(summaries, chapterId, at / blocks.length) };
 }

@@ -2,7 +2,7 @@ import { X } from "lucide-react";
 import { useLayoutEffect, useRef, type MouseEvent } from "react";
 import { Link } from "wouter";
 import type { BookDetail } from "../../shared/types.ts";
-import { minutes } from "./book.ts";
+import { kindOf, minutes } from "./book.ts";
 
 type Props = {
   book: BookDetail;
@@ -64,7 +64,8 @@ export function ChapterList({ book, currentId, onClose }: Props) {
       </header>
       <ol ref={list}>
         {book.chapters.map((item) => (
-          <li key={item.id}>
+          // Front and back matter stay one tap away, but quieter and without a reading time.
+          <li key={item.id} className={kindOf(item) === "body" ? undefined : "toc-matter"}>
             <Link
               href={`/book/${book.id}/${item.id}`}
               className="toc-link"
@@ -72,7 +73,7 @@ export function ChapterList({ book, currentId, onClose }: Props) {
               onClick={(event) => pick(event, item.id)}
             >
               <span>{item.title}</span>
-              <span className="toc-time">{minutes(item.wordCount)} min</span>
+              {kindOf(item) === "body" && <span className="toc-time">{minutes(item.wordCount)} min</span>}
             </Link>
           </li>
         ))}

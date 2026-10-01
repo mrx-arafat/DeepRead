@@ -24,4 +24,4 @@ steps:
         return { url: location.href, scrollY: window.scrollY, topbar: document.querySelector("header")?.innerText.split("\n").slice(0, 3).join(" | ") };
       environment: browser
       saveAs: REOPENED
-  - assertVisually: The reader reopened part way down the Front Matter chapter, with the Front Matter heading scrolled out of view
+  - assertVisually: The reader reopened part way into the book, with the heading of the chapter it opened at scrolled out of view

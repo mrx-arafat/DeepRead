@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import type { BookDetail, Chapter } from "../../shared/types.ts";
 import { api } from "../api.ts";
-import { bookPercent, indexAtLine } from "./book.ts";
+import { bookPercent, indexAtLine, lastOfText } from "./book.ts";
 
 export type ReadingPosition = {
   /** The chapter at the top of the window. */
@@ -49,7 +49,7 @@ function fractionRead({ block, blocks }: Spot): number {
 
 /** Scrolled to the very bottom with the book's last chapter on the page: the whole book has been read. */
 function atBookEnd(book: BookDetail): boolean {
-  const last = book.chapters.at(-1);
+  const last = lastOfText(book.chapters);
   return (
     last !== undefined &&
     window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2 &&
@@ -96,7 +96,7 @@ export function useReadingPosition(
     if (!book || !first) {
       // While a chapter opens, the top bar already names it and where it starts in the book.
       const id = book && inUrl.current;
-      const opening = id ? { chapterId: id, percent: bookPercent(book.chapters, book.wordCount, id, 0) } : { chapterId: null, percent: 0 };
+      const opening = id ? { chapterId: id, percent: bookPercent(book.chapters, id, 0) } : { chapterId: null, percent: 0 };
       setPosition((prev) => (prev.chapterId === opening.chapterId && prev.percent === opening.percent ? prev : opening));
       return;
     }
@@ -109,7 +109,7 @@ export function useReadingPosition(
       const spot = spotAtEyeLine();
       const id = spot?.chapter.dataset.chapter;
       if (!spot || !id) return;
-      const percent = atBookEnd(book) ? 100 : bookPercent(book.chapters, book.wordCount, id, fractionRead(spot));
+      const percent = atBookEnd(book) ? 100 : bookPercent(book.chapters, id, fractionRead(spot));
       // Unchanged rounded values keep the same state object, so scrolling does not re-render the book.
       setPosition((prev) => (prev.chapterId === id && prev.percent === percent ? prev : { chapterId: id, percent }));
       // A URL chapter that is not on the page is still being opened: leave the URL to it.

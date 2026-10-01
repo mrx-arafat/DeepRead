@@ -32,7 +32,7 @@ steps:
         return JSON.stringify({ title: (document.querySelector('.topbar-title') || {}).textContent, percent: (document.querySelector('.topbar-percent') || {}).textContent, bar: (document.querySelector('.reading-progress') || {}).getAttribute('aria-valuenow'), h1: (document.querySelector('.chapter h1') || {}).textContent });
   - navigate: /book/{{ env.BOOK_ID }}/c19
   - checkPageContains:
-      text: Before you read
+      text: After the main text
       timeout: 15000
   - click:
       css: button[aria-label="Chapters"]
@@ -60,6 +60,6 @@ steps:
       if (!toc.currentVisibleInList) failures.push('the chapter list opened at the last chapter does not show the current chapter without scrolling');
       if (!toc.activeInsideToc) failures.push('keyboard focus stays on the page behind the chapter list when it opens');
       if (!/Problems of Philosophy/.test(c3.docTitle || '')) failures.push(`the browser tab title is "${c3.docTitle}" while reading`);
-      if (toc.titles.some((t) => /Project Gutenberg License/.test(t))) failures.push('the Project Gutenberg license is listed as a chapter of the book');
+      if (toc.titles.some((t) => /Project Gutenberg License.*\d+ min/.test(t))) failures.push('the Project Gutenberg license is listed as a chapter of the book, with a reading time');
       if (!/Continue|Resume|\d+%|Chapter \d+ of|You are in/i.test(env.C_SHELF)) failures.push(`the library row gives no sign of where the reader stopped: "${env.C_SHELF}"`);
       assert(failures.length === 0, failures.join('; '))

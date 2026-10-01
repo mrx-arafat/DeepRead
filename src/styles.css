@@ -830,6 +830,19 @@ select {
   font-weight: 400;
 }
 
+/* Front and back matter (title page, contents, notes, licence): reachable, but set apart from the chapters. */
+.toc-matter .toc-link:not([aria-current="page"]) {
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+
+.toc-matter + li:not(.toc-matter),
+li:not(.toc-matter) + .toc-matter {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--rule);
+}
+
 .page-wait,
 .page-message {
   padding: 4rem 1.5rem;

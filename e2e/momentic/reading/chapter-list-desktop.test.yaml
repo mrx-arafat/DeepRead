@@ -61,7 +61,7 @@ steps:
   - press: Escape
   - navigate: /book/{{ env.BOOK_ID }}/c19
   - checkPageContains:
-      text: Before you read
+      text: After the main text
       timeout: 15000
   - click:
       css: button[aria-label="Chapters"]

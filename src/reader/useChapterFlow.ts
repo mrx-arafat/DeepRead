@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { useLocation } from "wouter";
 import type { BookDetail, Chapter, ChapterSummary } from "../../shared/types.ts";
 import { api } from "../api.ts";
+import { nextInFlow, openingChapter } from "./book.ts";
 
 export type ChapterFlow = {
   /** The chapters on the page, in book order, from the one the reader opened onwards. */
@@ -50,7 +51,7 @@ export function useChapterFlow(bookId: string, chapterId: string | null, book: B
   // No chapter in the URL: continue where the reader stopped, or start at the beginning.
   useEffect(() => {
     if (chapterId || !book) return;
-    const target = book.progress?.chapterId ?? book.chapters[0]?.id;
+    const target = book.progress?.chapterId ?? openingChapter(book.chapters)?.id;
     if (target) navigate(`/book/${bookId}/${target}`, { replace: true });
     else setError("This book has no chapters to read.");
   }, [book, bookId, chapterId, navigate]);
@@ -81,16 +82,14 @@ export function useChapterFlow(bookId: string, chapterId: string | null, book: B
   }, [bookId, chapterId, show]);
 
   const last = chapters.at(-1);
-  const lastIndex = book && last ? book.chapters.findIndex((item) => item.id === last.id) : -1;
   const firstIndex = book && chapters[0] ? book.chapters.findIndex((item) => item.id === chapters[0]?.id) : -1;
-  const hasMore = book !== null && lastIndex !== -1 && lastIndex < book.chapters.length - 1;
+  const hasMore = book !== null && last !== undefined && nextInFlow(book.chapters, last.id) !== undefined;
 
   const loadNext = useCallback(() => {
     // One request at a time: a second call while one is out (or while the opening chapter loads) does nothing.
     const end = shown.current.at(-1);
     if (!book || !end || request.current) return;
-    const at = book.chapters.findIndex((item) => item.id === end.id);
-    const next = at === -1 ? undefined : book.chapters[at + 1];
+    const next = nextInFlow(book.chapters, end.id);
     if (!next) return;
     const controller = new AbortController();
     request.current = controller;

@@ -207,6 +207,19 @@ describe("DeepRead API", () => {
       expect(await entries(join(dataDir, "tmp"))).toEqual([]);
     });
 
+    it("should count only the book's own text as reading when the parser marks front and back matter", async () => {
+      const book = sampleBook("Wrapped Book");
+      const [first, second] = book.chapters;
+      book.chapters = [{ ...first!, kind: "front" }, { ...second!, kind: "body" }];
+      const detail = (await (await upload(book)).json()) as BookDetail;
+      expect(detail.wordCount).toBe(5);
+      expect(detail.chapters.map((c) => c.kind)).toEqual(["front", "body"]);
+
+      // Books stored before sections had kinds read as the book's own text.
+      const legacy = (await (await upload(sampleBook())).json()) as BookDetail;
+      expect(legacy.chapters.map((c) => c.kind)).toEqual(["body", "body"]);
+    });
+
     it("should return the existing book when the same PDF is uploaded again", async () => {
       const first = (await (await upload(sampleBook())).json()) as { id: string };
       const again = await upload(sampleBook());

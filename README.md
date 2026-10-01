@@ -23,7 +23,7 @@ The explanation appears beside the paragraph you are reading, and you keep going
 
 | | |
 | --- | --- |
-| **Whole-book reading** | Add a PDF and read it start to finish as one continuous page. Chapters follow each other as you scroll, and your place is saved. |
+| **Whole-book reading** | Add a PDF and read it start to finish as one continuous page. It opens at the book itself, past the title page and contents, and ends after the last chapter. Chapters follow each other as you scroll, and your place is saved. Front and back matter (contents, notes, index, licences) stay in the chapter list but do not count toward your progress. |
 | **Tap a word** | Its meaning in your language, a simple English meaning, and an example sentence. The meaning is chosen for the sentence you are in, so "minute sums of money" is "very small", not a unit of time. Terms like "sense-data" and "a priori" are looked up whole, and selecting two or three words ("common sense") looks them up together. |
 | **Explain a passage** | Select a passage and choose **Explain**. You get it in simple words, in context (who is speaking, what just happened), its deeper meaning (the idea, psychology or theme behind it), and its hard words. |
 | **Translate a passage** | **In Bangla** (or your language) gives a faithful, natural translation followed by a short explanation. |
@@ -85,6 +85,7 @@ flowchart LR
 PDFs store positioned glyphs, not paragraphs, so the parser rebuilds the book:
 
 - Chapters come from the PDF outline when there is one, and from heading detection when there is not.
+- Front matter (title page, copyright, contents) and back matter (notes, index, appendices, Project Gutenberg's header and licence) are marked as such, so the reader can skip them.
 - Running headers, footers and page numbers are removed.
 - Lines are joined into paragraphs, hyphenated line breaks are healed, and paragraphs that continue across a page break are stitched back together.
 - Scanned PDFs (pages that are images) are detected and rejected with a clear message instead of producing garbage.

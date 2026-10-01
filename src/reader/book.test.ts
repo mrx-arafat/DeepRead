@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Block, ChapterSummary } from "../../shared/types.ts";
-import { bookPercent, indexAtLine } from "./book.ts";
+import { bookPercent, indexAtLine, nextInFlow, openingChapter } from "./book.ts";
 import { sentenceIndex, sentencesOf } from "./textRanges.ts";
+
+const section = (id: string, wordCount: number, kind?: ChapterSummary["kind"]): ChapterSummary => ({
+  id,
+  title: id,
+  kind,
+  startPage: 1,
+  endPage: 1,
+  wordCount,
+});
 
 describe("indexAtLine", () => {
   // Three chapters stacked down the page: their bottom edges, in px from the top of the window.
@@ -24,19 +33,42 @@ describe("indexAtLine", () => {
 });
 
 describe("bookPercent", () => {
-  const chapters: ChapterSummary[] = [
-    { id: "c1", title: "One", startPage: 1, endPage: 2, wordCount: 100 },
-    { id: "c2", title: "Two", startPage: 3, endPage: 5, wordCount: 300 },
-    { id: "c3", title: "Three", startPage: 6, endPage: 9, wordCount: 600 },
-  ];
+  // Parsed before sections had kinds: every chapter counts.
+  const chapters = [section("c1", 100), section("c2", 300), section("c3", 600)];
 
   it("should count earlier chapters plus the passed part of the current one when the reader is mid-book", () => {
     // 100 words of chapter one + half of chapter two's 300, out of 1000.
-    expect(bookPercent(chapters, 1000, "c2", 0.5)).toBe(25);
+    expect(bookPercent(chapters, "c2", 0.5)).toBe(25);
   });
 
   it("should not show 100 when the last chapter is not fully passed", () => {
-    expect(bookPercent(chapters, 1000, "c3", 0.999)).toBe(99);
+    expect(bookPercent(chapters, "c3", 0.999)).toBe(99);
+  });
+
+  it("should leave front and back matter out when the book has them", () => {
+    const wrapped = [section("c1", 100, "front"), section("c2", 300, "body"), section("c3", 600, "body"), section("c4", 2000, "back")];
+    // Half of chapter two's 300 words, out of the 900 words of the book's own text.
+    expect(bookPercent(wrapped, "c2", 0.5)).toBe(16);
+    expect(bookPercent(wrapped, "c1", 0.9)).toBe(0);
+    expect(bookPercent(wrapped, "c4", 0)).toBe(100);
+  });
+});
+
+describe("the flow through a book with front and back matter", () => {
+  const chapters = [section("c1", 50, "front"), section("c2", 300, "body"), section("c3", 600, "body"), section("c4", 80, "back"), section("c5", 900, "back")];
+
+  it("should open at the first section of the book's own text when nothing was read yet", () => {
+    expect(openingChapter(chapters)?.id).toBe("c2");
+  });
+
+  it("should end after the last chapter and not run on into the back matter", () => {
+    expect(nextInFlow(chapters, "c1")?.id).toBe("c2");
+    expect(nextInFlow(chapters, "c3")).toBeUndefined();
+  });
+
+  it("should carry on through the back matter when the reader opened it on purpose", () => {
+    expect(nextInFlow(chapters, "c4")?.id).toBe("c5");
+    expect(nextInFlow(chapters, "c5")).toBeUndefined();
   });
 });
 

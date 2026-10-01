@@ -249,6 +249,10 @@ export function createLibrary(dataDir: string): Library {
         await writeFileAtomic(join(staging, "book.json"), JSON.stringify(parsed));
 
         const chapterWordCounts = Object.fromEntries(parsed.chapters.map((c) => [c.id, chapterWords(c)]));
+        // Reading time is the book's own text: a title page, an index or a licence is not reading.
+        const bodyWords = parsed.chapters
+          .filter((c) => (c.kind ?? "body") === "body")
+          .reduce((sum, c) => sum + (chapterWordCounts[c.id] ?? 0), 0);
         const slug = slugify(parsed.title);
         // 8 hash characters make a collision between two different files vanishingly rare, but never overwrite one.
         for (const chars of [HASH_CHARS, LONG_HASH_CHARS]) {
@@ -259,7 +263,7 @@ export function createLibrary(dataDir: string): Library {
             author: parsed.author,
             pageCount: parsed.pageCount,
             chapterCount: parsed.chapters.length,
-            wordCount: Object.values(chapterWordCounts).reduce((sum, n) => sum + n, 0),
+            wordCount: bodyWords,
             addedAt: new Date().toISOString(),
             progress: null,
             sha256,
@@ -288,6 +292,7 @@ export function createLibrary(dataDir: string): Library {
       const chapters: ChapterSummary[] = book.chapters.map((chapter) => ({
         id: chapter.id,
         title: chapter.title,
+        kind: chapter.kind ?? "body",
         startPage: chapter.startPage,
         endPage: chapter.endPage,
         wordCount: meta.chapterWordCounts[chapter.id] ?? chapterWords(chapter),
