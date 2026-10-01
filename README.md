@@ -134,6 +134,10 @@ Explanations sit in the margin beside their paragraph on wide screens and direct
 - Reading aloud uses the voices built into your browser and operating system.
 - An explanation of a passage takes a few seconds to start, because accuracy was chosen over speed there.
 
+## License
+
+[MIT](LICENSE)
+
 ## Acknowledgements
 
 - [pdf.js](https://github.com/mozilla/pdf.js) reads the PDF text layer.
