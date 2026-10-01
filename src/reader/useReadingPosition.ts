@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import type { BookDetail, Chapter } from "../../shared/types.ts";
 import { api } from "../api.ts";
@@ -79,7 +79,8 @@ export function useReadingPosition(
   const opened = useRef<Chapter | null>(null);
   const inUrl = useRef(chapterId);
 
-  useEffect(() => {
+  // A layout effect: a measurement already waiting on a timer must see a chapter the reader just jumped to.
+  useLayoutEffect(() => {
     inUrl.current = chapterId;
   }, [chapterId]);
 

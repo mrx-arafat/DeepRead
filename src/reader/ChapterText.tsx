@@ -40,7 +40,7 @@ export function ChapterText({ blocks, notes, bookId, chapterId, lang, actions }:
   function handleMouseUp(event: MouseEvent<HTMLDivElement>) {
     if (event.button !== 0 || !blockOf(event.target as Node)) return;
     const { clientX, clientY } = event;
-    const text = event.currentTarget;
+    const container = event.currentTarget;
     // Wait a tick: a plain click only clears an old selection after mouseup.
     setTimeout(() => {
       const selection = window.getSelection();
@@ -49,7 +49,7 @@ export function ChapterText({ blocks, notes, bookId, chapterId, lang, actions }:
         const range = selection.getRangeAt(0).cloneRange();
         const block = blockOf(range.startContainer);
         // A selection that starts in another chapter belongs to that chapter, not this one.
-        if (!block?.dataset.block || !text.contains(block)) return;
+        if (!block?.dataset.block || !container.contains(block)) return;
         const lookup = { range, text: selected.slice(0, 1500), chapterId, blockId: block.dataset.block };
         if (/\s/.test(selected)) onSelect(lookup);
         else onWord(lookup);
