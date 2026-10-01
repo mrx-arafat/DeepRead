@@ -14,12 +14,15 @@ type Props = {
   /** The book whose save or removal is in flight. Every other row waits, so only one request runs at a time. */
   pending: string | null;
   deleteError: string | null;
+  /** True once, right after the book above this one was removed: focus lands on this row's link. */
+  focusLink: boolean;
   onMode: (mode: Mode) => void;
   onSave: (id: string, update: BookUpdate) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 };
 
-export function BookRow({ book, mode, pending, deleteError, onMode, onSave, onRemove }: Props) {
+export function BookRow({ book, mode, pending, deleteError, focusLink, onMode, onSave, onRemove }: Props) {
+  const link = useRef<HTMLAnchorElement>(null);
   const editButton = useRef<HTMLButtonElement>(null);
   const removeButton = useRef<HTMLButtonElement>(null);
   const keepButton = useRef<HTMLButtonElement>(null);
@@ -37,6 +40,10 @@ export function BookRow({ book, mode, pending, deleteError, onMode, onSave, onRe
       returnFocusTo.current = null;
     }
   }, [mode, deleteError]);
+
+  useEffect(() => {
+    if (focusLink) link.current?.focus();
+  }, [focusLink]);
 
   function close(opener: "edit" | "remove") {
     returnFocusTo.current = opener;
@@ -64,7 +71,7 @@ export function BookRow({ book, mode, pending, deleteError, onMode, onSave, onRe
   const { progress } = book;
   return (
     <li className="shelf-item" onKeyDown={handleKeyDown}>
-      <Link href={`/book/${book.id}`} className="shelf-link">
+      <Link ref={link} href={`/book/${book.id}`} className="shelf-link">
         <span className="shelf-title">{book.title}</span>
         {progress && (
           <span className="shelf-continue">

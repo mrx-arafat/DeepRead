@@ -7,6 +7,8 @@ import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
 import { addFailure } from "./library/bookText.ts";
 
+const ADD_BUTTON = "add";
+
 /** The one row that is being edited or asked to confirm its removal. */
 type Active = { kind: "edit"; id: string } | { kind: "delete"; id: string; error: string | null };
 
@@ -37,7 +39,10 @@ export function LibraryPage() {
   const [dragging, setDragging] = useState(false);
   const [active, setActive] = useState<Active | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  // Where keyboard focus goes once a removed row is gone: a book's id, or "add". Set for one render.
+  const [focusAfterRemoval, setFocusAfterRemoval] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     // `current` drops the answer of a request the reader has already replaced by pressing "Try again".
@@ -51,6 +56,13 @@ export function LibraryPage() {
       current = false;
     };
   }, [attempt]);
+
+  useEffect(() => {
+    if (focusAfterRemoval === null) return;
+    if (focusAfterRemoval === ADD_BUTTON) addButton.current?.focus();
+    // The row that wanted focus has taken it by now (children's effects run first).
+    setFocusAfterRemoval(null);
+  }, [focusAfterRemoval]);
 
   async function add(file: File | undefined) {
     if (!file || uploading) return;
@@ -89,6 +101,9 @@ export function LibraryPage() {
       await api.deleteBook(id);
       // Only now: if the request failed the book is still here, and so are its notes.
       forgetNotes(id);
+      // The row the reader was on is about to vanish, and focus would fall to the page: hand it to a neighbour.
+      const at = books?.findIndex((book) => book.id === id) ?? -1;
+      setFocusAfterRemoval(books?.[at + 1]?.id ?? books?.[at - 1]?.id ?? ADD_BUTTON);
       setBooks((all) => all?.filter((book) => book.id !== id) ?? null);
       setActive(null);
     } catch (err) {
@@ -138,7 +153,7 @@ export function LibraryPage() {
           </p>
         ) : (
           <>
-            <button type="button" className="button" onClick={() => input.current?.click()}>
+            <button ref={addButton} type="button" className="button" onClick={() => input.current?.click()}>
               <FileUp size={18} aria-hidden /> Add a book (PDF)
             </button>
             <span className="drop-hint">or drop a PDF here</span>
@@ -178,6 +193,7 @@ export function LibraryPage() {
                   mode={mine?.kind ?? "view"}
                   pending={pending}
                   deleteError={mine?.kind === "delete" ? mine.error : null}
+                  focusLink={focusAfterRemoval === book.id}
                   onMode={(mode) => show(book.id, mode)}
                   onSave={save}
                   onRemove={remove}
