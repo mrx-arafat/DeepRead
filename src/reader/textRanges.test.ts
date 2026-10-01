@@ -76,6 +76,49 @@ describe("sentenceSpans", () => {
   it("should return no sentences when the text is only whitespace", () => {
     expect(sentenceSpans("  \n ")).toEqual([]);
   });
+
+  // The cases below are real sentences from the test book (The Problems of Philosophy).
+  const sentencesIn = (text: string) => sentenceSpans(text).map((span) => cut(text, span));
+
+  it("should keep a name written with initials in one sentence", () => {
+    const text =
+      "I have derived valuable assistance from unpublished writings of G. E. Moore and J. M. Keynes: from the former, as regards the relations of sense-data to physical objects, and from the latter as regards probability and induction. I have also profited greatly by the criticisms and suggestions of Professor Gilbert Murray.";
+    expect(sentencesIn(text)).toEqual([
+      "I have derived valuable assistance from unpublished writings of G. E. Moore and J. M. Keynes: from the former, as regards the relations of sense-data to physical objects, and from the latter as regards probability and induction.",
+      "I have also profited greatly by the criticisms and suggestions of Professor Gilbert Murray.",
+    ]);
+  });
+
+  it("should keep a title or a citation abbreviation with the name after it", () => {
+    const text = "But if he believes that Mr. Balfour was the late Prime Minister, he is wrong. (1) Cf. A. N. Whitehead, Introduction to Mathematics (Home University Library).";
+    expect(sentencesIn(text)).toEqual([
+      "But if he believes that Mr. Balfour was the late Prime Minister, he is wrong.",
+      "(1) Cf. A. N. Whitehead, Introduction to Mathematics (Home University Library).",
+    ]);
+  });
+
+  it("should keep a title and a lettered name inside a quoted sentence", () => {
+    const text =
+      "The proposition 'a is the so-and-so' means that a has the property so-and-so, and nothing else has. 'Mr. A. is the Unionist candidate for this constituency' means 'Mr. A. is a Unionist candidate for this constituency, and no one else is'. 'The Unionist candidate for this constituency exists' means 'some one is a Unionist candidate for this constituency, and no one else is'.";
+    expect(sentencesIn(text)).toEqual([
+      "The proposition 'a is the so-and-so' means that a has the property so-and-so, and nothing else has.",
+      "'Mr. A. is the Unionist candidate for this constituency' means 'Mr. A. is a Unionist candidate for this constituency, and no one else is'.",
+      "'The Unionist candidate for this constituency exists' means 'some one is a Unionist candidate for this constituency, and no one else is'.",
+    ]);
+  });
+
+  it("should keep common abbreviations with the word after them", () => {
+    const text = "He met Dr. Smith in St. Paul, e.g. Berkeley, i.e. Locke. Pens, etc. The end.";
+    expect(sentencesIn(text)).toEqual(["He met Dr. Smith in St. Paul, e.g. Berkeley, i.e. Locke.", "Pens, etc.", "The end."]);
+  });
+
+  it("should still split after a capital letter that ends a sentence", () => {
+    const text = "In our case, the data are merely the known cases of coexistence of A and B. There may be other data, which might be taken into account.";
+    expect(sentencesIn(text)).toEqual([
+      "In our case, the data are merely the known cases of coexistence of A and B.",
+      "There may be other data, which might be taken into account.",
+    ]);
+  });
 });
 
 describe("parseSections", () => {

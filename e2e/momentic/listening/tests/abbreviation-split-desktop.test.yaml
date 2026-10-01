@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
-id: listening-bug-abbreviation-split
-description: Expected to fail until fixed - initials such as G. E. Moore must not be read and highlighted as separate sentences, desktop 1440 (stubbed speech)
+id: listening-abbreviation-split
+description: Initials such as G. E. Moore must not be read and highlighted as separate sentences, desktop 1440 (stubbed speech)
 viewport:
   width: 1440
   height: 900

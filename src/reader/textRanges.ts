@@ -90,6 +90,32 @@ export function termSpan(text: string): Span | null {
   return isTerm ? { start: match.index, end: match.index + term.length } : null;
 }
 
+// Titles and citation words that a name or phrase always follows, never a new sentence. "etc." is left out: it usually does end one.
+const ABBREVIATIONS = new Set(
+  "mr. mrs. ms. dr. prof. st. mt. messrs. rev. capt. col. gen. lt. sgt. cf. e.g. i.e. viz. vs.".split(" "),
+);
+
+// Words that open a sentence far more often than a surname does: "of A and B. There may be" ends at "B.".
+const OPENERS = new Set(
+  `the a an this that these those there here it its he she they we you i in on at by for from to of with as if but and or
+  so thus hence then now when where while what which who how why one some all any no not such let our his her their my
+  your is are was were do does did can may must shall will should would could yet still however therefore also even
+  only each every both many most other another since because although though after before until unless whether nor
+  perhaps indeed`.split(/\s+/),
+);
+
+/** The segmenter breaks after "G." in "G. E. Moore" and after "Mr.": whether `next` carries on the sentence `before`. */
+function continues(text: string, before: Span, next: Span): boolean {
+  const last = /\S+$/.exec(text.slice(before.start, before.end))?.[0].replace(/^[("'\u2018\u201c[]+/, "") ?? "";
+  if (ABBREVIATIONS.has(last.toLowerCase())) return true;
+  // An initial or a dotted acronym ("G.", "U.S."): it ends the sentence only when a sentence opener comes next.
+  if (!/^(?:\p{Lu}\.)+$/u.test(last)) return false;
+  const after = text.slice(next.start, next.end);
+  if (/^\p{Lu}\.(?:\s|$)/u.test(after)) return true;
+  const word = /^[("'\u2018\u201c[]*(\p{Lu}[\p{L}'\u2019-]*)/u.exec(after)?.[1];
+  return word !== undefined && !OPENERS.has(word.toLowerCase());
+}
+
 /** Sentences of `text` with surrounding whitespace trimmed off. */
 export function sentenceSpans(text: string): Span[] {
   const spans: Span[] = [];
@@ -97,7 +123,10 @@ export function sentenceSpans(text: string): Span[] {
     const trimmed = part.segment.trim();
     if (!trimmed) continue;
     const start = part.index + part.segment.indexOf(trimmed);
-    spans.push({ start, end: start + trimmed.length });
+    const span = { start, end: start + trimmed.length };
+    const before = spans.at(-1);
+    if (before && continues(text, before, span)) before.end = span.end;
+    else spans.push(span);
   }
   return spans;
 }
