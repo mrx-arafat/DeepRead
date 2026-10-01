@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
-id: listening-bug-word-card-focus
-description: Expected to fail until fixed - opening a word card must move focus into it (or announce it), desktop 1440
+id: listening-word-card-focus
+description: Opening a word card must move focus into it (or announce it), desktop 1440
 viewport:
   width: 1440
   height: 900

@@ -79,6 +79,16 @@ export function wordAt(text: string, offset: number): Span | null {
   return word;
 }
 
+/** The word after `from` (or before it when `step` is -1); with no `from`, the first (or last) word. Null past the end. */
+export function stepWord(text: string, from: Span | null, step: 1 | -1): Span | null {
+  const parts = [...words.segment(text)].filter((part) => part.isWordLike);
+  const next =
+    step === 1
+      ? parts.find((part) => part.index >= (from?.end ?? 0))
+      : parts.findLast((part) => part.index + part.segment.length <= (from?.start ?? text.length));
+  return next ? wordAt(text, next.index) : null;
+}
+
 /** Where the term sits in a short selection ("a priori", "common sense"), or null when the selection is a passage. */
 export function termSpan(text: string): Span | null {
   // From the first letter or digit to the last, leaving out quotes and full stops picked up by the drag.

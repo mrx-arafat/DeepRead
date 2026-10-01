@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
-id: listening-bug-keyboard-lookup
-description: Expected to fail until fixed - a keyboard-only reader must be able to reach the book text to look up a word or explain a passage, desktop 1440
+id: listening-keyboard-lookup
+description: A keyboard-only reader must be able to reach the book text to look up a word or explain a passage, desktop 1440
 viewport:
   width: 1440
   height: 900

@@ -967,6 +967,45 @@ h4[data-block] {
   font-size: 1em;
 }
 
+/* A keyboard reader's place: the paragraph in focus, the word under the cursor, and which keys do what. */
+[data-block] {
+  /* Focusable for the keyboard, but a tap on a phone must not flash the whole paragraph. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+[data-block]:focus-visible {
+  position: relative;
+  outline-offset: 6px;
+  border-radius: 2px;
+}
+
+::highlight(dr-cursor) {
+  background-color: var(--pen-wash);
+  text-decoration: underline 2px var(--pen);
+  text-underline-offset: 0.2em;
+}
+
+/* The keys, set into the top edge of the focus ring like a label, in the space between paragraphs. */
+[data-block]:focus-visible::after {
+  content: "\2190\2009\2192  move   \00b7   Enter  look up   \00b7   Shift\2009+\2009\2192  select" / "";
+  position: absolute;
+  top: -7px;
+  right: 0.5rem;
+  padding: 0 0.375rem;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: pre;
+  transform: translateY(-50%);
+}
+
+.word-popover:focus {
+  outline: none;
+}
+
 /* Small screens: an explanation sits right under its paragraph. */
 .row {
   display: flex;

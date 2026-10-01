@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseGlossaryEntry, parseSections } from "./RichText.tsx";
-import { sentenceSpans, termSpan, wordAt } from "./textRanges.ts";
+import { sentenceSpans, stepWord, termSpan, wordAt } from "./textRanges.ts";
 
 const cut = (text: string, span: { start: number; end: number } | null) => span && text.slice(span.start, span.end);
 
@@ -44,6 +44,26 @@ describe("wordAt", () => {
     const dashes = "colour--oblong and sense-data\u2014brown";
     expect(cut(dashes, wordAt(dashes, 1))).toBe("colour");
     expect(cut(dashes, wordAt(dashes, dashes.indexOf("brown") + 1))).toBe("brown");
+  });
+});
+
+describe("stepWord", () => {
+  const line = "Let us give 'sense-data' a name.";
+
+  it("should move to the next or previous word, skipping spaces and quotes", () => {
+    const give = wordAt(line, line.indexOf("give"));
+    expect(cut(line, stepWord(line, give, 1))).toBe("sense-data");
+    expect(cut(line, stepWord(line, give, -1))).toBe("us");
+  });
+
+  it("should start from the first or last word when there is no word yet", () => {
+    expect(cut(line, stepWord(line, null, 1))).toBe("Let");
+    expect(cut(line, stepWord(line, null, -1))).toBe("name");
+  });
+
+  it("should return null past either end of the text", () => {
+    expect(stepWord(line, wordAt(line, line.indexOf("name")), 1)).toBeNull();
+    expect(stepWord(line, wordAt(line, 0), -1)).toBeNull();
   });
 });
 

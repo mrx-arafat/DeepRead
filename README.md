@@ -29,6 +29,7 @@ The explanation appears beside the paragraph you are reading, and you keep going
 | **Translate a passage** | **In Bangla** (or your language) gives a faithful, natural translation followed by a short explanation. |
 | **Make it concrete** | **Example** restates the idea as an everyday situation. |
 | **Chapter companion** | A short preview with the words to watch before a chapter, and a summary of the key ideas after it. |
+| **By keyboard** | Tab reaches the book text. Up and Down move between paragraphs, Left and Right move word by word, Enter looks up the word, and Shift with Left or Right selects a passage for Enter to explain. Escape closes the card and returns you to your place. |
 | **Listen** | Reads the book aloud, chapter titles included, and highlights the sentence and the word being spoken. |
 | **Your library** | Add, rename and remove books. Each book shows the chapter and percentage where you stopped, and opens right there. Notes stay beside their paragraphs and survive a reload. |
 

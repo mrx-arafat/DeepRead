@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import { LANGUAGES, type ExplainRequest, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { canSpeak, speak } from "./speech.ts";
+import { blockOf } from "./textRanges.ts";
 import { useAiStream } from "./useAiStream.ts";
 
 export type Lookup = {
@@ -11,6 +12,8 @@ export type Lookup = {
   text: string;
   chapterId: string;
   blockId: string;
+  /** Asked for from the keyboard, so the bar that opens takes focus. */
+  keyboard?: boolean;
 };
 
 type Props = {
@@ -42,6 +45,19 @@ export function WordPopover({ lookup, bookId, lang, onListenFromHere, onClose }:
       getBoundingClientRect: () => lookup.range.getBoundingClientRect(),
       getClientRects: () => lookup.range.getClientRects(),
     });
+  }, [refs, lookup.range]);
+
+  // The card takes focus so it is announced and its buttons are next for a keyboard;
+  // closing it from inside (Escape, Close, Listen) hands focus back to the paragraph.
+  useLayoutEffect(() => {
+    const card = refs.floating.current;
+    card?.focus({ preventScroll: true });
+    return () => {
+      if (!card?.contains(document.activeElement)) return;
+      // React ignores focus events while it commits, so the paragraph takes focus once the card is gone.
+      const block = blockOf(lookup.range.startContainer);
+      queueMicrotask(() => block?.focus({ preventScroll: true }));
+    };
   }, [refs, lookup.range]);
 
   // A keyless dictionary translation, kept only as a fallback: it ignores the sentence, so it can pick
@@ -79,6 +95,7 @@ export function WordPopover({ lookup, bookId, lang, onListenFromHere, onClose }:
       ref={refs.setFloating}
       style={floatingStyles}
       className="popover word-popover"
+      tabIndex={-1}
       role="dialog"
       aria-label={`Meaning of ${lookup.text}`}
     >

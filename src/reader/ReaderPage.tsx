@@ -257,7 +257,13 @@ export function ReaderPage({ bookId, chapterId }: Props) {
         />
       )}
       {selection && (
-        <SelectionBar range={selection.range} lang={prefs.lang} onExplain={explain} onListen={() => listenFrom(selection)} />
+        <SelectionBar
+          range={selection.range}
+          lang={prefs.lang}
+          autoFocus={selection.keyboard}
+          onExplain={explain}
+          onListen={() => listenFrom(selection)}
+        />
       )}
     </div>
   );
