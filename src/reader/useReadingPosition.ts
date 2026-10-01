@@ -15,7 +15,7 @@ export type ReadingPosition = {
 type Spot = { chapter: HTMLElement; block: HTMLElement | null; blocks: NodeListOf<HTMLElement> };
 
 /** Where the reader's eyes are: just under the top bar. */
-const EYE_LINE = 96;
+export const EYE_LINE = 96;
 
 const bottomOf = (elements: NodeListOf<HTMLElement>, row: boolean) => (index: number) => {
   const element = elements[index];

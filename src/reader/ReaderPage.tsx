@@ -16,7 +16,7 @@ import { setHighlight } from "./textRanges.ts";
 import { useChapterFlow } from "./useChapterFlow.ts";
 import { useListen } from "./useListen.ts";
 import { useNotes } from "./useNotes.ts";
-import { blockAtTop, useReadingPosition } from "./useReadingPosition.ts";
+import { blockAtTop, EYE_LINE, useReadingPosition } from "./useReadingPosition.ts";
 import { WordPopover, type Lookup } from "./WordPopover.tsx";
 
 type Props = { bookId: string; chapterId: string | null };
@@ -137,7 +137,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     const start = blockAtTop()?.dataset.block ?? (current && readableBlocks(current)[0]?.id) ?? blocks[0]?.id;
     if (!start) return;
     rememberKeyboardStart();
-    listen.startAt(start);
+    listen.startAtLine(start, EYE_LINE);
   }
 
   const pageError = error ?? flow.error;

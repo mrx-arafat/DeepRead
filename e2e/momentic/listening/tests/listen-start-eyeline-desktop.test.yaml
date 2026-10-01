@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
-id: listening-bug-start-eyeline
-description: Expected to fail until fixed - Listen pressed mid-paragraph should start at the sentence being read, not the first sentence of that paragraph above it. Desktop 1440 (stubbed speech)
+id: listening-start-eyeline
+description: Listen pressed mid-paragraph should start at the sentence being read, not the first sentence of that paragraph above it. Desktop 1440 (stubbed speech)
 viewport:
   width: 1440
   height: 900
@@ -15,12 +15,19 @@ steps:
       saveAs: EYE_LINE
       code: |-
         window.scrollTo({ top: 1700, behavior: 'instant' });
-        const caret = document.caretRangeFromPoint(212, 110);
-        window.__eye = { block: caret.startContainer.parentElement.dataset.block, offset: caret.startOffset };
-        return JSON.stringify(window.__eye);
+        // Where the reader's eyes are is read at the moment of the click: the click itself may scroll the page.
+        document.addEventListener(
+          'click',
+          () => {
+            const caret = document.caretRangeFromPoint(212, 110);
+            window.__eye = { block: caret.startContainer.parentElement.dataset.block, offset: caret.startOffset };
+          },
+          { capture: true, once: true },
+        );
+        return 'armed';
   - wait: 600
   - click:
-      coords: 1119, 25
+      css: '.topbar-tools button[aria-pressed]'
   - wait: 1200
   - javascript:
       environment: browser

@@ -19,6 +19,8 @@ export type Listen = {
   previous: () => void;
   /** Start reading at the sentence containing `offset` of the given block. */
   startAt: (blockId: string, offset?: number) => void;
+  /** Start reading at the sentence of the given block that is at `line` (window y), or the first one under it. */
+  startAtLine: (blockId: string, line: number) => void;
 };
 
 /**
@@ -167,16 +169,27 @@ export function useListen(blocks: Block[], rate: number): Listen {
     [sentences],
   );
 
+  const begin = useCallback((target: SentenceAt | undefined) => {
+    if (!target) return;
+    setError(null);
+    setAt({ blockId: target.blockId, start: target.start });
+    setPlaying(true);
+  }, []);
+
   const startAt = useCallback(
-    (blockId: string, offset = 0) => {
-      const target =
-        sentences.find((s) => s.blockId === blockId && offset < s.end) ?? sentences.find((s) => s.blockId === blockId);
-      if (!target) return;
-      setError(null);
-      setAt({ blockId: target.blockId, start: target.start });
-      setPlaying(true);
+    (blockId: string, offset = 0) =>
+      begin(sentences.find((s) => s.blockId === blockId && offset < s.end) ?? sentences.find((s) => s.blockId === blockId)),
+    [sentences, begin],
+  );
+
+  const startAtLine = useCallback(
+    (blockId: string, line: number) => {
+      const inBlock = sentences.filter((s) => s.blockId === blockId);
+      // The first sentence that still reaches below the line: the one being read there, not the paragraph's first.
+      const reaching = inBlock.find((s) => (rangeInBlock(blockId, s)?.getBoundingClientRect().bottom ?? 0) > line);
+      begin(reaching ?? inBlock[0]);
     },
-    [sentences],
+    [sentences, begin],
   );
 
   const toggle = useCallback(() => {
@@ -195,5 +208,5 @@ export function useListen(blocks: Block[], rate: number): Listen {
   const previous = useCallback(() => move(-1), [move]);
   const showSentence = useCallback(() => setReveal((count) => count + 1), []);
 
-  return { active: sentence !== null, playing, error, away, showSentence, toggle, stop, next, previous, startAt };
+  return { active: sentence !== null, playing, error, away, showSentence, toggle, stop, next, previous, startAt, startAtLine };
 }
