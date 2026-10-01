@@ -6,7 +6,7 @@ import type { QuickTranslation } from "../shared/types.ts";
 import type { AppDeps } from "./deps.ts";
 import { apiError, invalidBody, isLangCode, LANG_HELP } from "./http.ts";
 import { createLibrary } from "./library.ts";
-import { localOnly } from "./local-only.ts";
+import { accessGuard } from "./local-only.ts";
 import { aiRoutes } from "./routes-ai.ts";
 import { booksRoutes } from "./routes-books.ts";
 
@@ -16,7 +16,7 @@ export function createApp(deps: AppDeps): Hono {
   const library = createLibrary(deps.dataDir);
   const app = new Hono();
 
-  app.use("/api/*", localOnly);
+  app.use("/api/*", accessGuard(deps.remoteKey));
   app.get("/api/health", (c) => c.json({ ok: true }));
 
   app.get("/api/translate", async (c) => {

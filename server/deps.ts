@@ -12,4 +12,6 @@ export type AppDeps = {
   quickTranslate: QuickTranslate;
   /** Built web app to serve (production only). Unknown paths fall back to its index.html. */
   webRoot?: string;
+  /** When set, devices on other host names (a tunnel) may use the app after unlocking with this key. */
+  remoteKey?: string;
 };

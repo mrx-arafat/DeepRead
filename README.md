@@ -54,6 +54,18 @@ Open http://localhost:5173 and add a PDF.
 DeepRead has no API key of its own.
 Explanations are produced by running `claude` in headless mode with your existing login, so whatever plan you use for Claude Code is what answers your questions.
 
+### Read on your phone
+
+```bash
+pnpm phone
+```
+
+This runs DeepRead and shares it through a [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) (needs `cloudflared`, on macOS `brew install cloudflared`).
+It prints a link to open on your phone.
+The link carries a secret key, kept in `data/remote-key`, that unlocks DeepRead on that device.
+Without the key, the tunnel answers nothing but the empty page shell.
+Anyone who has the link can use DeepRead and your Claude usage, so do not share it.
+
 ## How it works
 
 ```mermaid
@@ -105,6 +117,7 @@ Explanations sit in the margin beside their paragraph on wide screens and direct
 
 - Your PDFs, the parsed books and the answer cache stay in `data/` on your machine.
 - The server listens on `127.0.0.1` only and rejects requests from other origins.
+  With `pnpm phone`, remote devices are refused until they open the link with the secret key.
 - The text you ask about is sent to Anthropic through your Claude Code login, the same as any Claude Code session.
 - A fallback word translation uses an unofficial Google endpoint, and only if the AI answer fails.
 
@@ -125,6 +138,7 @@ Explanations sit in the margin beside their paragraph on wide screens and direct
 | Command | Does |
 | --- | --- |
 | `pnpm dev` | Server on 8787 and web app on 5173, with reload |
+| `pnpm phone` | The same, plus a locked tunnel link for reading on your phone |
 | `pnpm build` then `pnpm start` | Production build, served by the server on 8787 |
 | `pnpm test` | Unit and functional tests |
 | `pnpm typecheck` | TypeScript check |

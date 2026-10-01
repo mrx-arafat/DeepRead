@@ -609,4 +609,74 @@ describe("DeepRead API", () => {
     expect(missing.status).toBe(404);
     expect(((await missing.json()) as { error: string }).error).toBe("not_found");
   });
+
+  describe("remote access through a tunnel", () => {
+    const KEY = "k3y-for-tests-0123456789";
+    const TUNNEL = "https://quiet-river.trycloudflare.com";
+    // What a tunnelled request really looks like here: cloudflared and the Vite proxy rewrite Host to
+    // loopback, and Cloudflare's edge adds cf-connecting-ip and cf-ray.
+    const viaTunnel = { "cf-connecting-ip": "203.0.113.7", "cf-ray": "8f0c1a2b3c4d5e6f-DAC" };
+    let remote: Hono;
+
+    beforeEach(() => {
+      remote = createApp({
+        dataDir,
+        parsePdf: fakeParsePdf,
+        llm: llm.llm,
+        quickTranslate: async (text) => text,
+        remoteKey: KEY,
+      });
+    });
+
+    const unlockCookie = async (): Promise<string> => {
+      const unlocked = await remote.request(`/api/unlock?key=${KEY}`, { headers: viaTunnel });
+      return (unlocked.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    };
+
+    it("should refuse a tunnelled request when the device has not been unlocked with the key", async () => {
+      const response = await remote.request("/api/books", { headers: viaTunnel });
+      expect(response.status).toBe(403);
+      expect(((await response.json()) as { error: string }).error).toBe("locked");
+      expect((await remote.request("/api/unlock?key=wrong-key", { headers: viaTunnel })).status).toBe(403);
+      // A host name that is not this computer counts as remote too (production serving without a proxy).
+      expect((await remote.request(`${TUNNEL}/api/books`)).status).toBe(403);
+    });
+
+    it("should unlock a device with the key link and then answer its same-origin requests", async () => {
+      const unlocked = await remote.request(`/api/unlock?key=${KEY}`, { headers: { ...viaTunnel, "sec-fetch-site": "none" } });
+      expect(unlocked.status).toBe(302);
+      expect(unlocked.headers.get("location")).toBe("/");
+      const setCookie = unlocked.headers.get("set-cookie") ?? "";
+      expect(setCookie).toMatch(/HttpOnly/i);
+      expect(setCookie).toMatch(/SameSite=Strict/i);
+      expect(setCookie).toMatch(/Secure/i);
+      expect(setCookie).not.toMatch(/Domain=/i);
+
+      const cookie = await unlockCookie();
+      const headers = { ...viaTunnel, cookie, origin: TUNNEL, "sec-fetch-site": "same-origin" };
+      expect((await remote.request("/api/books", { headers })).status).toBe(200);
+    });
+
+    it("should refuse another website even when the device is unlocked", async () => {
+      const cookie = await unlockCookie();
+      for (const site of ["cross-site", "same-site"]) {
+        const borrowed = await remote.request("/api/books", {
+          method: "POST",
+          headers: { ...viaTunnel, cookie, origin: "https://evil.trycloudflare.com", "sec-fetch-site": site },
+          body: new FormData(),
+        });
+        expect(borrowed.status).toBe(403);
+      }
+    });
+
+    it("should keep this computer working without any key", async () => {
+      expect((await remote.request("/api/health", { headers: { origin: "http://localhost:5173" } })).status).toBe(200);
+    });
+
+    it("should refuse all tunnelled requests when no key is configured", async () => {
+      expect((await app.request("/api/books", { headers: viaTunnel })).status).toBe(403);
+      expect((await app.request(`/api/unlock?key=${KEY}`, { headers: viaTunnel })).status).toBe(403);
+      expect((await app.request(`/api/unlock?key=${KEY}`)).status).toBe(404);
+    });
+  });
 });

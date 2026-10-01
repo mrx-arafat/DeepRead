@@ -8,6 +8,7 @@
     "dev": "concurrently -k -n server,web -c blue,green \"pnpm dev:server\" \"pnpm dev:web\"",
     "dev:server": "node --watch server/index.ts",
     "dev:web": "vite",
+    "phone": "node scripts/phone.mjs",
     "build": "vite build",
     "start": "NODE_ENV=production node server/index.ts",
     "typecheck": "tsc --noEmit",
@@ -32,6 +33,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "concurrently": "^10.0.5",
+    "momentic": "3.62.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
     "vitest": "^5.0.3"

@@ -8,6 +8,9 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // `pnpm tunnel` serves this dev server on a random *.trycloudflare.com name for reading on a phone.
+    // The API still refuses those devices until they unlock with DEEPREAD_REMOTE_KEY.
+    allowedHosts: [".trycloudflare.com"],
     proxy: {
       "/api": `http://127.0.0.1:${API_PORT}`,
     },

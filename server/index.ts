@@ -19,6 +19,7 @@ const app = createApp({
   llm,
   quickTranslate: translator.translate,
   webRoot: production ? resolve(import.meta.dirname, "../dist") : undefined,
+  remoteKey: process.env.DEEPREAD_REMOTE_KEY || undefined,
 });
 
 // Bound to loopback on purpose: this is a single-user app with no login.
