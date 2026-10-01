@@ -31,7 +31,8 @@ steps:
       code: |-
         const need = (ok, msg) => { if (!ok) throw new Error(msg); };
         const texts = window.__stub.spoken.map((s) => s.text);
-        need(texts.indexOf('1912') !== -1 && texts[texts.indexOf('1912') + 1].startsWith('Is there any knowledge'), 'reading should carry on from the Preface into chapter I');
+        need(texts.indexOf('1912') !== -1 && texts[texts.indexOf('1912') + 1] === 'CHAPTER I. APPEARANCE AND REALITY', 'chapter I should open with its title being read');
+        need(texts[texts.indexOf('1912') + 2].startsWith('Is there any knowledge'), 'reading should carry on from the title into the chapter');
         need(location.pathname.endsWith('/c3'), 'the address should follow into the next chapter');
         need(document.querySelector('.listen-bar'), 'the player stays open across the boundary');
         return 'ok';

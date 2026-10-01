@@ -44,7 +44,8 @@ steps:
         const st = window.__stub;
         const texts = st.spoken.map((s) => s.text);
         need(texts.indexOf('1912') !== -1, 'the last block of the Preface should have been read');
-        need(texts[texts.indexOf('1912') + 1].startsWith('Is there any knowledge'), 'reading should carry on into the first sentence of the next chapter');
+        need(texts[texts.indexOf('1912') + 1] === 'CHAPTER I. APPEARANCE AND REALITY', 'the next chapter should open with its title being read, got ' + texts[texts.indexOf('1912') + 1]);
+        need(texts[texts.indexOf('1912') + 2].startsWith('Is there any knowledge'), 'reading should carry on into the first sentence of the next chapter');
         need(location.pathname.endsWith('/c3'), 'the address should follow into the next chapter, got ' + location.pathname);
         need(document.querySelector('.topbar-title').textContent.includes('CHAPTER I.'), 'the top bar should name the new chapter');
         need(document.querySelector('.listen-bar'), 'the player stays open across the boundary');

@@ -9,6 +9,7 @@ import { ChapterList } from "./ChapterList.tsx";
 import { ChapterSection } from "./ChapterSection.tsx";
 import type { TextActions } from "./ChapterText.tsx";
 import { ListenBar } from "./ListenBar.tsx";
+import { listenBlocks } from "./listenBlocks.ts";
 import { ReadingSettings } from "./ReadingSettings.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
 import { canSpeak } from "./speech.ts";
@@ -45,8 +46,8 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     };
   }, [bookId]);
 
-  // Every block on the page, in reading order, so listening carries on from one chapter into the next.
-  const blocks = useMemo(() => flow.chapters.flatMap(readableBlocks), [flow.chapters]);
+  // Everything read aloud, in reading order: listening carries on from one chapter's end into the next one's title.
+  const blocks = useMemo(() => listenBlocks(flow.chapters), [flow.chapters]);
   const nextChapter = useMemo(
     () => ({ coming: flow.hasMore, error: flow.nextError, open: flow.loadNext }),
     [flow.hasMore, flow.nextError, flow.loadNext],

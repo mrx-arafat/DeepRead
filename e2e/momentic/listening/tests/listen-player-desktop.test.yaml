@@ -78,7 +78,7 @@ steps:
       code: |-
         const need = (ok, msg) => { if (!ok) throw new Error(msg); };
         const h = (n) => { const hl = CSS.highlights.get(n); return hl ? [...hl].map((r) => r.toString()).join('|') : null; };
-        need(h('dr-sentence').startsWith('Is there any knowledge'), 'Previous at the first sentence stays on it, got ' + h('dr-sentence'));
+        need(h('dr-sentence').startsWith('CHAPTER I.'), 'Previous from the first sentence goes to the chapter title, got ' + h('dr-sentence'));
         return 'ok';
   - select:
       css: '.listen-bar select'

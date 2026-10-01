@@ -3,6 +3,7 @@ import type { BookDetail, Chapter, LangCode } from "../../shared/types.ts";
 import { kindOf, minutes, readableBlocks } from "./book.ts";
 import { ChapterAid } from "./ChapterAid.tsx";
 import { ChapterText, type TextActions } from "./ChapterText.tsx";
+import { titleId } from "./listenBlocks.ts";
 import type { Note } from "./NoteCard.tsx";
 
 type Props = {
@@ -23,10 +24,10 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
   const index = text.findIndex((item) => item.id === chapter.id);
   const summary = text[index];
   const kind = kindOf(book.chapters.find((item) => item.id === chapter.id) ?? chapter);
-  const titleId = `chapter-title-${chapter.id}`;
+  const headingId = titleId(chapter.id);
 
   return (
-    <article className="chapter" data-chapter={chapter.id} aria-labelledby={titleId}>
+    <article className="chapter" data-chapter={chapter.id} aria-labelledby={headingId}>
       <header className="chapter-head">
         <p className="chapter-meta">
           {kind === "front"
@@ -35,7 +36,7 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
               ? "After the main text"
               : `Chapter ${index + 1} of ${text.length}${summary ? ` · about ${minutes(summary.wordCount)} min` : ""}`}
         </p>
-        <h1 id={titleId}>{chapter.title}</h1>
+        <h1 id={headingId}>{chapter.title}</h1>
       </header>
 
       {/* A title page or a licence needs no preview or summary. */}

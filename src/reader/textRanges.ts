@@ -134,12 +134,22 @@ export function sentenceSpans(text: string): Span[] {
 // Blocks never change once loaded, so each is split once, not again every time a chapter is appended.
 const splitBlocks = new WeakMap<Block, Sentence[]>();
 
+// A heading is a title, not prose: "CHAPTER I. APPEARANCE AND REALITY" is one thing to say, not two sentences.
+// A long "heading" is more likely a paragraph the parser mistook for one, so it is split like any text.
+const MAX_HEADING = 160;
+
+function spansOf(block: Block): Span[] {
+  if (block.type !== "heading" || block.text.length > MAX_HEADING) return sentenceSpans(block.text);
+  const title = block.text.trim();
+  return title ? [{ start: block.text.indexOf(title), end: block.text.indexOf(title) + title.length }] : [];
+}
+
 /** Every sentence of `blocks`, in reading order. */
 export function sentencesOf(blocks: Block[]): Sentence[] {
   return blocks.flatMap((block) => {
     let list = splitBlocks.get(block);
     if (!list) {
-      list = sentenceSpans(block.text).map((span) => ({
+      list = spansOf(block).map((span) => ({
         ...span,
         blockId: block.id,
         text: block.text.slice(span.start, span.end),
@@ -193,9 +203,11 @@ export function wordRangeAtPoint(x: number, y: number): Range | null {
   return hit ? range : null;
 }
 
-/** A range over part of a rendered block, or null if that block is not on the page. */
+/** A range over part of a rendered block (or chapter title), or null if it is not on the page. */
 export function rangeInBlock(blockId: string, span: Span): Range | null {
-  const node = document.querySelector(`[data-block="${CSS.escape(blockId)}"]`)?.firstChild;
+  // A chapter's title is read like a block but is not one: it is found by its id.
+  const element = document.querySelector(`[data-block="${CSS.escape(blockId)}"]`) ?? document.getElementById(blockId);
+  const node = element?.firstChild;
   if (!(node instanceof Text) || span.end > node.length) return null;
   const range = document.createRange();
   range.setStart(node, span.start);
