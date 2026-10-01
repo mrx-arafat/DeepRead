@@ -21,17 +21,27 @@ export class ApiFailure extends Error {
   }
 }
 
+const NOT_REACHABLE = "DeepRead is not reachable. Check that it is running, then try again.";
+
 async function failure(res: Response): Promise<ApiFailure> {
   const body = (await res.json().catch(() => null)) as Partial<ApiError> | null;
-  return new ApiFailure(
-    body?.error ?? "unknown",
-    body?.message ?? `Something went wrong (${res.status}). Is the DeepRead server running?`,
-    res.status,
-  );
+  // No JSON sentence means no DeepRead answered: a proxy or a stopped server replied with a page of its own.
+  return new ApiFailure(body?.error ?? "unknown", body?.message ?? NOT_REACHABLE, res.status);
+}
+
+/** `fetch`, except that a request which never reached DeepRead fails with a sentence, not the browser's "Failed to fetch". */
+async function connect(path: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(path, init);
+  } catch (error) {
+    // A request the caller cancelled is not a failure to report.
+    if (init?.signal?.aborted) throw error;
+    throw new ApiFailure("unreachable", NOT_REACHABLE, 0);
+  }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+  const res = await connect(path, init);
   if (!res.ok) throw await failure(res);
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
