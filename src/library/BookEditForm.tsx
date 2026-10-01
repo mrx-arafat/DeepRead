@@ -84,7 +84,9 @@ export function BookEditForm({ book, saving, onSave, onClose }: Props) {
         )}
       </div>
       <div className="shelf-field">
-        <label htmlFor={authorId}>Author</label>
+        <label htmlFor={authorId}>
+          Author <span className="shelf-optional">(optional)</span>
+        </label>
         <input
           id={authorId}
           value={author}

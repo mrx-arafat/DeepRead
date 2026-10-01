@@ -94,6 +94,7 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, onMode, o
         type="button"
         className="icon-button"
         aria-label={`Edit ${book.title}`}
+        title="Edit title and author"
         disabled={pending !== null || mode === "delete"}
         onClick={() => onMode("edit")}
       >

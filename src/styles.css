@@ -442,6 +442,10 @@ select {
   font-weight: 600;
 }
 
+.shelf-optional {
+  font-weight: 400;
+}
+
 .shelf-field input {
   width: 100%;
   min-height: 2.75rem;
