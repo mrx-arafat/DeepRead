@@ -24,8 +24,8 @@ The explanation appears beside the paragraph you are reading, and you keep going
 | | |
 | --- | --- |
 | **Whole-book reading** | Add a PDF and read it start to finish as one continuous page. Chapters follow each other as you scroll, and your place is saved. |
-| **Tap a word** | Its meaning in your language, a simple English meaning, and an example sentence. The meaning is chosen for the sentence you are in, so "minute sums of money" is "very small", not a unit of time. |
-| **Explain a passage** | Select any text and choose **Explain**. You get it in simple words, in context (who is speaking, what just happened), its deeper meaning (the idea, psychology or theme behind it), and its hard words. |
+| **Tap a word** | Its meaning in your language, a simple English meaning, and an example sentence. The meaning is chosen for the sentence you are in, so "minute sums of money" is "very small", not a unit of time. Terms like "sense-data" and "a priori" are looked up whole, and selecting two or three words ("common sense") looks them up together. |
+| **Explain a passage** | Select a passage and choose **Explain**. You get it in simple words, in context (who is speaking, what just happened), its deeper meaning (the idea, psychology or theme behind it), and its hard words. |
 | **Translate a passage** | **In Bangla** (or your language) gives a faithful, natural translation followed by a short explanation. |
 | **Make it concrete** | **Example** restates the idea as an everyday situation. |
 | **Chapter companion** | A short preview with the words to watch before a chapter, and a summary of the key ideas after it. |

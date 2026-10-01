@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseGlossaryEntry, parseSections } from "./RichText.tsx";
-import { sentenceSpans, wordAt } from "./textRanges.ts";
+import { sentenceSpans, termSpan, wordAt } from "./textRanges.ts";
 
 const cut = (text: string, span: { start: number; end: number } | null) => span && text.slice(span.start, span.end);
 
@@ -32,10 +32,34 @@ describe("wordAt", () => {
     expect(cut(text, wordAt(text, text.indexOf("known")))).toBe("well-known");
   });
 
+  it("should return a fixed foreign phrase whole when any of its words is tapped", () => {
+    const latin = "whatever knowledge was A priori must be 'analytic', a view per se";
+    expect(cut(latin, wordAt(latin, latin.indexOf("priori") + 2))).toBe("A priori");
+    expect(cut(latin, wordAt(latin, latin.indexOf("A priori")))).toBe("A priori");
+    expect(cut(latin, wordAt(latin, latin.indexOf("se") + 1))).toBe("per se");
+    expect(cut(latin, wordAt(latin, latin.indexOf("a view")))).toBe("a");
+  });
+
   it("should not join words across a double hyphen or a dash", () => {
     const dashes = "colour--oblong and sense-data\u2014brown";
     expect(cut(dashes, wordAt(dashes, 1))).toBe("colour");
     expect(cut(dashes, wordAt(dashes, dashes.indexOf("brown") + 1))).toBe("brown");
+  });
+});
+
+describe("termSpan", () => {
+  it("should find a short term inside a selection, without the quotes and spaces around it", () => {
+    const selected = " 'a priori'.";
+    expect(cut(selected, termSpan(selected))).toBe("a priori");
+    expect(cut("common sense", termSpan("common sense"))).toBe("common sense");
+    expect(cut("sense-data", termSpan("sense-data"))).toBe("sense-data");
+  });
+
+  it("should return null when the selection is a passage, not a term", () => {
+    expect(termSpan("the things that are immediately known")).toBeNull();
+    expect(termSpan("colours, sounds")).toBeNull();
+    expect(termSpan("at all? If")).toBeNull();
+    expect(termSpan("...")).toBeNull();
   });
 });
 

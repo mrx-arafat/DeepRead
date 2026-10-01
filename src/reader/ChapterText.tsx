@@ -1,7 +1,7 @@
 import { memo, type MouseEvent } from "react";
 import type { Block, LangCode } from "../../shared/types.ts";
 import { NoteCard, type Note } from "./NoteCard.tsx";
-import { blockOf, wordRangeAtPoint } from "./textRanges.ts";
+import { blockOf, termSpan, wordRangeAtPoint } from "./textRanges.ts";
 import type { Lookup } from "./WordPopover.tsx";
 
 /** What the reader can do with the text. Shared by every chapter on the page, so keep the functions stable. */
@@ -50,9 +50,18 @@ export function ChapterText({ blocks, notes, bookId, chapterId, lang, actions }:
         const block = blockOf(range.startContainer);
         // A selection that starts in another chapter belongs to that chapter, not this one.
         if (!block?.dataset.block || !container.contains(block)) return;
-        const lookup = { range, text: selected.slice(0, 1500), chapterId, blockId: block.dataset.block };
-        if (/\s/.test(selected)) onSelect(lookup);
-        else onWord(lookup);
+        const blockId = block.dataset.block;
+        // A word or a short term ("a priori") gets its meaning, like a tap; anything longer is a passage to explain.
+        const term = range.startContainer === range.endContainer ? termSpan(range.toString()) : null;
+        if (term) {
+          const from = range.startOffset;
+          range.setStart(range.startContainer, from + term.start);
+          range.setEnd(range.startContainer, from + term.end);
+          selection.removeAllRanges();
+          onWord({ range, text: range.toString(), chapterId, blockId });
+        } else {
+          onSelect({ range, text: selected.slice(0, 1500), chapterId, blockId });
+        }
         return;
       }
       const range = wordRangeAtPoint(clientX, clientY);

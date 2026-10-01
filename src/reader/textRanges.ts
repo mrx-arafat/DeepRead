@@ -16,7 +16,47 @@ const sentences = new Intl.Segmenter("en", { granularity: "sentence" });
 // A single hyphen between two words makes one term ("sense-data", "self-evident"); a dash or "--" does not.
 const HYPHENS = new Set(["-", "\u2010", "\u2011"]);
 
-/** The word touching `offset`, or null when the offset sits in spaces or punctuation. A hyphenated term is one word. */
+// Borrowed phrases whose words mean nothing on their own in English: "priori" alone is no help to a reader.
+const PHRASES = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?:${[
+    "a priori",
+    "a posteriori",
+    "a fortiori",
+    "ad hoc",
+    "ad hominem",
+    "ad infinitum",
+    "ad nauseam",
+    "bona fide",
+    "ceteris paribus",
+    "de facto",
+    "de jure",
+    "en masse",
+    "et al",
+    "et cetera",
+    "inter alia",
+    "ipso facto",
+    "modus operandi",
+    "mutatis mutandis",
+    "non sequitur",
+    "par excellence",
+    "per se",
+    "prima facie",
+    "quid pro quo",
+    "reductio ad absurdum",
+    "status quo",
+    "sui generis",
+    "tabula rasa",
+    "vice versa",
+  ]
+    .map((phrase) => phrase.replaceAll(" ", "\\s+"))
+    .join("|")})(?![\\p{L}\\p{N}])`,
+  "giu",
+);
+
+/**
+ * The word touching `offset`, or null when the offset sits in spaces or punctuation.
+ * A hyphenated term ("sense-data") or a borrowed phrase ("a priori") counts as one word.
+ */
 export function wordAt(text: string, offset: number): Span | null {
   const parts = [...words.segment(text)];
   const hit = parts.findIndex(
@@ -30,7 +70,24 @@ export function wordAt(text: string, offset: number): Span | null {
   let last = hit;
   while (joins(last + 1)) last += 2;
   const end = parts[last]!;
-  return { start: parts[first]!.index, end: end.index + end.segment.length };
+  const word = { start: parts[first]!.index, end: end.index + end.segment.length };
+  for (const match of text.matchAll(PHRASES)) {
+    const phrase = { start: match.index, end: match.index + match[0].length };
+    if (phrase.start <= word.start && word.end <= phrase.end) return phrase;
+    if (phrase.start > word.end) break;
+  }
+  return word;
+}
+
+/** Where the term sits in a short selection ("a priori", "common sense"), or null when the selection is a passage. */
+export function termSpan(text: string): Span | null {
+  // From the first letter or digit to the last, leaving out quotes and full stops picked up by the drag.
+  const match = /[\p{L}\p{N}](?:[\s\S]*[\p{L}\p{N}])?/u.exec(text);
+  if (!match) return null;
+  const term = match[0];
+  const isTerm =
+    term.length <= 40 && /^[\p{L}\p{M}\p{N}'\u2019\u2010\u2011\s-]+$/u.test(term) && term.split(/\s+/).length <= 3;
+  return isTerm ? { start: match.index, end: match.index + term.length } : null;
 }
 
 /** Sentences of `text` with surrounding whitespace trimmed off. */
