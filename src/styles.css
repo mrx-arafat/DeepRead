@@ -288,7 +288,18 @@ select {
   color: var(--ink-soft);
 }
 
-.drop + .inline-error {
+.inline-notice {
+  font-size: 0.9375rem;
+}
+
+.inline-notice a {
+  color: var(--pen);
+  font-weight: 600;
+  text-underline-offset: 0.15em;
+}
+
+.drop + .inline-error,
+.drop + .inline-notice {
   margin-top: 1rem;
 }
 

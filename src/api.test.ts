@@ -42,3 +42,20 @@ describe("api requests that fail", () => {
     await expect(api.getChapter("a-b", "c1", controller.signal)).rejects.toBe(aborted);
   });
 });
+
+describe("api.uploadBook", () => {
+  const file = new File(["%PDF-1.4"], "book.pdf", { type: "application/pdf" });
+  const bookJson = JSON.stringify({ id: "book-12345678", title: "Book" });
+
+  it("should say the library already held the book when the server answers 200", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(bookJson, { status: 200 })));
+
+    await expect(api.uploadBook(file)).resolves.toMatchObject({ book: { id: "book-12345678" }, alreadyHad: true });
+  });
+
+  it("should say the book is new when the server answers 201", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(bookJson, { status: 201 })));
+
+    await expect(api.uploadBook(file)).resolves.toMatchObject({ book: { id: "book-12345678" }, alreadyHad: false });
+  });
+});

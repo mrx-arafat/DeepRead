@@ -40,9 +40,15 @@ async function connect(path: string, init?: RequestInit): Promise<Response> {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** The response of a request DeepRead answered with success; anything else throws an ApiFailure. */
+async function accept(path: string, init?: RequestInit): Promise<Response> {
   const res = await connect(path, init);
   if (!res.ok) throw await failure(res);
+  return res;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await accept(path, init);
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
@@ -60,10 +66,12 @@ export const api = {
   deleteBook: (id: string) => request<void>(`/api/books/${id}`, { method: "DELETE" }),
   getChapter: (bookId: string, chapterId: string, signal?: AbortSignal) =>
     request<Chapter>(`/api/books/${bookId}/chapters/${chapterId}`, { signal }),
-  uploadBook: (file: File) => {
+  uploadBook: async (file: File): Promise<{ book: BookDetail; alreadyHad: boolean }> => {
     const form = new FormData();
     form.append("file", file);
-    return request<BookDetail>("/api/books", { method: "POST", body: form });
+    const res = await accept("/api/books", { method: "POST", body: form });
+    // 201 is a new book; 200 means this exact file is already in the library and nothing was added.
+    return { book: (await res.json()) as BookDetail, alreadyHad: res.status === 200 };
   },
   saveProgress: (bookId: string, chapterId: string, blockId: string) =>
     request<ReadingProgress>(`/api/books/${bookId}/progress`, json("PUT", { chapterId, blockId })),

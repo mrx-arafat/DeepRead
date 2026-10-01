@@ -1,11 +1,11 @@
 import { FileUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import type { BookSummary, BookUpdate } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
-import { addFailure } from "./library/bookText.ts";
+import { addFailure, shortTitle } from "./library/bookText.ts";
 
 const ADD_BUTTON = "add";
 
@@ -35,6 +35,8 @@ export function LibraryPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  /** The book the reader tried to add again, which the library already holds. */
+  const [already, setAlready] = useState<{ id: string; title: string } | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [active, setActive] = useState<Active | null>(null);
@@ -67,9 +69,16 @@ export function LibraryPage() {
   async function add(file: File | undefined) {
     if (!file || uploading) return;
     setError(null);
+    setAlready(null);
     setUploading(file.name);
     try {
-      const book = await api.uploadBook(file);
+      const { book, alreadyHad } = await api.uploadBook(file);
+      if (alreadyHad) {
+        // Stay on the shelf: the reader asked to add a book, not to open one, and nothing was added.
+        setAlready({ id: book.id, title: book.title });
+        setUploading(null);
+        return;
+      }
       navigate(`/book/${book.id}`);
     } catch (err) {
       setError(addFailure(file.name, err));
@@ -78,6 +87,7 @@ export function LibraryPage() {
   }
 
   function show(id: string, mode: Mode) {
+    setAlready(null);
     setActive(mode === "view" ? null : mode === "edit" ? { kind: "edit", id } : { kind: "delete", id, error: null });
   }
 
@@ -164,6 +174,13 @@ export function LibraryPage() {
       {error && (
         <p className="inline-error" role="alert">
           {error}
+        </p>
+      )}
+
+      {already && (
+        <p className="inline-notice" role="status">
+          “{shortTitle(already.title)}” is already in your library, so nothing was added.{" "}
+          <Link href={`/book/${already.id}`}>Open it</Link>
         </p>
       )}
 

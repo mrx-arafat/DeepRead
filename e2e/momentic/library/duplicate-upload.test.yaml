@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
 id: library-duplicate-upload
-description: A reader adds the same book twice. The library must still hold one copy, and the reader should be told that the book was already there. Run from the repo root.
+description: A reader adds the same book twice. The library must still hold one copy, and the reader is told on the library page that the book was already there. Run from the repo root.
 viewport: 1440, 900
 before:
   - module: ./modules/reset-library.module.yaml
@@ -11,8 +11,7 @@ steps:
   - checkPageContains: Your books
   - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
   - click: Add a book (PDF) button
-  - waitForUrl: /book/
-  - checkPageContains: Front Matter
+  - checkPageContains: is already in your library
   - javascript:
       saveAs: BOOK_COUNT
       code: |-
@@ -22,4 +21,4 @@ steps:
   - javascript:
       code: |-
         if (env.BOOK_COUNT.count !== 1) throw new Error(`Expected one book after adding the same file twice, found ${env.BOOK_COUNT.count}`);
-  - assertVisually: The reader is open and a notice tells the reader that this book was already in the library
+  - assertVisually: The library page is still shown, with a notice under the drop box saying the book is already in the library and nothing was added, and exactly one book row below
