@@ -1,0 +1,51 @@
+import type { Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { LANGUAGES } from "../shared/types.ts";
+import type { ApiError, LangCode } from "../shared/types.ts";
+
+/** Every non-2xx answer goes through here so the client always gets the same `ApiError` shape. */
+export function apiError(c: Context, status: ContentfulStatusCode, error: string, message: string): Response {
+  const body: ApiError = { error, message };
+  return c.json(body, status);
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function isLangCode(value: unknown): value is LangCode {
+  return typeof value === "string" && Object.hasOwn(LANGUAGES, value);
+}
+
+export const LANG_HELP = `Pick one of: ${Object.keys(LANGUAGES).join(", ")}.`;
+
+export async function readJsonObject(c: Context): Promise<Record<string, unknown> | null> {
+  try {
+    const body: unknown = await c.req.json();
+    return isRecord(body) ? body : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The string at `key` if it is non-empty (after trimming) and within `maxLength`, otherwise null. */
+export function readString(body: Record<string, unknown>, key: string, maxLength: number): string | null {
+  const value = body[key];
+  if (typeof value !== "string" || value.trim() === "" || value.length > maxLength) return null;
+  return value;
+}
+
+export const invalidBody = (c: Context, detail: string): Response =>
+  apiError(c, 400, "invalid_request", `The request was not understood: ${detail}`);
+
+export const invalidId = (c: Context): Response =>
+  apiError(c, 400, "invalid_id", "That book id is not valid.");
+
+export const bookNotFound = (c: Context): Response =>
+  apiError(c, 404, "book_not_found", "That book is not in your library. It may have been deleted.");
+
+export const chapterNotFound = (c: Context): Response =>
+  apiError(c, 404, "chapter_not_found", "That chapter was not found in this book.");
+
+export const blockNotFound = (c: Context): Response =>
+  apiError(c, 404, "block_not_found", "That paragraph was not found in this chapter.");
