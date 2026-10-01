@@ -1,11 +1,22 @@
 import { Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
+import type { Ref } from "react";
 import { setPrefs } from "../prefs.ts";
 import type { Listen } from "./useListen.ts";
 
 const RATES = [0.8, 1, 1.2, 1.5];
 
 /** Player controls, pinned to the bottom of the window while listening. */
-export function ListenBar({ listen, rate }: { listen: Listen; rate: number }) {
+export function ListenBar({
+  listen,
+  rate,
+  playRef,
+  onStop,
+}: {
+  listen: Listen;
+  rate: number;
+  playRef: Ref<HTMLButtonElement>;
+  onStop: () => void;
+}) {
   return (
     <div className="listen-bar" role="region" aria-label="Read aloud">
       {listen.error && <p className="inline-error">{listen.error}</p>}
@@ -14,6 +25,7 @@ export function ListenBar({ listen, rate }: { listen: Listen; rate: number }) {
           <SkipBack size={18} aria-hidden />
         </button>
         <button
+          ref={playRef}
           type="button"
           className="icon-button listen-play"
           aria-label={listen.playing ? "Pause" : "Play"}
@@ -34,7 +46,7 @@ export function ListenBar({ listen, rate }: { listen: Listen; rate: number }) {
             ))}
           </select>
         </label>
-        <button type="button" className="icon-button" aria-label="Stop listening" onClick={listen.stop}>
+        <button type="button" className="icon-button" aria-label="Stop listening" onClick={onStop}>
           <X size={18} aria-hidden />
         </button>
       </div>

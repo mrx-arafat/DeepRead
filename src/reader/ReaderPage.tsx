@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowUp, Headphones, List, Moon, Sun } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { LANGUAGES, type BookDetail, type ExplainMode, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
@@ -47,6 +47,10 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   // Every block on the page, in reading order, so listening carries on from one chapter into the next.
   const blocks = useMemo(() => flow.chapters.flatMap(readableBlocks), [flow.chapters]);
   const listen = useListen(blocks, prefs.rate);
+  const { active: listenActive, stop: stopListen } = listen;
+  const listenButton = useRef<HTMLButtonElement>(null);
+  const playButton = useRef<HTMLButtonElement>(null);
+  const focusPlayer = useRef(false);
 
   // The book restarted at another chapter: open popovers would point into text that is gone.
   useEffect(() => {
@@ -64,15 +68,34 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     setSelection(null);
   }, []);
 
+  // Stopping from inside the player must not drop a keyboard reader's focus into the page body.
+  const stopListening = useCallback(() => {
+    const inPlayer = playButton.current?.closest(".listen-bar")?.contains(document.activeElement);
+    stopListen();
+    if (inPlayer) listenButton.current?.focus();
+  }, [stopListen]);
+
+  // Escape closes the topmost thing: a popover or the chapter list first, then the player.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      dismiss();
-      setTocOpen(false);
+      if (word || selection || tocOpen) {
+        dismiss();
+        setTocOpen(false);
+      } else if (listenActive) {
+        stopListening();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dismiss]);
+  }, [dismiss, word, selection, tocOpen, listenActive, stopListening]);
+
+  // A keyboard reader who starts listening lands on the player, so Pause and Next are right there.
+  useEffect(() => {
+    if (!focusPlayer.current || !playButton.current) return;
+    focusPlayer.current = false;
+    playButton.current.focus();
+  });
 
   const handleWord = useCallback((lookup: Lookup) => {
     setSelection(null);
@@ -96,7 +119,13 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     setSelection(null);
   }
 
+  /** Whoever starts listening from the keyboard should find the player under their fingers. */
+  function rememberKeyboardStart() {
+    focusPlayer.current = document.activeElement?.matches(":focus-visible") ?? false;
+  }
+
   function listenFrom(lookup: Lookup) {
+    rememberKeyboardStart();
     listen.startAt(lookup.blockId, lookup.range.startOffset);
     window.getSelection()?.removeAllRanges();
     dismiss();
@@ -105,7 +134,9 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   function listenFromView() {
     const current = flow.chapters.find((chapter) => chapter.id === position.chapterId);
     const start = blockAtTop()?.dataset.block ?? (current && readableBlocks(current)[0]?.id) ?? blocks[0]?.id;
-    if (start) listen.startAt(start);
+    if (!start) return;
+    rememberKeyboardStart();
+    listen.startAt(start);
   }
 
   const pageError = error ?? flow.error;
@@ -142,7 +173,13 @@ export function ReaderPage({ bookId, chapterId }: Props) {
         )}
         <div className="topbar-tools">
           {canSpeak && (
-            <button type="button" className="quiet-button" onClick={listen.active ? listen.stop : listenFromView} aria-pressed={listen.active}>
+            <button
+              ref={listenButton}
+              type="button"
+              className="quiet-button"
+              onClick={listen.active ? stopListening : listenFromView}
+              aria-pressed={listen.active}
+            >
               <Headphones size={18} aria-hidden /> Listen
             </button>
           )}
@@ -197,6 +234,9 @@ export function ReaderPage({ bookId, chapterId }: Props) {
         )}
       </header>
 
+      {/* Right after the top bar in the page order, so a keyboard reader reaches it in a Tab or two. It is fixed to the window, so it looks the same. */}
+      {listen.active && <ListenBar listen={listen} rate={prefs.rate} playRef={playButton} onStop={stopListening} />}
+
       {tocOpen && book && <ChapterList book={book} currentId={position.chapterId ?? chapterId} onClose={() => setTocOpen(false)} />}
 
       <main className="page" style={{ paddingBottom: listen.active ? "9rem" : undefined }}>
@@ -248,7 +288,6 @@ export function ReaderPage({ bookId, chapterId }: Props) {
       {selection && (
         <SelectionBar range={selection.range} lang={prefs.lang} onExplain={explain} onListen={() => listenFrom(selection)} />
       )}
-      {listen.active && <ListenBar listen={listen} rate={prefs.rate} />}
     </div>
   );
 }

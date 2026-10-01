@@ -120,20 +120,18 @@ export function useListen(blocks: Block[], rate: number): Listen {
     [sentences],
   );
 
-  return {
-    active: sentence !== null,
-    playing,
-    error,
-    toggle: () => {
-      setError(null);
-      setPlaying((value) => !value);
-    },
-    stop: () => {
-      setPlaying(false);
-      setAt(null);
-    },
-    next: () => move(1),
-    previous: () => move(-1),
-    startAt,
-  };
+  const toggle = useCallback(() => {
+    setError(null);
+    setPlaying((value) => !value);
+  }, []);
+
+  const stop = useCallback(() => {
+    setPlaying(false);
+    setAt(null);
+  }, []);
+
+  const next = useCallback(() => move(1), [move]);
+  const previous = useCallback(() => move(-1), [move]);
+
+  return { active: sentence !== null, playing, error, toggle, stop, next, previous, startAt };
 }

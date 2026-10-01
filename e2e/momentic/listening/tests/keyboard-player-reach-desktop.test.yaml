@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
-id: listening-bug-keyboard-player
-description: Expected to fail until fixed - a keyboard user who starts Listen with Enter must reach the player controls within three Tab presses, desktop 1440 (stubbed speech)
+id: listening-keyboard-player
+description: A keyboard user who starts Listen with Enter must reach the player controls within three Tab presses, desktop 1440 (stubbed speech)
 viewport:
   width: 1440
   height: 900
