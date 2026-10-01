@@ -75,13 +75,13 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     if (inPlayer) listenButton.current?.focus();
   }, [stopListen]);
 
-  // Escape closes the topmost thing: a popover or the chapter list first, then the player.
+  // Escape closes the topmost thing: a popover first, then the player.
+  // The chapter list is a modal dialog that closes itself and puts focus back, so it is left to do that.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (word || selection || tocOpen) {
+      if (event.key !== "Escape" || tocOpen) return;
+      if (word || selection) {
         dismiss();
-        setTocOpen(false);
       } else if (listenActive) {
         stopListening();
       }

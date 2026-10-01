@@ -544,22 +544,29 @@ select {
   font-size: 1.25rem;
 }
 
-.scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  background: rgb(0 0 0 / 0.35);
+/* A modal <dialog> drawn as a drawer down the left edge, over the dimmed page. */
+.toc {
+  inset: 0 auto 0 0;
+  width: min(24rem, 88vw);
+  max-width: none;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--rule);
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
 }
 
-.toc {
-  position: fixed;
-  inset: 0 auto 0 0;
-  z-index: 31;
+.toc[open] {
   display: flex;
   flex-direction: column;
-  width: min(24rem, 88vw);
-  border-right: 1px solid var(--rule);
-  background: var(--paper);
+}
+
+.toc::backdrop {
+  background: rgb(0 0 0 / 0.35);
 }
 
 .toc-head {
@@ -579,6 +586,7 @@ select {
 .toc ol {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0.5rem 0 2rem;
 }
 
@@ -593,6 +601,11 @@ select {
 
 .toc-link:hover {
   background: var(--wash);
+}
+
+/* Rows span the scrolling list edge to edge, so a ring outside them would be cut off at the sides. */
+.toc-link:focus-visible {
+  outline-offset: -2px;
 }
 
 .toc-link[aria-current="page"] {
