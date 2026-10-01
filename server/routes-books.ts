@@ -170,7 +170,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf }): Hon
         } catch (error) {
           if (error instanceof ParseError) return apiError(c, 422, error.kind, error.message);
           console.error("PDF parsing failed unexpectedly:", error);
-          return apiError(c, 500, "parse_failed", "This PDF could not be read because of an unexpected problem.");
+          return apiError(c, 500, "parse_failed", "This PDF could not be read because of an unexpected problem. Try again, or use a different copy of the book.");
         }
 
         const { id, created } = await library.add({ uploadPath, sha256, parsed });

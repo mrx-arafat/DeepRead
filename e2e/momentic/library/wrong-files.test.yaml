@@ -33,7 +33,7 @@ steps:
   - click:
       on: Add a book (PDF) button
       retries: 2
-  - checkPageContains: Not a readable PDF
+  - checkPageContains: This PDF looks damaged
   - javascript:
       environment: browser
       saveAs: BROKEN_ERROR
