@@ -4,11 +4,25 @@ import { speak, whenVoiceFree } from "./speech.ts";
 import { placeInView, scrollTopFor, type Place } from "./sentenceView.ts";
 import { rangeInBlock, sentenceIndex, sentencesOf, setHighlight, wordAt, type SentenceAt } from "./textRanges.ts";
 
+/** What the page can say about the chapter that follows the last one on it. */
+export type NextChapter = {
+  /** Another chapter follows the last one on the page. */
+  coming: boolean;
+  /** Why it could not be opened, if it could not. */
+  error: string | null;
+  /** Ask for it now: the page only loads it once the reader scrolls near the end. */
+  open: () => void;
+};
+
 export type Listen = {
   /** The player is open (playing or paused). */
   active: boolean;
   playing: boolean;
   error: string | null;
+  /** The voice reached the end of what is loaded and is waiting for the next chapter (or for a retry). */
+  waiting: "opening" | "failed" | null;
+  /** Try again to open the next chapter. */
+  retry: () => void;
   /** The sentence being read is out of the reader's view, above or below it. */
   away: Exclude<Place, "in"> | null;
   /** Bring the sentence being read back into view. */
@@ -27,13 +41,14 @@ export type Listen = {
  * Reads the book aloud one sentence at a time, highlighting the sentence and word being spoken.
  * `blocks` are all the blocks on the page, in order; it may grow while reading, and reading carries on into it.
  */
-export function useListen(blocks: Block[], rate: number): Listen {
+export function useListen(blocks: Block[], rate: number, nextChapter: NextChapter): Listen {
   const sentences = useMemo(() => sentencesOf(blocks), [blocks]);
   const [at, setAt] = useState<SentenceAt | null>(null);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Bumped to speak the sentence again after something else (a word from its card) had the voice.
   const [again, setAgain] = useState(0);
+  const [waiting, setWaiting] = useState(false);
   const [away, setAway] = useState<Listen["away"]>(null);
   // Bumped to scroll the sentence into view because the reader asked for it (Play, Next, the back button).
   const [reveal, setReveal] = useState(0);
@@ -49,15 +64,28 @@ export function useListen(blocks: Block[], rate: number): Listen {
 
   // When a sentence ends, the next one is looked up in the newest list: a chapter may have arrived meanwhile.
   const latest = useRef(sentences);
+  const following = useRef(nextChapter);
   useEffect(() => {
     latest.current = sentences;
-  }, [sentences]);
+    following.current = nextChapter;
+  }, [sentences, nextChapter]);
+
+  // Reading reached the end of what is loaded: carry on as soon as the next chapter arrives.
+  useEffect(() => {
+    if (!waiting || !at) return;
+    const done = sentenceIndex(sentences, at);
+    const after = done === -1 ? undefined : sentences[done + 1];
+    if (!after) return;
+    setWaiting(false);
+    setAt({ blockId: after.blockId, start: after.start });
+  }, [waiting, sentences, at]);
 
   // The sentence is gone from the page (the reader opened another part of the book): close the player.
   useEffect(() => {
     if (!at || index !== -1) return;
     setAt(null);
     setPlaying(false);
+    setWaiting(false);
     setError(null);
   }, [at, index]);
 
@@ -123,6 +151,7 @@ export function useListen(blocks: Block[], rate: number): Listen {
 
   useEffect(() => {
     if (!playing || !sentence) return;
+    setWaiting(false);
     let unwait = () => {};
     const cancel = speak(sentence.text, {
       rate,
@@ -134,10 +163,17 @@ export function useListen(blocks: Block[], rate: number): Listen {
       onEnd: () => {
         const list = latest.current;
         const done = sentenceIndex(list, sentence);
-        const next = done === -1 ? undefined : list[done + 1];
-        // Nothing loaded after this sentence yet: pause here, the player stays open.
-        if (next) setAt({ blockId: next.blockId, start: next.start });
-        else setPlaying(false);
+        const after = done === -1 ? undefined : list[done + 1];
+        if (after) {
+          setAt({ blockId: after.blockId, start: after.start });
+        } else if (following.current.coming) {
+          // The next chapter is not on the page yet: ask for it (the reader may be far from where it loads
+          // by itself) and carry on when it arrives.
+          setWaiting(true);
+          following.current.open();
+        } else {
+          setPlaying(false);
+        }
       },
       // Something else took the voice (a word said from its card): carry on with this sentence once it is done.
       onInterrupted: () => {
@@ -194,6 +230,7 @@ export function useListen(blocks: Block[], rate: number): Listen {
 
   const toggle = useCallback(() => {
     setError(null);
+    setWaiting(false);
     // Pressing Play brings the sentence about to be read into view, so the page and the voice agree.
     if (!playing) setReveal((count) => count + 1);
     setPlaying(!playing);
@@ -201,12 +238,28 @@ export function useListen(blocks: Block[], rate: number): Listen {
 
   const stop = useCallback(() => {
     setPlaying(false);
+    setWaiting(false);
     setAt(null);
   }, []);
 
-  const next = useCallback(() => move(1), [move]);
+  const forward = useCallback(() => move(1), [move]);
   const previous = useCallback(() => move(-1), [move]);
+  const retry = useCallback(() => following.current.open(), []);
   const showSentence = useCallback(() => setReveal((count) => count + 1), []);
 
-  return { active: sentence !== null, playing, error, away, showSentence, toggle, stop, next, previous, startAt, startAtLine };
+  return {
+    active: sentence !== null,
+    playing,
+    error,
+    waiting: waiting ? (nextChapter.error ? "failed" : "opening") : null,
+    retry,
+    away,
+    showSentence,
+    toggle,
+    stop,
+    next: forward,
+    previous,
+    startAt,
+    startAtLine,
+  };
 }

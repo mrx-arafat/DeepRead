@@ -1288,8 +1288,7 @@ h4[data-block] {
   position: absolute;
   bottom: calc(100% + 0.5rem);
   left: 50%;
-  display: flex;
-  align-items: center;
+  display: grid;
   width: max-content;
   max-width: min(24rem, calc(100vw - 2rem));
   padding: 0.25rem;
@@ -1298,6 +1297,14 @@ h4[data-block] {
   background: var(--raised);
   box-shadow: var(--lift);
   transform: translateX(-50%);
+}
+
+.listen-note {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+  line-height: 1.4;
 }
 
 .listen-back {

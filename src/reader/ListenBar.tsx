@@ -19,12 +19,23 @@ export function ListenBar({
 }) {
   return (
     <div className="listen-bar" role="region" aria-label="Read aloud">
-      {listen.away && (
+      {(listen.away || listen.waiting) && (
         <div className="listen-status">
-          <button type="button" className="listen-back" onClick={listen.showSentence}>
-            {listen.away === "above" ? <ArrowUp size={16} aria-hidden /> : <ArrowDown size={16} aria-hidden />}
-            Back to the sentence being read
-          </button>
+          {listen.waiting === "opening" && <p className="listen-note">Opening the next chapter...</p>}
+          {listen.waiting === "failed" && (
+            <p className="listen-note">
+              The next chapter did not open. Reading goes on when it does.{" "}
+              <button type="button" className="link-button" onClick={listen.retry}>
+                Try again
+              </button>
+            </p>
+          )}
+          {listen.away && (
+            <button type="button" className="listen-back" onClick={listen.showSentence}>
+              {listen.away === "above" ? <ArrowUp size={16} aria-hidden /> : <ArrowDown size={16} aria-hidden />}
+              Back to the sentence being read
+            </button>
+          )}
         </div>
       )}
       {listen.error && <p className="inline-error">{listen.error}</p>}

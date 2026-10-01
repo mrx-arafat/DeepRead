@@ -47,7 +47,11 @@ export function ReaderPage({ bookId, chapterId }: Props) {
 
   // Every block on the page, in reading order, so listening carries on from one chapter into the next.
   const blocks = useMemo(() => flow.chapters.flatMap(readableBlocks), [flow.chapters]);
-  const listen = useListen(blocks, prefs.rate);
+  const nextChapter = useMemo(
+    () => ({ coming: flow.hasMore, error: flow.nextError, open: flow.loadNext }),
+    [flow.hasMore, flow.nextError, flow.loadNext],
+  );
+  const listen = useListen(blocks, prefs.rate, nextChapter);
   const { active: listenActive, stop: stopListen } = listen;
   const listenButton = useRef<HTMLButtonElement>(null);
   const playButton = useRef<HTMLButtonElement>(null);

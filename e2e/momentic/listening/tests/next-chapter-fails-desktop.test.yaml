@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
-id: listening-bug-next-chapter-fails
-description: Expected to fail until fixed - when the next chapter could not be fetched and later arrives, reading aloud must carry on (or say why it stopped). Desktop 1440 (stubbed speech, mocked 500 for chapter c3)
+id: listening-next-chapter-fails
+description: When the next chapter could not be fetched and later arrives, reading aloud must carry on (or say why it stopped). Desktop 1440 (stubbed speech, mocked 500 for chapter c3)
 viewport:
   width: 1440
   height: 900
