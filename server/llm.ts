@@ -11,11 +11,12 @@ export type LlmTask = "word" | "explain" | "preview" | "recap" | "quiz" | "ask";
 
 /**
  * The one place that decides which model answers what, and how long it gets.
- * Haiku answers single-word lookups in about a second and gets them right. On whole passages it invented
- * events and wrote broken Bangla, so everything longer goes to Sonnet (slower to start, but accurate).
+ * Everything goes to Sonnet. Haiku is about twice as fast, but on passages it invented events and wrote
+ * broken Bangla, and on words it gave the term of the wrong field ("induction" as the physics আবেশ instead of
+ * the logic আরোহ, in every run) and unnatural examples. The reader trusts the Bangla line most.
  */
 export const TASK_PROFILES: Record<LlmTask, { model: "haiku" | "sonnet"; timeoutMs: number }> = {
-  word: { model: "haiku", timeoutMs: 60_000 },
+  word: { model: "sonnet", timeoutMs: 120_000 },
   explain: { model: "sonnet", timeoutMs: 120_000 },
   ask: { model: "sonnet", timeoutMs: 120_000 },
   preview: { model: "sonnet", timeoutMs: 300_000 },

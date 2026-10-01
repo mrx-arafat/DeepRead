@@ -54,9 +54,9 @@ const EXPLAIN_TASKS: Record<ExplainMode, (ctx: PassageContext) => string> = {
       `The reader tapped: "${ctx.selection}"`,
       "",
       "Reply with exactly these three lines and nothing else:",
-      `${ctx.language}: the ${ctx.language} word or short phrase for the sense it has in this sentence, written in ${ctx.language} script only (no transliteration). A word or phrase, not a sentence. If the word has several senses, pick the one used here.`,
+      `${ctx.language}: the ${ctx.language} word or short phrase for the sense it has in this sentence, written in ${ctx.language} script only (no transliteration). A word or phrase, not a sentence. If the word has several senses, pick the one used here. If it is a term of the book's subject (philosophy, logic, a science, law...), give the standard term that ${ctx.language} textbooks of that subject use, never a term from another field and never a word-for-word coinage.`,
       "Meaning: what the tapped word or phrase itself means here, in simple English, at most 14 words. Define the word. Do not retell the sentence.",
-      "Example: one new, short everyday sentence that uses it in the same sense.",
+      "Example: one new, short everyday sentence that uses it in the same sense, worded the way a native English speaker would naturally say it.",
     ].join("\n"),
   simple: (ctx) =>
     [

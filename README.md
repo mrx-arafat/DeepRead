@@ -98,12 +98,10 @@ A 527 page book parses in about a second.
 Every prompt lives in [`server/prompts.ts`](server/prompts.ts).
 The model sees the paragraph you are on plus the paragraphs before and after it, so it explains what the sentence means at that point in the book rather than in general.
 
-Two models are used, chosen by measuring them on real passages:
-
-| Task | Model | Why |
-| --- | --- | --- |
-| Single word | Claude Haiku | Answers in about a second and picks the right sense. |
-| Passages and chapters | Claude Sonnet | Haiku invented events and wrote broken Bangla on full passages. Sonnet is accurate and translates naturally, at the cost of a few seconds before the first word. |
+Every answer comes from Claude Sonnet, chosen by measuring models on real passages and words.
+Claude Haiku is about twice as fast, but it invented events and wrote broken Bangla on full passages.
+On single words it gave the term of the wrong field, such as the physics word for "induction" in a chapter on logic, and wrote examples no native speaker would say.
+Sonnet is accurate and translates naturally, at the cost of a few seconds before the first word.
 
 Answers stream as they are written and are cached on disk, keyed by the prompt and the model, so asking again is instant and editing a prompt never serves a stale answer.
 
@@ -148,7 +146,7 @@ Explanations sit in the margin beside their paragraph on wide screens and direct
 - Scanned PDFs need OCR first. OCR is not built in yet.
 - Figures, tables and images from the PDF are not shown in the reading view.
 - Reading aloud uses the voices built into your browser and operating system.
-- An explanation of a passage takes a few seconds to start, because accuracy was chosen over speed there.
+- An answer takes a few seconds to start, even for a single word, because accuracy was chosen over speed.
 
 ## License
 

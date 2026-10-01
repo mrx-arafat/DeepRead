@@ -100,9 +100,10 @@ describe("createClaudeLlm", () => {
     const llm = createClaudeLlm({ bin: fakeBin });
     const hugePrompt = "x".repeat(300_000);
 
-    const haiku = JSON.parse(await completeText(llm, request(`echo\n${hugePrompt}`, { task: "word" })));
-    expect(haiku).toMatchObject({
-      model: "haiku",
+    const word = JSON.parse(await completeText(llm, request(`echo\n${hugePrompt}`, { task: "word" })));
+    expect(word).toMatchObject({
+      // Measured: haiku named the wrong field's term for subject words ("induction" in a logic chapter).
+      model: "sonnet",
       system: "You are a tutor.",
       tools: "",
       settingSources: "",
@@ -110,12 +111,9 @@ describe("createClaudeLlm", () => {
       hasEntrypoint: false,
       maxThinking: "0",
     });
-    expect(haiku.prompt).toBe(hugePrompt);
+    expect(word.prompt).toBe(hugePrompt);
     // realpath: macOS reports its temp dir through the /private symlink.
-    expect(haiku.cwd.replace(/^\/private/, "")).toBe(tmpdir().replace(/\/$/, ""));
-
-    const sonnet = JSON.parse(await completeText(llm, request("echo\nhi", { task: "preview" })));
-    expect(sonnet.model).toBe("sonnet");
+    expect(word.cwd.replace(/^\/private/, "")).toBe(tmpdir().replace(/\/$/, ""));
   });
 
   it("should fail with a readable error when the CLI is missing, signed out, or crashes", async () => {
