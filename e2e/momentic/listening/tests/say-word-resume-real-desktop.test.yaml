@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
-id: listening-bug-say-word-resume
-description: Expected to fail until fixed - after the word card's Say button speaks a word during read-aloud, reading aloud must carry on. Real speech, desktop 1440, makes sound for about 15 seconds.
+id: listening-say-word-resume
+description: After the word card's Say button speaks a word during read-aloud, reading aloud must carry on. Real speech, desktop 1440, makes sound for about 15 seconds.
 viewport:
   width: 1440
   height: 900

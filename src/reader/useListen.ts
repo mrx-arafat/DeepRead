@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Block } from "../../shared/types.ts";
-import { speak } from "./speech.ts";
+import { speak, whenVoiceFree } from "./speech.ts";
 import { rangeInBlock, sentenceIndex, sentencesOf, setHighlight, wordAt, type SentenceAt } from "./textRanges.ts";
 
 export type Listen = {
@@ -25,6 +25,8 @@ export function useListen(blocks: Block[], rate: number): Listen {
   const [at, setAt] = useState<SentenceAt | null>(null);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped to speak the sentence again after something else (a word from its card) had the voice.
+  const [again, setAgain] = useState(0);
 
   const index = useMemo(() => (at ? sentenceIndex(sentences, at) : -1), [sentences, at]);
   const sentence = index === -1 ? null : (sentences[index] ?? null);
@@ -63,6 +65,7 @@ export function useListen(blocks: Block[], rate: number): Listen {
 
   useEffect(() => {
     if (!playing || !sentence) return;
+    let unwait = () => {};
     const cancel = speak(sentence.text, {
       rate,
       onWord: (start) => {
@@ -78,16 +81,21 @@ export function useListen(blocks: Block[], rate: number): Listen {
         if (next) setAt({ blockId: next.blockId, start: next.start });
         else setPlaying(false);
       },
+      // Something else took the voice (a word said from its card): carry on with this sentence once it is done.
+      onInterrupted: () => {
+        unwait = whenVoiceFree(() => setAgain((count) => count + 1));
+      },
       onError: (message) => {
         setPlaying(false);
         setError(message);
       },
     });
     return () => {
+      unwait();
       cancel();
       setHighlight("dr-spoken", null);
     };
-  }, [playing, place, rate]);
+  }, [playing, place, rate, again]);
 
   const move = useCallback(
     (step: number) =>
