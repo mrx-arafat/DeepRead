@@ -9,13 +9,13 @@ import { useAiStream } from "./useAiStream.ts";
 export type Lookup = {
   range: Range;
   text: string;
+  chapterId: string;
   blockId: string;
 };
 
 type Props = {
   lookup: Lookup;
   bookId: string;
-  chapterId: string;
   lang: LangCode;
   onListenFromHere: () => void;
   onClose: () => void;
@@ -31,7 +31,7 @@ function labelled(text: string): Map<string, string> {
   return lines;
 }
 
-export function WordPopover({ lookup, bookId, chapterId, lang, onListenFromHere, onClose }: Props) {
+export function WordPopover({ lookup, bookId, lang, onListenFromHere, onClose }: Props) {
   const { refs, floatingStyles } = useFloating({
     placement: "bottom",
     middleware: [offset(10), flip({ padding: 64 }), shift({ padding: 12 })],
@@ -61,7 +61,7 @@ export function WordPopover({ lookup, bookId, chapterId, lang, onListenFromHere,
 
   const request: ExplainRequest = {
     bookId,
-    chapterId,
+    chapterId: lookup.chapterId,
     blockId: lookup.blockId,
     selection: lookup.text,
     mode: "word",

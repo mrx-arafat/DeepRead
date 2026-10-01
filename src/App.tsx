@@ -6,8 +6,9 @@ export function App() {
   return (
     <Switch>
       <Route path="/" component={LibraryPage} />
+      {/* One reader per book: its notes, chapters and position all belong to that book. */}
       <Route path="/book/:bookId/:chapterId?">
-        {(params) => <ReaderPage bookId={params.bookId} chapterId={params.chapterId ?? null} />}
+        {(params) => <ReaderPage key={params.bookId} bookId={params.bookId} chapterId={params.chapterId ?? null} />}
       </Route>
       <Route>
         <LibraryPage />

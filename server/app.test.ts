@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ParsedBook } from "../shared/types.ts";
+import type { ApiError, BookDetail, BookSummary, ParsedBook } from "../shared/types.ts";
 import { createApp } from "./app.ts";
 import type { ParsePdf } from "./deps.ts";
 import { LlmError } from "./llm.ts";
@@ -219,11 +219,137 @@ describe("DeepRead API", () => {
       // Bare ".." segments never reach a handler (the URL parser removes them); encoded slashes do.
       for (const id of ["..%2F..%2Fetc%2Fpasswd", "%2E%2E%2Fsecret", "Has%20Space", "a%5Cb", "UPPER"]) {
         expect((await app.request(`/api/books/${id}`)).status, `GET ${id}`).toBe(400);
+        expect((await send("PATCH", `/api/books/${id}`, { title: "New" })).status, `PATCH ${id}`).toBe(400);
         expect((await send("DELETE", `/api/books/${id}`)).status, `DELETE ${id}`).toBe(400);
         expect((await app.request(`/api/books/${id}/pdf`)).status, `PDF ${id}`).toBe(400);
       }
       const viaBody = await send("POST", "/api/ai/explain", explainBody("../../etc"));
       expect(viaBody.status).toBe(400);
+    });
+  });
+
+  describe("editing a book", () => {
+    const patch = (id: string, body: unknown) => send("PATCH", `/api/books/${id}`, body);
+    const read = async (id: string) => (await (await app.request(`/api/books/${id}`)).json()) as BookDetail;
+
+    it("should rename the title and author everywhere, keeping the id, progress and chapters", async () => {
+      const id = await addBook();
+      await send("PUT", `/api/books/${id}/progress`, { chapterId: "c1", blockId: "c1-b3" });
+
+      const response = await patch(id, { title: "  The Better Title ", author: " New Author " });
+      expect(response.status).toBe(200);
+      const updated = (await response.json()) as BookDetail;
+      expect(updated).toMatchObject({
+        id,
+        title: "The Better Title",
+        author: "New Author",
+        chapterCount: 2,
+        wordCount: 24,
+        warnings: ["one warning"],
+        progress: { chapterId: "c1", blockId: "c1-b3" },
+      });
+      expect(updated.chapters.map((c) => c.id)).toEqual(["c1", "c2"]);
+
+      expect(await read(id)).toEqual(updated);
+      const list = (await (await app.request("/api/books")).json()) as BookSummary[];
+      expect(list).toHaveLength(1);
+      expect(list[0]).toMatchObject({ id, title: "The Better Title", author: "New Author" });
+      const chapter = (await (await app.request(`/api/books/${id}/chapters/c1`)).json()) as { blocks: unknown[] };
+      expect(chapter.blocks).toHaveLength(4);
+    });
+
+    it("should change only the fields that are sent, and clear the author when it is empty or null", async () => {
+      const id = await addBook();
+      expect(await (await patch(id, { title: "Only Title" })).json()).toMatchObject({ title: "Only Title", author: "A. Writer" });
+      expect(await (await patch(id, { author: "Only Author" })).json()).toMatchObject({ title: "Only Title", author: "Only Author" });
+
+      for (const empty of ["", "   ", null]) {
+        await patch(id, { author: "Someone" });
+        const cleared = await patch(id, { author: empty });
+        expect(await cleared.json(), JSON.stringify(empty)).toMatchObject({ title: "Only Title", author: null });
+      }
+      expect((await read(id)).author).toBeNull();
+    });
+
+    it("should reject an invalid update with a readable 400 and change nothing", async () => {
+      const id = await addBook();
+      const cases: Array<[string, unknown, string]> = [
+        ["empty title", { title: "" }, "invalid_title"],
+        ["blank title", { title: "  \n " }, "invalid_title"],
+        ["title over 200 characters", { title: "t".repeat(201) }, "invalid_title"],
+        ["title that is not text", { title: 42 }, "invalid_title"],
+        ["null title", { title: null }, "invalid_title"],
+        ["author over 120 characters", { author: "a".repeat(121) }, "invalid_author"],
+        ["author that is not text", { author: 42 }, "invalid_author"],
+        ["good author next to a bad title", { title: "", author: "Fine" }, "invalid_title"],
+        ["no fields", {}, "invalid_request"],
+        ["only unknown fields", { subtitle: "x" }, "invalid_request"],
+        ["JSON that is not an object", "[1]", "invalid_request"],
+        ["malformed JSON", "{oops", "invalid_request"],
+      ];
+      for (const [label, body, error] of cases) {
+        const response = await patch(id, body);
+        expect(response.status, label).toBe(400);
+        const json = (await response.json()) as ApiError;
+        expect(json.error, label).toBe(error);
+        expect(json.message.length, label).toBeGreaterThan(10);
+      }
+      expect(await read(id)).toMatchObject({ title: "Sample Book", author: "A. Writer" });
+    });
+
+    it("should accept a title of 200 characters and an author of 120 characters, measured after trimming", async () => {
+      const id = await addBook();
+      const title = "t".repeat(200);
+      const author = "a".repeat(120);
+      const response = await patch(id, { title: ` ${title} `, author: ` ${author} ` });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ title, author });
+    });
+
+    it("should answer 404 when the book does not exist", async () => {
+      const response = await patch("nope-12345678", { title: "New" });
+      expect(response.status).toBe(404);
+      expect(((await response.json()) as ApiError).error).toBe("book_not_found");
+    });
+
+    it("should not lose a progress save that happens at the same moment as an edit", async () => {
+      const id = await addBook();
+      await Promise.all([
+        patch(id, { title: "The Better Title" }),
+        send("PUT", `/api/books/${id}/progress`, { chapterId: "c2", blockId: "c2-b1" }),
+      ]);
+      expect(await read(id)).toMatchObject({ title: "The Better Title", progress: { chapterId: "c2", blockId: "c2-b1" } });
+    });
+
+    it("should give the model the edited title when the reader asks for an explanation", async () => {
+      const id = await addBook();
+      await patch(id, { title: "The Better Title" });
+      llm.state.script = (request) => [`${request.system}\n---\n${request.user}`];
+
+      const text = textOf(await readSse(await send("POST", "/api/ai/explain", explainBody(id))));
+      expect(text).toContain("Book: The Better Title");
+      expect(text).not.toContain("Sample Book");
+    });
+
+    it("should keep the edited title and author when the same PDF is uploaded again", async () => {
+      const id = await addBook();
+      await patch(id, { title: "The Better Title", author: null });
+
+      const again = await upload(sampleBook());
+      expect(again.status).toBe(200);
+      expect(await again.json()).toMatchObject({ id, title: "The Better Title", author: null });
+      expect(await readdir(join(dataDir, "books"))).toEqual([id]);
+    });
+
+    it("should delete a book that was renamed and leave nothing behind", async () => {
+      const id = await addBook();
+      await patch(id, { title: "The Better Title" });
+
+      expect((await send("DELETE", `/api/books/${id}`)).status).toBe(204);
+      expect((await app.request(`/api/books/${id}`)).status).toBe(404);
+      expect(await (await app.request("/api/books")).json()).toEqual([]);
+      expect(await entries(join(dataDir, "books"))).toEqual([]);
+      expect(await entries(join(dataDir, "tmp"))).toEqual([]);
     });
   });
 

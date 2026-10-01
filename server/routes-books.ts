@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { ParsedBook, ReadingProgress } from "../shared/types.ts";
+import type { BookUpdate, ParsedBook, ReadingProgress } from "../shared/types.ts";
 import type { ParsePdf } from "./deps.ts";
 import {
   apiError,
@@ -28,6 +28,42 @@ export const MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
 const MULTIPART_SLACK_BYTES = 1024 * 1024;
 const PDF_MAGIC = "%PDF-";
 const MAX_ID_FIELD = 200;
+// Counted in UTF-16 units, the same way the edit form's maxLength counts, so the form never allows what the server refuses.
+const MAX_TITLE_CHARS = 200;
+const MAX_AUTHOR_CHARS = 120;
+
+/** Checks a PATCH body field by field; the Response is the 400 to send instead. */
+function readBookUpdate(c: Context, body: Record<string, unknown>): BookUpdate | Response {
+  const update: BookUpdate = {};
+
+  if (Object.hasOwn(body, "title")) {
+    const { title } = body;
+    if (typeof title !== "string") return apiError(c, 400, "invalid_title", "The title must be text.");
+    const trimmed = title.trim();
+    if (trimmed === "") return apiError(c, 400, "invalid_title", "The title cannot be empty. Type a title for this book.");
+    if (trimmed.length > MAX_TITLE_CHARS) {
+      return apiError(c, 400, "invalid_title", `The title is too long. Keep it to ${MAX_TITLE_CHARS} characters or fewer.`);
+    }
+    update.title = trimmed;
+  }
+
+  if (Object.hasOwn(body, "author")) {
+    const { author } = body;
+    if (author !== null && typeof author !== "string") {
+      return apiError(c, 400, "invalid_author", "The author must be text, or empty to remove it.");
+    }
+    const trimmed = author?.trim() ?? "";
+    if (trimmed.length > MAX_AUTHOR_CHARS) {
+      return apiError(c, 400, "invalid_author", `The author is too long. Keep it to ${MAX_AUTHOR_CHARS} characters or fewer.`);
+    }
+    update.author = trimmed === "" ? null : trimmed;
+  }
+
+  if (update.title === undefined && update.author === undefined) {
+    return apiError(c, 400, "invalid_request", "Nothing to change. Send a new title, a new author, or both.");
+  }
+  return update;
+}
 
 /** Streams the upload to disk while hashing it, so a big PDF is never copied around in memory twice. */
 async function saveUpload(file: File, destination: string): Promise<string> {
@@ -154,6 +190,26 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf }): Hon
     const detail = await library.detail(id);
     return detail ? c.json(detail) : bookNotFound(c);
   });
+
+  routes.patch(
+    "/:id",
+    bodyLimit({
+      maxSize: 16 * 1024,
+      onError: (c) => invalidBody(c, "the body is too large."),
+    }),
+    async (c) => {
+      const id = c.req.param("id");
+      if (!isBookId(id)) return invalidId(c);
+      const body = await readJsonObject(c);
+      if (!body) return invalidBody(c, "send JSON like {\"title\": \"...\", \"author\": \"...\"}.");
+      const update = readBookUpdate(c, body);
+      if (update instanceof Response) return update;
+
+      if (!(await library.update(id, update))) return bookNotFound(c);
+      const detail = await library.detail(id);
+      return detail ? c.json(detail) : bookNotFound(c);
+    },
+  );
 
   routes.delete("/:id", async (c) => {
     const id = c.req.param("id");

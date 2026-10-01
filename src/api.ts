@@ -2,6 +2,7 @@ import type {
   ApiError,
   BookDetail,
   BookSummary,
+  BookUpdate,
   Chapter,
   LangCode,
   QuickTranslation,
@@ -45,6 +46,7 @@ const json = (method: string, body: unknown): RequestInit => ({
 export const api = {
   listBooks: () => request<BookSummary[]>("/api/books"),
   getBook: (id: string) => request<BookDetail>(`/api/books/${id}`),
+  updateBook: (id: string, update: BookUpdate) => request<BookDetail>(`/api/books/${id}`, json("PATCH", update)),
   deleteBook: (id: string) => request<void>(`/api/books/${id}`, { method: "DELETE" }),
   getChapter: (bookId: string, chapterId: string, signal?: AbortSignal) =>
     request<Chapter>(`/api/books/${bookId}/chapters/${chapterId}`, { signal }),

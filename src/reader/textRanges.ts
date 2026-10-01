@@ -1,7 +1,14 @@
 // Finding words and sentences inside a block of book text.
 // Every block renders as one text node, so offsets here are offsets into `block.text`.
 
+import type { Block } from "../../shared/types.ts";
+
 export type Span = { start: number; end: number };
+
+export type Sentence = Span & { blockId: string; text: string };
+
+/** Where a sentence sits in the book. Unlike a list index, it stays true when more chapters are added. */
+export type SentenceAt = { blockId: string; start: number };
 
 const words = new Intl.Segmenter("en", { granularity: "word" });
 const sentences = new Intl.Segmenter("en", { granularity: "sentence" });
@@ -28,6 +35,30 @@ export function sentenceSpans(text: string): Span[] {
     spans.push({ start, end: start + trimmed.length });
   }
   return spans;
+}
+
+// Blocks never change once loaded, so each is split once, not again every time a chapter is appended.
+const splitBlocks = new WeakMap<Block, Sentence[]>();
+
+/** Every sentence of `blocks`, in reading order. */
+export function sentencesOf(blocks: Block[]): Sentence[] {
+  return blocks.flatMap((block) => {
+    let list = splitBlocks.get(block);
+    if (!list) {
+      list = sentenceSpans(block.text).map((span) => ({
+        ...span,
+        blockId: block.id,
+        text: block.text.slice(span.start, span.end),
+      }));
+      splitBlocks.set(block, list);
+    }
+    return list;
+  });
+}
+
+/** Index of the sentence at `at`, or -1 when it is not in the list. */
+export function sentenceIndex(sentences: Sentence[], at: SentenceAt): number {
+  return sentences.findIndex((sentence) => sentence.blockId === at.blockId && sentence.start === at.start);
 }
 
 /** The book block element that contains `node`, if any. */

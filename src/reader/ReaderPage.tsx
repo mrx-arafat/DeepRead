@@ -1,145 +1,58 @@
-import { ArrowLeft, ArrowRight, Headphones, List, Moon, Sun, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation } from "wouter";
-import {
-  LANGUAGES,
-  type BookDetail,
-  type Chapter,
-  type ExplainMode,
-  type LangCode,
-} from "../../shared/types.ts";
+import { ArrowLeft, ArrowUp, Headphones, List, Moon, Sun } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
+import { LANGUAGES, type BookDetail, type ExplainMode, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { FONT_SIZES, setPrefs, usePrefs } from "../prefs.ts";
-import { ChapterAid } from "./ChapterAid.tsx";
-import { ChapterText } from "./ChapterText.tsx";
+import { readableBlocks } from "./book.ts";
+import { ChapterList } from "./ChapterList.tsx";
+import { ChapterSection } from "./ChapterSection.tsx";
+import type { TextActions } from "./ChapterText.tsx";
 import { ListenBar } from "./ListenBar.tsx";
-import type { Note } from "./NoteCard.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
 import { canSpeak } from "./speech.ts";
-import { blockOf, setHighlight } from "./textRanges.ts";
+import { setHighlight } from "./textRanges.ts";
+import { useChapterFlow } from "./useChapterFlow.ts";
 import { useListen } from "./useListen.ts";
+import { useNotes } from "./useNotes.ts";
+import { blockAtTop, useReadingPosition } from "./useReadingPosition.ts";
 import { WordPopover, type Lookup } from "./WordPopover.tsx";
 
 type Props = { bookId: string; chapterId: string | null };
 
-const normalize = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-
-/** Minutes to read `words` at a relaxed pace. */
-const minutes = (words: number) => Math.max(1, Math.round(words / 180));
-
-// Notes outlive a page reload. Only the request is kept: the server caches the answers.
-const notesKey = (bookId: string, chapterId: string) => `deepread.notes.${bookId}.${chapterId}`;
-
-function loadNotes(bookId: string, chapterId: string): Note[] {
-  try {
-    return JSON.parse(localStorage.getItem(notesKey(bookId, chapterId)) ?? "[]") as Note[];
-  } catch {
-    return [];
-  }
-}
-
-function saveNotes(bookId: string, chapterId: string, notes: Note[]) {
-  try {
-    if (notes.length) localStorage.setItem(notesKey(bookId, chapterId), JSON.stringify(notes));
-    else localStorage.removeItem(notesKey(bookId, chapterId));
-  } catch {
-    // Storage unavailable: notes still work until the page is closed.
-  }
-}
-
+/** The book read start to finish as one flow: chapters follow each other as the reader scrolls. */
 export function ReaderPage({ bookId, chapterId }: Props) {
   const prefs = usePrefs();
-  const [, navigate] = useLocation();
   const [book, setBook] = useState<BookDetail | null>(null);
-  const [chapter, setChapter] = useState<Chapter | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tocOpen, setTocOpen] = useState(false);
   const [word, setWord] = useState<Lookup | null>(null);
   const [selection, setSelection] = useState<Lookup | null>(null);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const restoreTo = useRef<string | null>(null);
+  const { notes, addNote, removeNote } = useNotes(bookId);
+  const flow = useChapterFlow(bookId, chapterId, book);
+  const first = flow.chapters[0];
+  const position = useReadingPosition(bookId, chapterId, book, first);
 
   useEffect(() => {
     let cancelled = false;
     api
       .getBook(bookId)
-      .then((detail) => {
-        if (cancelled) return;
-        setBook(detail);
-        restoreTo.current = detail.progress?.blockId ?? null;
-      })
+      .then((detail) => !cancelled && setBook(detail))
       .catch((err: Error) => !cancelled && setError(err.message));
     return () => {
       cancelled = true;
     };
   }, [bookId]);
 
-  // No chapter in the URL: continue where the reader stopped, or start at the beginning.
-  useEffect(() => {
-    if (chapterId || !book) return;
-    const target = book.progress?.chapterId ?? book.chapters[0]?.id;
-    if (target) navigate(`/book/${bookId}/${target}`, { replace: true });
-    else setError("This book has no chapters to read.");
-  }, [book, bookId, chapterId, navigate]);
-
-  useEffect(() => {
-    if (!chapterId) return;
-    const controller = new AbortController();
-    setChapter(null);
-    setNotes(loadNotes(bookId, chapterId));
-    setWord(null);
-    setSelection(null);
-    api
-      .getChapter(bookId, chapterId, controller.signal)
-      .then(setChapter)
-      .catch((err: Error) => !controller.signal.aborted && setError(err.message));
-    return () => controller.abort();
-  }, [bookId, chapterId]);
-
-  // The chapter title is already the page heading: do not repeat it as the first block.
-  const blocks = useMemo(() => {
-    if (!chapter) return [];
-    const [first, ...rest] = chapter.blocks;
-    return first?.type === "heading" && normalize(first.text) === normalize(chapter.title) ? rest : chapter.blocks;
-  }, [chapter]);
-
+  // Every block on the page, in reading order, so listening carries on from one chapter into the next.
+  const blocks = useMemo(() => flow.chapters.flatMap(readableBlocks), [flow.chapters]);
   const listen = useListen(blocks, prefs.rate);
 
-  // Open the chapter where the reader left it, otherwise at the top.
+  // The book restarted at another chapter: open popovers would point into text that is gone.
   useEffect(() => {
-    if (!chapter) return;
-    const target = restoreTo.current;
-    restoreTo.current = null;
-    const element = target && document.querySelector(`[data-block="${CSS.escape(target)}"]`);
-    if (element) element.scrollIntoView({ block: "start" });
-    else window.scrollTo({ top: 0 });
-  }, [chapter]);
-
-  // Remember the paragraph at the top of the window as reading progress.
-  useEffect(() => {
-    if (!chapter) return;
-    let saved: string | null = null;
-    let timer: number | undefined;
-    const save = () => {
-      const column = document.querySelector(".chapter-text")?.getBoundingClientRect();
-      if (!column) return;
-      const blockId = blockOf(document.elementFromPoint(column.left + 24, 96))?.dataset.block;
-      if (!blockId || blockId === saved) return;
-      saved = blockId;
-      api.saveProgress(bookId, chapter.id, blockId).catch(() => {
-        // Progress is a convenience; reading must not be interrupted if saving fails.
-      });
-    };
-    const onScroll = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(save, 1200);
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.clearTimeout(timer);
-    };
-  }, [bookId, chapter]);
+    setWord(null);
+    setSelection(null);
+  }, [first]);
 
   useEffect(() => {
     setHighlight("dr-word", word?.range ?? null);
@@ -171,30 +84,14 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     setSelection(lookup);
   }, []);
 
-  const changeNotes = useCallback(
-    (change: (all: Note[]) => Note[]) => {
-      if (!chapterId) return;
-      setNotes((all) => {
-        const next = change(all);
-        saveNotes(bookId, chapterId, next);
-        return next;
-      });
-    },
-    [bookId, chapterId],
-  );
-
-  const closeNote = useCallback(
-    (id: string) => changeNotes((all) => all.filter((note) => note.id !== id)),
-    [changeNotes],
+  const actions = useMemo<TextActions>(
+    () => ({ onWord: handleWord, onSelect: handleSelect, onDismiss: dismiss, onCloseNote: removeNote }),
+    [handleWord, handleSelect, dismiss, removeNote],
   );
 
   function explain(mode: ExplainMode) {
     if (!selection) return;
-    const { blockId, text } = selection;
-    changeNotes((all) => [
-      ...all.filter((note) => !(note.blockId === blockId && note.quote === text && note.mode === mode)),
-      { id: crypto.randomUUID(), blockId, quote: text, mode },
-    ]);
+    addNote({ chapterId: selection.chapterId, blockId: selection.blockId, quote: selection.text, mode });
     window.getSelection()?.removeAllRanges();
     setSelection(null);
   }
@@ -206,16 +103,16 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   }
 
   function listenFromView() {
-    const column = document.querySelector(".chapter-text")?.getBoundingClientRect();
-    const visible = column && blockOf(document.elementFromPoint(column.left + 24, 96))?.dataset.block;
-    const start = visible ?? blocks[0]?.id;
+    const current = flow.chapters.find((chapter) => chapter.id === position.chapterId);
+    const start = blockAtTop()?.dataset.block ?? (current && readableBlocks(current)[0]?.id) ?? blocks[0]?.id;
     if (start) listen.startAt(start);
   }
 
-  if (error) {
+  const pageError = error ?? flow.error;
+  if (pageError) {
     return (
       <main className="page-message">
-        <p>{error}</p>
+        <p>{pageError}</p>
         <Link href="/" className="button">
           Back to your books
         </Link>
@@ -223,10 +120,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     );
   }
 
-  const position = book && chapter ? book.chapters.findIndex((item) => item.id === chapter.id) : -1;
-  const previous = book && position > 0 ? book.chapters[position - 1] : undefined;
-  const next = book && position >= 0 ? book.chapters[position + 1] : undefined;
-  const summary = book?.chapters[position];
+  const currentTitle = book?.chapters.find((item) => item.id === position.chapterId)?.title;
 
   return (
     <div className="reader">
@@ -237,7 +131,15 @@ export function ReaderPage({ bookId, chapterId }: Props) {
         <button type="button" className="icon-button" aria-label="Chapters" aria-expanded={tocOpen} onClick={() => setTocOpen(true)}>
           <List size={20} aria-hidden />
         </button>
-        <p className="topbar-title">{book?.title ?? ""}</p>
+        <p className="topbar-title">
+          {book?.title ?? ""}
+          {currentTitle && <span className="topbar-chapter"> · {currentTitle}</span>}
+        </p>
+        {book && (
+          <span className="topbar-percent" aria-hidden>
+            {position.percent}%
+          </span>
+        )}
         <div className="topbar-tools">
           {canSpeak && (
             <button type="button" className="quiet-button" onClick={listen.active ? listen.stop : listenFromView} aria-pressed={listen.active}>
@@ -281,92 +183,63 @@ export function ReaderPage({ bookId, chapterId }: Props) {
             {prefs.theme === "dark" ? <Sun size={20} aria-hidden /> : <Moon size={20} aria-hidden />}
           </button>
         </div>
+        {book && (
+          <div
+            className="reading-progress"
+            role="progressbar"
+            aria-label="Read so far"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={position.percent}
+          >
+            <span style={{ width: `${position.percent}%` }} />
+          </div>
+        )}
       </header>
 
-      {tocOpen && book && (
-        <>
-          <div className="scrim" onClick={() => setTocOpen(false)} />
-          <nav className="toc" aria-label="Chapters">
-            <header className="toc-head">
-              <h2>Chapters</h2>
-              <button type="button" className="icon-button" aria-label="Close chapters" onClick={() => setTocOpen(false)}>
-                <X size={20} aria-hidden />
-              </button>
-            </header>
-            <ol>
-              {book.chapters.map((item) => (
-                <li key={item.id}>
-                  <Link
-                    href={`/book/${bookId}/${item.id}`}
-                    className="toc-link"
-                    aria-current={item.id === chapterId ? "page" : undefined}
-                    onClick={() => setTocOpen(false)}
-                  >
-                    <span>{item.title}</span>
-                    <span className="toc-time">{minutes(item.wordCount)} min</span>
-                  </Link>
-                </li>
-              ))}
-            </ol>
-          </nav>
-        </>
-      )}
+      {tocOpen && book && <ChapterList book={book} currentId={position.chapterId ?? chapterId} onClose={() => setTocOpen(false)} />}
 
-      <main className="page">
-        {!chapter ? (
+      <main className="page" style={{ paddingBottom: listen.active ? "9rem" : undefined }}>
+        {!book || !first ? (
           <p className="page-wait">Opening the chapter...</p>
         ) : (
-          <article className="chapter" style={{ paddingBottom: listen.active ? "9rem" : undefined }}>
-            <header className="chapter-head">
-              <p className="chapter-meta">
-                Chapter {position + 1} of {book?.chapters.length ?? ""}
-                {summary ? ` · about ${minutes(summary.wordCount)} min` : ""}
+          <>
+            {flow.previous && (
+              <p className="flow-back">
+                <Link href={`/book/${bookId}/${flow.previous.id}`} className="flow-back-link">
+                  <ArrowUp size={18} aria-hidden />
+                  <span>Previous: {flow.previous.title}</span>
+                </Link>
               </p>
-              <h1>{chapter.title}</h1>
-            </header>
-
-            <ChapterAid key={`preview-${chapter.id}`} kind="preview" bookId={bookId} chapterId={chapter.id} lang={prefs.lang} />
-
-            <ChapterText
-              blocks={blocks}
-              notes={notes}
-              bookId={bookId}
-              chapterId={chapter.id}
-              lang={prefs.lang}
-              onWord={handleWord}
-              onSelect={handleSelect}
-              onDismiss={dismiss}
-              onCloseNote={closeNote}
-            />
-
-            <ChapterAid key={`recap-${chapter.id}`} kind="recap" bookId={bookId} chapterId={chapter.id} lang={prefs.lang} />
-
-            <nav className="chapter-nav" aria-label="Other chapters">
-              {previous ? (
-                <Link href={`/book/${bookId}/${previous.id}`} className="chapter-nav-link">
-                  <ArrowLeft size={18} aria-hidden />
-                  <span>{previous.title}</span>
-                </Link>
-              ) : (
-                <span />
-              )}
-              {next && (
-                <Link href={`/book/${bookId}/${next.id}`} className="chapter-nav-link chapter-nav-next">
-                  <span>{next.title}</span>
-                  <ArrowRight size={18} aria-hidden />
-                </Link>
-              )}
-            </nav>
-          </article>
+            )}
+            {flow.chapters.map((chapter) => (
+              <ChapterSection key={chapter.id} chapter={chapter} book={book} notes={notes} lang={prefs.lang} actions={actions} />
+            ))}
+            {flow.nextError ? (
+              <p className="flow-end">
+                <span className="inline-error">
+                  {flow.nextError}{" "}
+                  <button type="button" className="link-button" onClick={flow.loadNext}>
+                    Try again
+                  </button>
+                </span>
+              </p>
+            ) : flow.hasMore ? (
+              <p ref={flow.sentinel} className="flow-end">
+                {flow.loadingNext ? "Opening the next chapter..." : ""}
+              </p>
+            ) : (
+              <p className="flow-end">End of the book</p>
+            )}
+          </>
         )}
       </main>
 
-      {word && chapter && (
+      {word && (
         <WordPopover
           key={`${word.blockId}-${word.range.startOffset}-${word.text}`}
           lookup={word}
           bookId={bookId}
-          chapterId={chapter.id}
           lang={prefs.lang}
           onListenFromHere={() => listenFrom(word)}
           onClose={dismiss}

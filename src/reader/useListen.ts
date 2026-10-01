@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Block } from "../../shared/types.ts";
 import { speak } from "./speech.ts";
-import { rangeInBlock, sentenceSpans, setHighlight, wordAt, type Span } from "./textRanges.ts";
-
-type Sentence = Span & { blockId: string; text: string };
+import { rangeInBlock, sentenceIndex, sentencesOf, setHighlight, wordAt, type SentenceAt } from "./textRanges.ts";
 
 export type Listen = {
   /** The player is open (playing or paused). */
@@ -18,31 +16,35 @@ export type Listen = {
   startAt: (blockId: string, offset?: number) => void;
 };
 
-/** Reads the chapter aloud one sentence at a time, highlighting the sentence and word being spoken. */
+/**
+ * Reads the book aloud one sentence at a time, highlighting the sentence and word being spoken.
+ * `blocks` are all the blocks on the page, in order; it may grow while reading, and reading carries on into it.
+ */
 export function useListen(blocks: Block[], rate: number): Listen {
-  const sentences = useMemo<Sentence[]>(
-    () =>
-      blocks.flatMap((block) =>
-        sentenceSpans(block.text).map((span) => ({
-          ...span,
-          blockId: block.id,
-          text: block.text.slice(span.start, span.end),
-        })),
-      ),
-    [blocks],
-  );
-  const [index, setIndex] = useState<number | null>(null);
+  const sentences = useMemo(() => sentencesOf(blocks), [blocks]);
+  const [at, setAt] = useState<SentenceAt | null>(null);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // A new chapter means a new sentence list: close the player.
+  const index = useMemo(() => (at ? sentenceIndex(sentences, at) : -1), [sentences, at]);
+  const sentence = index === -1 ? null : (sentences[index] ?? null);
+  // The effects below key on where the sentence is, not on the object: re-renders and appended chapters
+  // must not restart the sentence being spoken.
+  const place = sentence && `${sentence.blockId}:${sentence.start}`;
+
+  // When a sentence ends, the next one is looked up in the newest list: a chapter may have arrived meanwhile.
+  const latest = useRef(sentences);
   useEffect(() => {
-    setIndex(null);
-    setPlaying(false);
-    setError(null);
+    latest.current = sentences;
   }, [sentences]);
 
-  const sentence = index === null ? null : (sentences[index] ?? null);
+  // The sentence is gone from the page (the reader opened another part of the book): close the player.
+  useEffect(() => {
+    if (!at || index !== -1) return;
+    setAt(null);
+    setPlaying(false);
+    setError(null);
+  }, [at, index]);
 
   useEffect(() => {
     if (!sentence) {
@@ -57,7 +59,7 @@ export function useListen(blocks: Block[], rate: number): Listen {
       window.scrollTo({ top: window.scrollY + rect.top - window.innerHeight * 0.3, behavior: "smooth" });
     }
     return () => setHighlight("dr-sentence", null);
-  }, [sentence]);
+  }, [place]);
 
   useEffect(() => {
     if (!playing || !sentence) return;
@@ -69,7 +71,11 @@ export function useListen(blocks: Block[], rate: number): Listen {
         setHighlight("dr-spoken", span ? rangeInBlock(sentence.blockId, span) : null);
       },
       onEnd: () => {
-        if (index !== null && index + 1 < sentences.length) setIndex(index + 1);
+        const list = latest.current;
+        const done = sentenceIndex(list, sentence);
+        const next = done === -1 ? undefined : list[done + 1];
+        // Nothing loaded after this sentence yet: pause here, the player stays open.
+        if (next) setAt({ blockId: next.blockId, start: next.start });
         else setPlaying(false);
       },
       onError: (message) => {
@@ -81,30 +87,33 @@ export function useListen(blocks: Block[], rate: number): Listen {
       cancel();
       setHighlight("dr-spoken", null);
     };
-  }, [playing, sentence, index, rate, sentences.length]);
+  }, [playing, place, rate]);
 
   const move = useCallback(
     (step: number) =>
-      setIndex((current) =>
-        current === null ? null : Math.min(Math.max(current + step, 0), sentences.length - 1),
-      ),
-    [sentences.length],
+      setAt((current) => {
+        const from = current ? sentenceIndex(sentences, current) : -1;
+        if (from === -1) return current;
+        const target = sentences[Math.min(Math.max(from + step, 0), sentences.length - 1)];
+        return target ? { blockId: target.blockId, start: target.start } : current;
+      }),
+    [sentences],
   );
 
   const startAt = useCallback(
     (blockId: string, offset = 0) => {
-      let target = sentences.findIndex((s) => s.blockId === blockId && offset < s.end);
-      if (target === -1) target = sentences.findIndex((s) => s.blockId === blockId);
-      if (target === -1) return;
+      const target =
+        sentences.find((s) => s.blockId === blockId && offset < s.end) ?? sentences.find((s) => s.blockId === blockId);
+      if (!target) return;
       setError(null);
-      setIndex(target);
+      setAt({ blockId: target.blockId, start: target.start });
       setPlaying(true);
     },
     [sentences],
   );
 
   return {
-    active: index !== null,
+    active: sentence !== null,
     playing,
     error,
     toggle: () => {
@@ -113,7 +122,7 @@ export function useListen(blocks: Block[], rate: number): Listen {
     },
     stop: () => {
       setPlaying(false);
-      setIndex(null);
+      setAt(null);
     },
     next: () => move(1),
     previous: () => move(-1),

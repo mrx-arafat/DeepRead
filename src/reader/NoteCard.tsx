@@ -5,6 +5,7 @@ import { useAiStream } from "./useAiStream.ts";
 
 export type Note = {
   id: string;
+  chapterId: string;
   blockId: string;
   /** The text the reader selected. */
   quote: string;
@@ -14,7 +15,6 @@ export type Note = {
 type Props = {
   note: Note;
   bookId: string;
-  chapterId: string;
   lang: LangCode;
   onClose: (id: string) => void;
 };
@@ -26,10 +26,10 @@ function label(mode: ExplainMode, lang: LangCode): string {
 }
 
 /** One explanation, shown in the margin beside the paragraph it belongs to. */
-export function NoteCard({ note, bookId, chapterId, lang, onClose }: Props) {
+export function NoteCard({ note, bookId, lang, onClose }: Props) {
   const request: ExplainRequest = {
     bookId,
-    chapterId,
+    chapterId: note.chapterId,
     blockId: note.blockId,
     selection: note.quote,
     mode: note.mode,
@@ -46,12 +46,17 @@ export function NoteCard({ note, bookId, chapterId, lang, onClose }: Props) {
         </button>
       </header>
       <blockquote className="note-quote">{note.quote}</blockquote>
-      <div aria-live="polite" lang={note.mode === "native" ? lang : undefined}>
+      <div
+        aria-live="polite"
+        className={note.mode === "native" ? "note-native" : undefined}
+        lang={note.mode === "native" ? lang : undefined}
+      >
         {answer.text ? (
           <RichText text={answer.text} />
         ) : (
           answer.status === "loading" && (
-            <p className="note-wait">
+            <p className="note-wait" lang="en">
+              Reading the passage...
               <span className="skeleton" />
               <span className="skeleton" style={{ width: "70%" }} />
             </p>

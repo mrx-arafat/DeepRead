@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRich } from "./RichText.tsx";
+import { parseGlossaryEntry, parseSections } from "./RichText.tsx";
 import { sentenceSpans, wordAt } from "./textRanges.ts";
 
 const cut = (text: string, span: { start: number; end: number } | null) => span && text.slice(span.start, span.end);
@@ -40,12 +40,67 @@ describe("sentenceSpans", () => {
   });
 });
 
-describe("parseRich", () => {
-  it("should group consecutive list lines and keep paragraphs separate", () => {
-    expect(parseRich("**Key ideas:**\n- first\n- second\n\nTry this today.")).toEqual([
-      { type: "p", text: "**Key ideas:**" },
-      { type: "ul", items: ["first", "second"] },
-      { type: "p", text: "Try this today." },
+describe("parseSections", () => {
+  it("should split an answer into labelled parts and group list lines", () => {
+    const answer = [
+      "**In simple words:** They sent money in secret.",
+      "",
+      "**Hard words:**",
+      "- minute - very small",
+      "- remitted - sent",
+    ].join("\n");
+    expect(parseSections(answer)).toEqual([
+      { label: "In simple words", blocks: [{ type: "p", text: "They sent money in secret." }] },
+      { label: "Hard words", blocks: [{ type: "ul", items: ["minute - very small", "remitted - sent"] }] },
     ]);
+  });
+
+  it("should keep text without any label as one unlabelled part", () => {
+    expect(parseSections("A plain answer.\nSecond line.")).toEqual([
+      {
+        label: null,
+        blocks: [
+          { type: "p", text: "A plain answer." },
+          { type: "p", text: "Second line." },
+        ],
+      },
+    ]);
+  });
+
+  it("should not treat a sentence that starts with a bold word as a label", () => {
+    expect(parseSections("**Rapport** means trust.")).toEqual([
+      { label: null, blocks: [{ type: "p", text: "**Rapport** means trust." }] },
+    ]);
+  });
+
+  it("should show a label that is still streaming in as a label", () => {
+    expect(parseSections("**In simple words:** Done.\n**Deeper mea")).toEqual([
+      { label: "In simple words", blocks: [{ type: "p", text: "Done." }] },
+      { label: "Deeper mea", blocks: [] },
+    ]);
+  });
+});
+
+describe("parseGlossaryEntry", () => {
+  it("should separate the term, its hint, the meaning and the native meaning", () => {
+    expect(parseGlossaryEntry("minute (say my-NOOT) - extremely small (অতি সামান্য)")).toEqual({
+      term: "minute",
+      hint: "say my-NOOT",
+      meaning: "extremely small",
+      native: "অতি সামান্য",
+    });
+  });
+
+  it("should keep an English bracket inside the meaning when there is no native meaning", () => {
+    expect(parseGlossaryEntry("second-rate - not very good (of low quality)")).toEqual({
+      term: "second-rate",
+      hint: null,
+      meaning: "not very good (of low quality)",
+      native: null,
+    });
+  });
+
+  it("should return null when the line has no term and meaning", () => {
+    expect(parseGlossaryEntry("just some words")).toBeNull();
   });
 });

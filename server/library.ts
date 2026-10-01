@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type {
   BookDetail,
   BookSummary,
+  BookUpdate,
   Chapter,
   ChapterSummary,
   ParsedBook,
@@ -68,9 +69,12 @@ export type Library = {
   findBySha(sha256: string): Promise<string | null>;
   add(book: NewBook): Promise<{ id: string; created: boolean }>;
   detail(id: string): Promise<BookDetail | null>;
+  /** The parsed book as the reader sees it: with the title and author the reader last set. */
   book(id: string): Promise<ParsedBook | null>;
   pdf(id: string): Promise<{ path: string; size: number } | null>;
   setProgress(id: string, chapterId: string, blockId: string): Promise<ReadingProgress | null>;
+  /** The caller has validated and trimmed `patch`. False when the book does not exist. */
+  update(id: string, patch: BookUpdate): Promise<boolean>;
   remove(id: string): Promise<boolean>;
   readCache(id: string, key: string): Promise<unknown>;
   writeCache(id: string, key: string, value: unknown): Promise<void>;
@@ -252,7 +256,12 @@ export function createLibrary(dataDir: string): Library {
       return { ...toSummary(meta), chapters, warnings: book.warnings };
     },
 
-    book: loadBook,
+    async book(id) {
+      const meta = await readMeta(id);
+      const parsed = meta && (await loadBook(id));
+      // meta.json owns the title and author, so an edit never has to rewrite the (large) parsed book.
+      return meta && parsed ? { ...parsed, title: meta.title, author: meta.author } : null;
+    },
 
     async pdf(id) {
       await ready();
@@ -273,6 +282,20 @@ export function createLibrary(dataDir: string): Library {
         const progress: ReadingProgress = { chapterId, blockId, updatedAt: new Date().toISOString() };
         await writeFileAtomic(join(dirOf(id), "meta.json"), JSON.stringify({ ...meta, progress }));
         return progress;
+      });
+    },
+
+    update(id, patch) {
+      return serialized(id, async () => {
+        const meta = await readMeta(id);
+        if (!meta) return false;
+        const next: BookMeta = {
+          ...meta,
+          title: patch.title ?? meta.title,
+          author: patch.author === undefined ? meta.author : patch.author,
+        };
+        await writeFileAtomic(join(dirOf(id), "meta.json"), JSON.stringify(next));
+        return true;
       });
     },
 

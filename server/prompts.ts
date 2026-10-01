@@ -72,8 +72,9 @@ const EXPLAIN_TASKS: Record<ExplainMode, (ctx: PassageContext) => string> = {
     [
       `The reader selected: "${ctx.selection}"`,
       "",
-      "Make this concrete with one everyday example or comparison from ordinary life (home, school, work, the market, a phone).",
-      "First give the example in 2 to 4 short sentences. Then add one line that starts with \"So here:\" and connects the example back to what the author is saying.",
+      "Make this concrete with one everyday example or comparison from ordinary life (home, school, work, the market, a phone). Write these two parts, each starting with its bold label:",
+      "**Picture this:** the example, in 2 to 4 short sentences.",
+      "**So here:** 1 or 2 sentences that connect the example back to what the author is saying.",
     ].join("\n"),
   native: (ctx) =>
     [

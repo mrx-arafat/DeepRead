@@ -63,6 +63,12 @@ export type BookDetail = BookSummary & {
   warnings: string[];
 };
 
+/** What the reader can correct about a book. A missing field stays as it is; an empty or null author clears it. */
+export type BookUpdate = {
+  title?: string;
+  author?: string | null;
+};
+
 export type ApiError = {
   error: string;
   message: string;
