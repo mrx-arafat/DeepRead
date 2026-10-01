@@ -1,5 +1,6 @@
 import { Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
+import type { KeyboardEvent } from "react";
 import { Link } from "wouter";
 import type { BookSummary, BookUpdate } from "../../shared/types.ts";
 import { BookEditForm } from "./BookEditForm.tsx";
@@ -55,9 +56,14 @@ export function BookRow({ book, mode, pending, deleteError, onMode, onSave, onRe
     );
   }
 
+  function handleKeyDown(event: KeyboardEvent<HTMLLIElement>) {
+    // Like the edit form: Escape backs out of the question, and does nothing while the removal is in flight.
+    if (event.key === "Escape" && mode === "delete" && !busy) close("remove");
+  }
+
   const { progress } = book;
   return (
-    <li className="shelf-item">
+    <li className="shelf-item" onKeyDown={handleKeyDown}>
       <Link href={`/book/${book.id}`} className="shelf-link">
         <span className="shelf-title">{book.title}</span>
         {progress && (
