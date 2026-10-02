@@ -14,7 +14,7 @@ steps:
       css: button[aria-label="Chapters"]
   - module: ./modules/toc-state.module.yaml
   - assertVisually:
-      that: A "Chapters" panel is open with a close button, listing the book's chapters one per row, each with a reading time, and one row is highlighted as the current chapter while the page behind is dimmed
+      that: A "Chapters" panel is open with a close button, listing the book's sections one per row, where every numbered chapter shows a reading time (front and back matter such as "Front Matter" or a licence need not), and one row is highlighted as the current chapter while the page behind is dimmed
       timeout: 20000
   - click:
       css: a.toc-link[href$="/c2"]
@@ -67,5 +67,5 @@ steps:
       css: button[aria-label="Chapters"]
   - module: ./modules/toc-state.module.yaml
   - assertVisually:
-      that: The open chapters list shows the current chapter, the last one, highlighted and fully visible without having to scroll the list
+      that: The open chapters list highlights its very last row, "Project Gutenberg License" (the section being read), and that row is fully visible without having to scroll the list
       timeout: 20000
