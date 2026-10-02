@@ -10,7 +10,7 @@ steps:
   - click:
       css: '.topbar-tools button[aria-pressed]'
   - wait: 2500
-  - assert: A player bar with previous, pause, next, speed and stop controls is visible at the bottom of the window, and the first sentence of the chapter is highlighted green with one word highlighted yellow
+  - assert: A player bar with previous, pause, next, speed and stop controls is visible at the bottom of the window, and the first sentence of the chapter is highlighted green with the word being spoken in a deeper green
   - wait: 4000
   - javascript:
       environment: browser

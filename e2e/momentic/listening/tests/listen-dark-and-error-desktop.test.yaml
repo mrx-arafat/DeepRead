@@ -15,7 +15,7 @@ steps:
   - click:
       coords: 1119, 25
   - wait: 1800
-  - assert: In the dark theme the spoken sentence has a dark green highlight and the spoken word a dark yellow highlight and both are easy to tell apart from the page
+  - assert: In the dark theme the spoken sentence has a dark green highlight and the spoken word a brighter green highlight, and both are easy to tell apart from the page and from each other
   - click:
       css: '.listen-bar button[aria-label="Pause"]'
   - javascript:

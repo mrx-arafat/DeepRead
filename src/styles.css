@@ -19,6 +19,7 @@
   --pen-wash: #edf0fb;
   --marker: #ffe94a;
   --marker-spoken: #cdf3c2;
+  --marker-voice: #7fcf6c;
   --danger: #b3261e;
 
   --font-book: "Literata Variable", "Noto Sans Bengali Variable", Georgia, serif;
@@ -47,7 +48,8 @@
   --pen-ink: #11131a;
   --pen-wash: #1c2238;
   --marker: #6b5f0c;
-  --marker-spoken: #1f4a2a;
+  --marker-spoken: #1c4226;
+  --marker-voice: #2a6236;
   --danger: #ff8a80;
 
   color-scheme: dark;
@@ -112,14 +114,22 @@ a {
   color: var(--ink);
 }
 
+/* Read aloud: the sentence in green, and the word the voice is on in a stronger green, so it stands out by brightness, not hue alone. */
 ::highlight(dr-sentence) {
   background-color: var(--marker-spoken);
 }
 
-::highlight(dr-word),
 ::highlight(dr-spoken) {
+  background-color: var(--marker-voice);
+  color: var(--ink);
+}
+
+/* A word looked up: yellow, and underlined in pen like a word with a note in the margin. The underline tells it apart from the green marks whatever colours the reader sees. */
+::highlight(dr-word) {
   background-color: var(--marker);
   color: var(--ink);
+  text-decoration: underline 2px var(--pen);
+  text-underline-offset: 0.2em;
 }
 
 .visually-hidden {

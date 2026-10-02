@@ -115,7 +115,7 @@ steps:
       timeout: 10000
   # Clicking away from the card, on the empty page beside the text, should close it.
   - click:
-      x: 1150
+      x: 1350
       y: "{{ env.TEXT_AT.cy }}"
   - checkElementDoesNotExist:
       css: .word-popover

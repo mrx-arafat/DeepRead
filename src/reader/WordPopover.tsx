@@ -1,10 +1,11 @@
 import { autoUpdate, flip, offset, shift, useFloating } from "@floating-ui/react";
 import { Headphones, Volume2, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { LANGUAGES, type ExplainRequest, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
+import { BOTTOM_EDGE, clearSpan, TOP_EDGE } from "./sentenceView.ts";
 import { canSpeak, speak } from "./speech.ts";
-import { blockOf } from "./textRanges.ts";
+import { blockOf, highlighted, rangeInBlock, sentenceSpans } from "./textRanges.ts";
 import { useAiStream } from "./useAiStream.ts";
 
 export type Lookup = {
@@ -34,18 +35,64 @@ function labelled(text: string): Map<string, string> {
   return lines;
 }
 
+// Wide enough for the margin beside the text: the width at which notes move there too (styles.css).
+const MARGIN = "(min-width: 72rem)";
+// The card stays clear of the top bar and the player.
+const EDGES = { top: TOP_EDGE + 12, bottom: BOTTOM_EDGE };
+const GAP = 10;
+
+function watchMargin(onChange: () => void): () => void {
+  const query = window.matchMedia(MARGIN);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+function hasMargin(): boolean {
+  return window.matchMedia(MARGIN).matches;
+}
+
+/** `--gutter` in pixels: how far the notes in the margin sit from the text. */
+function gutter(): number {
+  const root = getComputedStyle(document.documentElement);
+  return parseFloat(root.getPropertyValue("--gutter")) * parseFloat(root.fontSize);
+}
+
+/** The sentences the card must leave in view, most important first: the one being read aloud, then the word's own. */
+function sentencesToKeep(lookup: Lookup): Range[] {
+  const own = sentenceSpans(lookup.range.startContainer.textContent ?? "").find(
+    (span) => lookup.range.startOffset < span.end,
+  );
+  return [highlighted("dr-sentence"), own ? rangeInBlock(lookup.blockId, own) : null].filter((range) => range !== null);
+}
+
 export function WordPopover({ lookup, bookId, lang, onListenFromHere, onClose }: Props) {
+  const margin = useSyncExternalStore(watchMargin, hasMargin);
+  // Taken as the card opens, so it stays put while the voice moves on to the next sentence.
+  const [keep] = useState(() => sentencesToKeep(lookup));
+  // In the margin level with the word, like a note, where there is one. Elsewhere under or over the word,
+  // clear of the sentence being read and of the word's own sentence.
   const { refs, floatingStyles } = useFloating({
-    placement: "bottom",
-    middleware: [offset(10), flip({ padding: 64 }), shift({ padding: 12 })],
+    placement: margin ? "right-start" : "bottom",
+    middleware: margin
+      ? [offset(gutter()), shift({ padding: EDGES })]
+      : [offset(GAP), flip({ padding: EDGES }), shift({ padding: 12 })],
     whileElementsMounted: autoUpdate,
   });
   useLayoutEffect(() => {
     refs.setPositionReference({
-      getBoundingClientRect: () => lookup.range.getBoundingClientRect(),
-      getClientRects: () => lookup.range.getClientRects(),
+      getBoundingClientRect: () => {
+        const word = lookup.range.getBoundingClientRect();
+        if (margin) {
+          const column = blockOf(lookup.range.startContainer)?.getBoundingClientRect() ?? word;
+          return new DOMRect(column.left, word.top, column.width, word.height);
+        }
+        const card = (refs.floating.current?.offsetHeight ?? 0) + GAP;
+        const view = { top: EDGES.top, bottom: window.innerHeight - EDGES.bottom };
+        const span = clearSpan(word, keep.map((range) => range.getBoundingClientRect()), card, view);
+        return new DOMRect(word.left, span.top, word.width, span.bottom - span.top);
+      },
     });
-  }, [refs, lookup.range]);
+  }, [refs, lookup.range, margin, keep]);
 
   // The card takes focus so it is announced and its buttons are next for a keyboard;
   // closing it from inside (Escape, Close, Listen) hands focus back to the paragraph.

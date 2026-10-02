@@ -225,9 +225,25 @@ export function rangeInBlock(blockId: string, span: Span): Range | null {
   return range;
 }
 
+// Where marks overlap, a later one here is painted over an earlier one: a word looked up inside the sentence
+// being read keeps its own mark.
+const LAYERS = ["dr-sentence", "dr-spoken", "dr-word", "dr-cursor"];
+
 /** Paint (or clear) a named highlight without touching the DOM. Styled via `::highlight(name)`. */
 export function setHighlight(name: string, range: Range | null) {
   if (!("highlights" in CSS)) return;
-  if (range) CSS.highlights.set(name, new Highlight(range));
-  else CSS.highlights.delete(name);
+  if (!range) {
+    CSS.highlights.delete(name);
+    return;
+  }
+  const highlight = new Highlight(range);
+  highlight.priority = LAYERS.indexOf(name);
+  CSS.highlights.set(name, highlight);
+}
+
+/** The text a named highlight marks now, if any. */
+export function highlighted(name: string): Range | null {
+  if (!("highlights" in CSS)) return null;
+  const range = CSS.highlights.get(name)?.values().next().value;
+  return range instanceof Range ? range : null;
 }

@@ -52,4 +52,4 @@ steps:
         need(hs[2] > 60 && hs[2] < innerHeight - 140, 'the highlighted heading is kept in the comfortable middle of the window, top=' + hs[2]);
         need(document.querySelector('.listen-bar'), 'player still open');
         return JSON.stringify(heads);
-  - assert: The heading THE PROBLEMS OF PHILOSOPHY is highlighted green with one word highlighted yellow, and the player bar is showing
+  - assert: The heading THE PROBLEMS OF PHILOSOPHY is highlighted green with one word in a deeper green, and the player bar is showing
