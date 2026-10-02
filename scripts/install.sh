@@ -28,6 +28,16 @@ ask() {
   case "${answer:-$2}" in [Yy]*) return 0 ;; *) return 1 ;; esac
 }
 
+# Prints the reader's pick from a numbered list, or `$2` when they just press Enter or there is no terminal.
+choose() {
+  local answer=""
+  if { : > /dev/tty; } 2> /dev/null; then
+    printf '%s?%s %s ' "$YELLOW" "$RESET" "$1" > /dev/tty
+    read -r answer < /dev/tty || answer=""
+  fi
+  printf '%s' "${answer:-$2}"
+}
+
 printf '\n%sDeepRead installer%s\n\n' "$BOLD" "$RESET"
 
 case "$(uname -s)" in
@@ -64,17 +74,26 @@ if command -v codex > /dev/null 2>&1; then helpers="${helpers:+$helpers and }Cod
 if [ -n "$helpers" ]; then
   good "AI helper: $helpers"
 else
-  warn "No AI helper found. DeepRead explains words and passages with Claude Code (Claude Pro or Max) or Codex (ChatGPT Plus or Pro)."
-  if ask "Install Claude Code now? [y/N]" N; then
-    curl -fsSL https://claude.ai/install.sh | bash || warn "Claude Code did not install. See https://code.claude.com/docs/en/setup"
-    export PATH="$HOME/.local/bin:$PATH"
-    warn "Sign in once: open a new terminal, run  claude  and follow the steps."
-  elif ask "Install Codex instead? [y/N]" N; then
-    npm install -g @openai/codex || warn "Codex did not install. See https://github.com/openai/codex"
-    warn "Sign in once: open a new terminal, run  codex  and choose Sign in with ChatGPT."
-  else
-    say "Skipped. You can add one later; see https://github.com/mrx-arafat/DeepRead#ai-helpers"
+  if command -v agy > /dev/null 2>&1; then
+    warn "Antigravity is installed, but DeepRead does not use it: asked from a script, it runs commands on your computer, so text in a book could make it act."
   fi
+  warn "No AI helper found. It is optional: reading, listening and quick word translations work without one."
+  printf '  To explain words and passages, DeepRead can use one of these, signed in with your own subscription:\n\n'
+  printf '    1) Claude Code    with Claude Pro or Max\n'
+  printf '    2) Codex          with ChatGPT Plus or Pro\n'
+  printf '    3) None for now   you can add one any time later\n\n'
+  case "$(choose "Install which? [1/2/3, default 3]" 3)" in
+    1)
+      curl -fsSL https://claude.ai/install.sh | bash || warn "Claude Code did not install. See https://code.claude.com/docs/en/setup"
+      export PATH="$HOME/.local/bin:$PATH"
+      warn "Sign in once: open a new terminal, run  claude  and follow the steps."
+      ;;
+    2)
+      npm install -g @openai/codex || warn "Codex did not install. See https://github.com/openai/codex"
+      warn "Sign in once: open a new terminal, run  codex  and choose Sign in with ChatGPT."
+      ;;
+    *) say "No AI helper installed. To add one later, see https://github.com/mrx-arafat/DeepRead#ai-helpers" ;;
+  esac
 fi
 
 # 4. DeepRead itself

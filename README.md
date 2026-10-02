@@ -45,7 +45,7 @@ It takes about a minute and asks before it installs anything else.
 <tr><td width="34%"><b>What it checks</b></td><td width="66%"><b>What it does about it</b></td></tr>
 <tr><td>git</td><td>Tells you the one command to install it if it is missing.</td></tr>
 <tr><td>Node.js 24 or newer</td><td>On a Mac with <a href="https://brew.sh">Homebrew</a> it offers to install it for you. Otherwise it points you to <a href="https://nodejs.org/en/download">nodejs.org</a>.</td></tr>
-<tr><td>An AI helper</td><td>Looks for Claude Code or Codex and offers to install one. You can skip this: reading and listening work without one (see <a href="#ai-helpers">AI helpers</a>).</td></tr>
+<tr><td>An AI helper</td><td>Looks for Claude Code or Codex. If neither is there, it lets you pick one to install, or none (the default): reading and listening work without one (see <a href="#ai-helpers">AI helpers</a>). Nothing is installed unless you pick it.</td></tr>
 <tr><td>DeepRead itself</td><td>Downloads it to <code>~/DeepRead</code> (or updates it), installs its packages, builds it, and adds the <code>deepread</code> command.</td></tr>
 </table>
 
