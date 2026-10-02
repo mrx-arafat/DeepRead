@@ -10,12 +10,13 @@ export type Note = {
   /** The text the reader selected. */
   quote: string;
   mode: ExplainMode;
+  /** The language it was asked in. A card keeps it: picking another language later must not ask again. */
+  lang: LangCode;
 };
 
 type Props = {
   note: Note;
   bookId: string;
-  lang: LangCode;
   onClose: (id: string) => void;
 };
 
@@ -26,7 +27,8 @@ function label(mode: ExplainMode, lang: LangCode): string {
 }
 
 /** One explanation, shown in the margin beside the paragraph it belongs to. */
-export function NoteCard({ note, bookId, lang, onClose }: Props) {
+export function NoteCard({ note, bookId, onClose }: Props) {
+  const { lang } = note;
   const request: ExplainRequest = {
     bookId,
     chapterId: note.chapterId,

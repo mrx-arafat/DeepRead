@@ -41,7 +41,7 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
 
       {/* A title page or a licence needs no preview or summary. */}
       {kind === "body" && <ChapterAid kind="preview" bookId={book.id} chapterId={chapter.id} lang={lang} />}
-      <ChapterText blocks={blocks} notes={notes} bookId={book.id} chapterId={chapter.id} lang={lang} actions={actions} />
+      <ChapterText blocks={blocks} notes={notes} bookId={book.id} chapterId={chapter.id} actions={actions} />
       {kind === "body" && <ChapterAid kind="recap" bookId={book.id} chapterId={chapter.id} lang={lang} />}
     </article>
   );

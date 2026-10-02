@@ -31,7 +31,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const [tocOpen, setTocOpen] = useState(false);
   const [word, setWord] = useState<Lookup | null>(null);
   const [selection, setSelection] = useState<Lookup | null>(null);
-  const { notes, addNote, removeNote } = useNotes(bookId);
+  const { notes, addNote, removeNote } = useNotes(bookId, prefs.lang);
   const flow = useChapterFlow(bookId, chapterId, book);
   const first = flow.chapters[0];
   const position = useReadingPosition(bookId, chapterId, book, first);

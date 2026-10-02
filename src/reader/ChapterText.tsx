@@ -1,5 +1,5 @@
 import { memo, useEffect, useEffectEvent, useRef, type MouseEvent } from "react";
-import type { Block, LangCode } from "../../shared/types.ts";
+import type { Block } from "../../shared/types.ts";
 import { NoteCard, type Note } from "./NoteCard.tsx";
 import { blockOf, termSpan, wordRangeAtPoint } from "./textRanges.ts";
 import { useWordCursor } from "./useWordCursor.ts";
@@ -19,7 +19,6 @@ type Props = {
   notes: Note[];
   bookId: string;
   chapterId: string;
-  lang: LangCode;
   actions: TextActions;
 };
 
@@ -48,7 +47,7 @@ const BlockText = memo(function BlockText({ block, tabbable }: { block: Block; t
 });
 
 /** The text of one chapter. A tap on a word looks it up; a selection offers explanations. Both work by keyboard too. */
-export function ChapterText({ blocks, notes, bookId, chapterId, lang, actions }: Props) {
+export function ChapterText({ blocks, notes, bookId, chapterId, actions }: Props) {
   const { onWord, onSelect, onDismiss, onCloseNote } = actions;
   const container = useRef<HTMLDivElement>(null);
   const cursor = useWordCursor(blocks[0]?.id, (word) => ask(word, "keyboard"));
@@ -143,7 +142,7 @@ export function ChapterText({ blocks, notes, bookId, chapterId, lang, actions }:
           {notes
             .filter((note) => note.blockId === block.id)
             .map((note) => (
-              <NoteCard key={note.id} note={note} bookId={bookId} lang={lang} onClose={onCloseNote} />
+              <NoteCard key={note.id} note={note} bookId={bookId} onClose={onCloseNote} />
             ))}
           <BlockText block={block} tabbable={block.id === cursor.tabbable} />
         </div>

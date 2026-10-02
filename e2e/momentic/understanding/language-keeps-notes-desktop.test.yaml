@@ -1,0 +1,74 @@
+fileType: momentic/test/v2
+id: dr-und-language-keeps-notes-desktop
+description: Desktop 1440. Explain one sentence, ask about another in Bangla and open the chapter preview, then change the language to Hindi. The answers already on the page stay as they are, in Bangla, and nothing is asked again, also after a reload.
+viewport: "1440, 900"
+steps:
+  - module:
+      path: ./modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+  - module:
+      path: ./modules/ask-about.module.yaml
+      inputs:
+        PHRASE:
+          string: Is there any knowledge in the world which is so certain that no reasonable man could doubt it?
+  - module:
+      path: ./modules/ask-about.module.yaml
+      inputs:
+        PHRASE:
+          string: "Let us give the name of 'sense-data' to the things that are immediately known in sensation: such things as colours, sounds, smells, hardnesses, roughnesses, and so on."
+        BUTTON:
+          string: "3"
+  - click:
+      css: article[data-chapter="c3"] section[aria-label="Before you read"] button
+  - checkElementVisible:
+      css: .note[aria-label^="Explanation"] .rich-section:first-child
+      timeout: 120000
+  - checkElementVisible:
+      css: .note[aria-label^="In Bangla"] .rich-section:first-child
+      timeout: 120000
+  - checkElementVisible:
+      css: article[data-chapter="c3"] section[aria-label="Before you read"] .rich
+      timeout: 120000
+  - wait: 3000
+  - javascript:
+      environment: browser
+      saveAs: BEFORE_SWITCH
+      code: |-
+        // Count every explanation and chapter aid asked for from here on.
+        window.__drAsked = [];
+        const fetch = window.fetch;
+        window.fetch = (input, init) => {
+          if (/\/api\/ai\/(explain|chapter)/.test(String(input))) window.__drAsked.push(`${input} ${init?.body ?? ""}`);
+          return fetch(input, init);
+        };
+        return {
+          notes: [...document.querySelectorAll(".note")].map((note) => note.innerText),
+          preview: document.querySelector('article[data-chapter="c3"] section[aria-label="Before you read"]').innerText,
+        };
+  - click:
+      css: button[aria-label="Reading settings"]
+  - select:
+      css: "#reading-settings-lang"
+      label: Hindi
+  - press: Escape
+  - wait: 2000
+  - javascript:
+      environment: browser
+      code: |-
+        const before = env.BEFORE_SWITCH;
+        if (window.__drAsked.length) throw new Error(`changing the language asked the AI again: ${window.__drAsked.join("; ")}`);
+        if (document.querySelector(".note-wait, .aid-wait")) throw new Error("an answer went back to waiting after the language changed");
+        const notes = [...document.querySelectorAll(".note")].map((note) => note.innerText);
+        if (JSON.stringify(notes) !== JSON.stringify(before.notes)) throw new Error(`the cards changed: ${JSON.stringify(notes)}`);
+        const preview = document.querySelector('article[data-chapter="c3"] section[aria-label="Before you read"]').innerText;
+        if (preview !== before.preview) throw new Error("the chapter preview changed");
+        return "kept";
+  # Each card keeps the language it was asked in; only new questions come in Hindi.
+  - refresh
+  - checkElementVisible:
+      css: .note[aria-label^="In Bangla"] .note-native[lang="bn"] .rich-section:first-child
+      timeout: 30000
+  - checkElementDoesNotExist:
+      css: .note[aria-label^="In Hindi"]

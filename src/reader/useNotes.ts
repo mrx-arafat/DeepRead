@@ -1,10 +1,11 @@
 import { useCallback, useState } from "react";
+import type { LangCode } from "../../shared/types.ts";
 import type { Note } from "./NoteCard.tsx";
 
 export type Notes = {
   notes: Note[];
-  /** Adds a note; asking the same thing about the same text again replaces the old one. */
-  addNote: (note: Omit<Note, "id">) => void;
+  /** Adds a note in the current language; asking the same thing about the same text again replaces the old one. */
+  addNote: (note: Omit<Note, "id" | "lang">) => void;
   removeNote: (id: string) => void;
 };
 
@@ -26,10 +27,12 @@ function adoptChapterNotes(bookId: string): Note[] {
   return notes;
 }
 
-function loadNotes(bookId: string): Note[] {
+// Notes saved before each one kept its language were shown in the current one, so they keep that.
+function loadNotes(bookId: string, lang: LangCode): Note[] {
   try {
     const saved = localStorage.getItem(notesKey(bookId));
-    return saved === null ? adoptChapterNotes(bookId) : (JSON.parse(saved) as Note[]);
+    const notes = saved === null ? adoptChapterNotes(bookId) : (JSON.parse(saved) as Note[]);
+    return notes.map((note) => (note.lang ? note : { ...note, lang }));
   } catch {
     return [];
   }
@@ -44,9 +47,9 @@ function saveNotes(bookId: string, notes: Note[]) {
   }
 }
 
-/** The reader's notes for the whole book, loaded once and kept in this browser. */
-export function useNotes(bookId: string): Notes {
-  const [notes, setNotes] = useState(() => loadNotes(bookId));
+/** The reader's notes for the whole book, loaded once and kept in this browser. New questions are asked in `lang`. */
+export function useNotes(bookId: string, lang: LangCode): Notes {
+  const [notes, setNotes] = useState(() => loadNotes(bookId, lang));
 
   const change = useCallback(
     (update: (all: Note[]) => Note[]) =>
@@ -59,12 +62,12 @@ export function useNotes(bookId: string): Notes {
   );
 
   const addNote = useCallback(
-    (note: Omit<Note, "id">) =>
+    (note: Omit<Note, "id" | "lang">) =>
       change((all) => [
         ...all.filter((old) => !(old.blockId === note.blockId && old.quote === note.quote && old.mode === note.mode)),
-        { ...note, id: crypto.randomUUID() },
+        { ...note, lang, id: crypto.randomUUID() },
       ]),
-    [change],
+    [change, lang],
   );
 
   const removeNote = useCallback((id: string) => change((all) => all.filter((note) => note.id !== id)), [change]);

@@ -27,8 +27,10 @@ const COPY = {
 
 /** The chapter companion: a preview before reading, a summary after. Generated only when asked for. */
 export function ChapterAid({ kind, bookId, chapterId, lang }: Props) {
-  const [open, setOpen] = useState(false);
-  const request: ChapterAidRequest = { bookId, chapterId, kind, lang };
+  // Asked in the language picked when the reader opened it: picking another one later must not ask again.
+  const [askedIn, setAskedIn] = useState<LangCode | null>(null);
+  const open = askedIn !== null;
+  const request: ChapterAidRequest = { bookId, chapterId, kind, lang: askedIn ?? lang };
   const answer = useAiStream("/api/ai/chapter", request, open);
   const copy = COPY[kind];
 
@@ -38,7 +40,7 @@ export function ChapterAid({ kind, bookId, chapterId, lang }: Props) {
       {!open ? (
         <div className="aid-closed">
           <p>{copy.prompt}</p>
-          <button type="button" className="button" onClick={() => setOpen(true)}>
+          <button type="button" className="button" onClick={() => setAskedIn(lang)}>
             {copy.action}
           </button>
         </div>
