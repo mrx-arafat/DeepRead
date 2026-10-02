@@ -91,7 +91,7 @@ export type Library = {
   /** The parsed book as the reader sees it: with the title and author the reader last set. */
   book(id: string): Promise<ParsedBook | null>;
   pdf(id: string): Promise<{ path: string; size: number } | null>;
-  setProgress(id: string, chapterId: string, blockId: string): Promise<ReadingProgress | null>;
+  setProgress(id: string, chapterId: string, blockId: string, offset: number): Promise<ReadingProgress | null>;
   /** The caller has validated and trimmed `patch`. False when the book does not exist. */
   update(id: string, patch: BookUpdate): Promise<boolean>;
   remove(id: string): Promise<boolean>;
@@ -318,14 +318,14 @@ export function createLibrary(dataDir: string): Library {
       }
     },
 
-    setProgress(id, chapterId, blockId) {
+    setProgress(id, chapterId, blockId, offset) {
       return serialized(id, async () => {
         await ready();
         const meta = await readMeta(id);
         const book = meta && (await loadBook(id));
         const where = meta && book && describePosition(book, meta.chapterWordCounts, chapterId, blockId);
         if (!meta || !where) return null;
-        const progress: ReadingProgress = { chapterId, blockId, updatedAt: new Date().toISOString(), ...where };
+        const progress: ReadingProgress = { chapterId, blockId, offset, updatedAt: new Date().toISOString(), ...where };
         await writeFileAtomic(join(dirOf(id), "meta.json"), JSON.stringify({ ...meta, progress }));
         return progress;
       });

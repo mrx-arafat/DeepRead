@@ -54,6 +54,11 @@ export type ChapterSummary = {
 export type ReadingProgress = {
   chapterId: string;
   blockId: string;
+  /**
+   * Where the line the reader was on starts in the block's text, in characters: the same text whatever the window
+   * width or text size. Absent in progress saved before it was kept; read it as the block's start.
+   */
+  offset?: number;
   updatedAt: string;
   /** Title of that chapter, so the library can say where the reader stopped. */
   chapterTitle: string;

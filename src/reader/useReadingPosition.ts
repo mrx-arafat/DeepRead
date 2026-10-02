@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import type { BookDetail, Chapter } from "../../shared/types.ts";
+import type { BookDetail, Chapter, ReadingProgress } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { bookPercent, indexAtLine, lastOfText } from "./book.ts";
 
@@ -42,6 +42,29 @@ export function blockAtTop(): HTMLElement | null {
   return spotAtEyeLine()?.block ?? null;
 }
 
+/** A range over the character at `offset`, moved on past spaces: one where a line wraps may have no box of its own. */
+function charRange(text: Text, offset: number): Range {
+  let at = Math.min(Math.max(offset, 0), text.length - 1);
+  while (at < text.length - 1 && /\s/.test(text.data.charAt(at))) at++;
+  const range = document.createRange();
+  range.setStart(text, at);
+  range.setEnd(text, at + 1);
+  return range;
+}
+
+/** Where the line at `line` (px from the window top) starts in `block`'s text, in characters. */
+function offsetAtLine(block: HTMLElement, line: number): number {
+  const text = block.firstChild;
+  if (!(text instanceof Text)) return 0;
+  return indexAtLine(text.length, (index) => charRange(text, index).getBoundingClientRect().bottom, line);
+}
+
+/** How far down the window the line holding character `offset` of `block` is, in px. */
+function lineTop(block: HTMLElement, offset: number): number {
+  const text = block.firstChild;
+  return text instanceof Text ? charRange(text, offset).getBoundingClientRect().top : block.getBoundingClientRect().top;
+}
+
 /** How far into its chapter the spot is, 0 to 1. Above the text (heading, preview) is 0; the recap after it is 1. */
 function fractionRead({ block, blocks }: Spot): number {
   return block ? Array.prototype.indexOf.call(blocks, block) / blocks.length : 1;
@@ -71,7 +94,7 @@ export function useReadingPosition(
   const [, navigate] = useLocation();
   const [position, setPosition] = useState<ReadingPosition>({ chapterId: null, percent: 0 });
   // The newest progress saved from this page; the copy in `book` is only as fresh as the page load.
-  const saved = useRef<{ chapterId: string; blockId: string } | null>(null);
+  const saved = useRef<Pick<ReadingProgress, "chapterId" | "blockId" | "offset"> | null>(null);
   const opened = useRef<Chapter | null>(null);
   const inUrl = useRef(chapterId);
 
@@ -87,9 +110,13 @@ export function useReadingPosition(
     opened.current = first;
     const progress = saved.current ?? book.progress;
     const element =
-      progress?.chapterId === first.id && document.querySelector(`[data-block="${CSS.escape(progress.blockId)}"]`);
-    if (element) element.scrollIntoView({ block: "start" });
-    else window.scrollTo({ top: 0 });
+      progress?.chapterId === first.id && document.querySelector<HTMLElement>(`[data-block="${CSS.escape(progress.blockId)}"]`);
+    if (element) {
+      element.scrollIntoView({ block: "start" });
+      // Then on to the reader's line, so it lands where the paragraph's first line would. Progress saved before
+      // lines were kept has no offset and opens at the paragraph.
+      window.scrollBy(0, lineTop(element, progress.offset ?? 0) - lineTop(element, 0));
+    } else window.scrollTo({ top: 0 });
   }, [book, first]);
 
   useEffect(() => {
@@ -102,7 +129,6 @@ export function useReadingPosition(
     }
     let measuring: number | undefined;
     let saving: number | undefined;
-    let savedBlock: string | null = null;
 
     const measure = () => {
       measuring = undefined;
@@ -121,12 +147,14 @@ export function useReadingPosition(
 
     const save = () => {
       const spot = spotAtEyeLine();
-      const blockId = spot?.block?.dataset.block;
+      const block = spot?.block;
+      const blockId = block?.dataset.block;
       const id = spot?.chapter.dataset.chapter;
-      if (!blockId || !id || blockId === savedBlock) return;
-      savedBlock = blockId;
-      saved.current = { chapterId: id, blockId };
-      api.saveProgress(bookId, id, blockId).catch(() => {
+      if (!block || !blockId || !id) return;
+      const offset = offsetAtLine(block, EYE_LINE);
+      if (saved.current?.blockId === blockId && saved.current.offset === offset) return;
+      saved.current = { chapterId: id, blockId, offset };
+      api.saveProgress(bookId, id, blockId, offset).catch(() => {
         // Progress is a convenience; reading must not be interrupted if saving fails.
       });
     };

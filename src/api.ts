@@ -75,8 +75,8 @@ export const api = {
     // 201 is a new book; 200 means this exact file is already in the library and nothing was added.
     return { book: (await res.json()) as BookDetail, alreadyHad: res.status === 200 };
   },
-  saveProgress: (bookId: string, chapterId: string, blockId: string) =>
-    request<ReadingProgress>(`/api/books/${bookId}/progress`, json("PUT", { chapterId, blockId })),
+  saveProgress: (bookId: string, chapterId: string, blockId: string, offset: number) =>
+    request<ReadingProgress>(`/api/books/${bookId}/progress`, json("PUT", { chapterId, blockId, offset })),
   translate: (text: string, lang: LangCode, signal?: AbortSignal) =>
     request<QuickTranslation>(
       `/api/translate?q=${encodeURIComponent(text)}&lang=${lang}`,

@@ -246,14 +246,21 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf }): Hon
       const chapterId = body && readString(body, "chapterId", MAX_ID_FIELD);
       const blockId = body && readString(body, "blockId", MAX_ID_FIELD);
       if (!chapterId || !blockId) return invalidBody(c, "send JSON like {\"chapterId\": \"...\", \"blockId\": \"...\"}.");
+      // A reader from before lines were kept sends only the block: its start.
+      const offset = body?.offset ?? 0;
+      if (typeof offset !== "number" || !Number.isInteger(offset) || offset < 0) {
+        return invalidBody(c, "offset must be a whole number of characters into the paragraph.");
+      }
 
       const book = await library.book(id);
       if (!book) return bookNotFound(c);
       const chapter = book.chapters.find((candidate) => candidate.id === chapterId);
       if (!chapter) return chapterNotFound(c);
-      if (!chapter.blocks.some((block) => block.id === blockId)) return blockNotFound(c);
+      const block = chapter.blocks.find((candidate) => candidate.id === blockId);
+      if (!block) return blockNotFound(c);
+      if (offset > block.text.length) return invalidBody(c, "offset is past the end of that paragraph.");
 
-      const progress: ReadingProgress | null = await library.setProgress(id, chapterId, blockId);
+      const progress: ReadingProgress | null = await library.setProgress(id, chapterId, blockId, offset);
       return progress ? c.json(progress) : bookNotFound(c);
     },
   );

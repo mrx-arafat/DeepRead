@@ -53,3 +53,6 @@ steps:
   - javascript: |-
       const a = JSON.parse(env.SPOT1), b = JSON.parse(env.SPOT2);
       assert(a.eyeText === b.eyeText, `after reload the line under the reader's eyes is "${b.eyeText}" (${b.intoBlockPx}px into its paragraph) but it was "${a.eyeText}" (${a.intoBlockPx}px into its paragraph)`)
+  - javascript: |-
+      const a = JSON.parse(env.SPOT1), c = JSON.parse(env.SPOT3);
+      assert(a.eyeText === c.eyeText, `after reopening the book the line under the reader's eyes is "${c.eyeText}" (${c.intoBlockPx}px into its paragraph) but it was "${a.eyeText}" (${a.intoBlockPx}px into its paragraph)`)

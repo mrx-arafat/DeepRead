@@ -623,6 +623,13 @@ describe("DeepRead API", () => {
       expect((await put({ chapterId: "c1", blockId: "c2-b1" })).status).toBe(404);
       expect((await put({ chapterId: "c1" })).status).toBe(400);
       expect((await put("{oops")).status).toBe(400);
+      // The line the reader was on, as a character offset into the 31 characters of "Alpha paragraph has five words."
+      expect(await (await put({ chapterId: "c1", blockId: "c1-b1", offset: 16 })).json()).toMatchObject({ offset: 16 });
+      expect((await (await app.request(`/api/books/${id}`)).json()) as BookDetail).toMatchObject({ progress: { blockId: "c1-b1", offset: 16 } });
+      expect((await put({ chapterId: "c1", blockId: "c1-b1", offset: 31 })).status).toBe(200);
+      for (const offset of [32, -1, 2.5, "16"]) {
+        expect((await put({ chapterId: "c1", blockId: "c1-b1", offset })).status, `offset ${offset}`).toBe(400);
+      }
     });
   });
 
