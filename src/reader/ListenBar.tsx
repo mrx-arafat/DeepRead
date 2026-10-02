@@ -45,7 +45,8 @@ export function ListenBar({
         </div>
       )}
       <div className="listen-controls">
-        <button type="button" className="icon-button" aria-label="Previous sentence" onClick={listen.previous}>
+        {/* Icons alone, to fit a phone; the titles name them for a mouse reader, the labels for a screen reader. */}
+        <button type="button" className="icon-button" aria-label="Previous sentence" title="Previous sentence" onClick={listen.previous}>
           <SkipBack size={18} aria-hidden />
         </button>
         <button
@@ -53,16 +54,17 @@ export function ListenBar({
           type="button"
           className="icon-button listen-play"
           aria-label={listen.playing ? "Pause" : "Play"}
+          title={listen.playing ? "Pause" : "Play"}
           onClick={listen.toggle}
         >
           {listen.playing ? <Pause size={20} aria-hidden /> : <Play size={20} aria-hidden />}
         </button>
-        <button type="button" className="icon-button" aria-label="Next sentence" onClick={listen.next}>
+        <button type="button" className="icon-button" aria-label="Next sentence" title="Next sentence" onClick={listen.next}>
           <SkipForward size={18} aria-hidden />
         </button>
         <label className="listen-rate">
           <span className="visually-hidden">Speed</span>
-          <select value={rate} onChange={(event) => setPrefs({ rate: Number(event.target.value) })}>
+          <select value={rate} title="Reading speed" onChange={(event) => setPrefs({ rate: Number(event.target.value) })}>
             {RATES.map((value) => (
               <option key={value} value={value}>
                 {value}x
@@ -70,7 +72,7 @@ export function ListenBar({
             ))}
           </select>
         </label>
-        <button type="button" className="icon-button" aria-label="Stop listening" onClick={onStop}>
+        <button type="button" className="icon-button" aria-label="Stop listening" title="Stop listening" onClick={onStop}>
           <X size={18} aria-hidden />
         </button>
       </div>

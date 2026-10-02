@@ -71,8 +71,8 @@ export function SelectionBar({ range, lang, autoFocus, onExplain, onListen }: Pr
         In {LANGUAGES[lang]}
       </button>
       {canSpeak && (
-        <button type="button" aria-label="Listen from here" onClick={onListen}>
-          <Headphones size={16} aria-hidden />
+        <button type="button" aria-label="Listen from here" title="Listen from here" onClick={onListen}>
+          <Headphones size={16} aria-hidden /> Listen
         </button>
       )}
     </div>
