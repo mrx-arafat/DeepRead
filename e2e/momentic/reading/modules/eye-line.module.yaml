@@ -1,0 +1,26 @@
+fileType: momentic/module/v2
+id: dr-read-m-eye-line
+name: The line the reader is on
+steps:
+  - javascript:
+      environment: browser
+      saveAs: EYE_LINE
+      code: |-
+        // The first character of the line just under the top bar (y 96), and how far down the window it is.
+        // Picked once per page load; later runs follow that same character through text size changes.
+        if (!window.__eyeLine) {
+          const col = document.querySelector('.chapter-text');
+          if (!col) return JSON.stringify({ error: 'no chapter text on page', url: location.pathname });
+          const x = col.getBoundingClientRect().left + 24;
+          let block = null;
+          for (const y of [96, 120, 144]) { const hit = document.elementFromPoint(x, y); block = hit && hit.closest('[data-block]'); if (block) break; }
+          if (!block) return JSON.stringify({ error: 'no paragraph under the top bar', scrollY: Math.round(scrollY) });
+          const node = block.firstChild, range = document.createRange();
+          let offset = 0;
+          for (; offset < node.length - 1; offset++) { range.setStart(node, offset); range.setEnd(node, offset + 1); if (range.getBoundingClientRect().bottom > 96) break; }
+          window.__eyeLine = { block: block.dataset.block, offset };
+        }
+        const { block, offset } = window.__eyeLine;
+        const node = document.querySelector(`[data-block="${block}"]`).firstChild, range = document.createRange();
+        range.setStart(node, offset); range.setEnd(node, offset + 1);
+        return JSON.stringify({ block, offset, top: Math.round(range.getBoundingClientRect().top), text: node.data.slice(offset, offset + 50), fontPx: getComputedStyle(node.parentElement).fontSize, scrollY: Math.round(scrollY) });

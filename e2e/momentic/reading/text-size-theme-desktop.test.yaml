@@ -10,15 +10,15 @@ steps:
       timeout: 15000
   - scrollDown: 2400
   - wait: 2600
-  - module: ./modules/spot.module.yaml
-  - javascript: setVariable('SPOT_BEFORE', env.SPOT)
+  - module: ./modules/eye-line.module.yaml
+  - javascript: setVariable('LINE_BEFORE', env.EYE_LINE)
   - click:
       coords: "1408, 26"
   - click:
       css: button[aria-label="Larger text"]
   - module: ./modules/metrics.module.yaml
-  - module: ./modules/spot.module.yaml
-  - javascript: setVariable('SPOT_AFTER1', env.SPOT)
+  - module: ./modules/eye-line.module.yaml
+  - javascript: setVariable('LINE_AFTER1', env.EYE_LINE)
   - click:
       css: button[aria-label="Larger text"]
       times: 6
@@ -44,6 +44,8 @@ steps:
       times: 8
   - module: ./modules/spot.module.yaml
   - javascript: setVariable('SPOT_23', env.SPOT)
+  - module: ./modules/eye-line.module.yaml
+  - javascript: setVariable('LINE_23', env.EYE_LINE)
   - wait: 2200
   - refresh
   - checkPageContains:
@@ -76,5 +78,8 @@ steps:
   - press: Escape
   - module: ./modules/metrics.module.yaml
   - javascript: |-
-      const a = JSON.parse(env.SPOT_BEFORE), b = JSON.parse(env.SPOT_AFTER1);
-      assert(a.eyeText === b.eyeText, `after one tap on Larger text the text under the reader's eyes changed from "${a.eyeText}" (${a.block}) to "${b.eyeText}" (${b.block}), scrollY ${a.scrollY} to ${b.scrollY}`)
+      const a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.LINE_AFTER1);
+      assert(Math.abs(b.top - a.top) <= 2, `after one tap on Larger text the line under the top bar ("${a.text}", ${a.block}) moved from ${a.top}px to ${b.top}px down the window, scrollY ${a.scrollY} to ${b.scrollY}`)
+  - javascript: |-
+      const a = JSON.parse(env.LINE_BEFORE), c = JSON.parse(env.LINE_23);
+      assert(Math.abs(c.top - a.top) <= 2, `after tapping through the text sizes to ${c.fontPx} the line under the top bar ("${a.text}", ${a.block}) moved from ${a.top}px to ${c.top}px down the window`)

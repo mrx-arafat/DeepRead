@@ -3,6 +3,7 @@ import { useEffect, useState, type FocusEvent, type ToggleEvent } from "react";
 import { LANGUAGES, type AiProviderId, type AiStatus, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { FONT_SIZES, setPrefs, type Prefs } from "../prefs.ts";
+import { keepingLine } from "./useReadingPosition.ts";
 
 const PANEL = "reading-settings";
 
@@ -120,7 +121,7 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
               className="text-size"
               aria-label="Smaller text"
               disabled={prefs.fontSize <= FONT_SIZES.min}
-              onClick={() => setPrefs({ fontSize: prefs.fontSize - 1 })}
+              onClick={() => keepingLine(() => setPrefs({ fontSize: prefs.fontSize - 1 }))}
             >
               A
             </button>
@@ -129,7 +130,7 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
               className="text-size text-size-large"
               aria-label="Larger text"
               disabled={prefs.fontSize >= FONT_SIZES.max}
-              onClick={() => setPrefs({ fontSize: prefs.fontSize + 1 })}
+              onClick={() => keepingLine(() => setPrefs({ fontSize: prefs.fontSize + 1 }))}
             >
               A
             </button>

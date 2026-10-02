@@ -65,6 +65,25 @@ function lineTop(block: HTMLElement, offset: number): number {
   return text instanceof Text ? charRange(text, offset).getBoundingClientRect().top : block.getBoundingClientRect().top;
 }
 
+// The place the last text size change kept on screen. Until the reader scrolls, the next change keeps that same
+// place: taking the start of the line it reflowed into instead would creep back through the text with every tap.
+let kept: { block: HTMLElement; offset: number; scrollY: number } | null = null;
+
+/**
+ * Runs `change`, which reflows the book (a new text size), then scrolls so that the line the reader is on stays where
+ * it was on screen, as in an e-reader. The browser's own scroll anchoring does not hold it through a text size change.
+ */
+export function keepingLine(change: () => void): void {
+  const again = kept?.block.isConnected && kept.scrollY === window.scrollY ? kept : null;
+  const block = again?.block ?? blockAtTop();
+  if (!block) return change();
+  const offset = again?.offset ?? offsetAtLine(block, EYE_LINE);
+  const top = lineTop(block, offset);
+  change();
+  window.scrollBy(0, lineTop(block, offset) - top);
+  kept = { block, offset, scrollY: window.scrollY };
+}
+
 /** How far into its chapter the spot is, 0 to 1. Above the text (heading, preview) is 0; the recap after it is 1. */
 function fractionRead({ block, blocks }: Spot): number {
   return block ? Array.prototype.indexOf.call(blocks, block) / blocks.length : 1;
