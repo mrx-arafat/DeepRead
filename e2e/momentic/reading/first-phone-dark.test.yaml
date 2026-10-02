@@ -14,7 +14,7 @@ steps:
   - module: ./modules/metrics.module.yaml
   - scrollDown: 700
   - assertVisually:
-      that: The text on screen is book prose or front matter set in a serif typeface with comfortable spacing between paragraphs, and nothing overlaps
+      that: The text on screen is book prose or front matter set in a serif typeface with comfortable spacing between paragraphs, and nothing overlaps. A line cut off cleanly at the lower edge of the top bar has only scrolled under the bar and is fine
       timeout: 20000
   - navigate: /book/{{ env.BOOK_ID }}/c3
   - checkPageContains:
