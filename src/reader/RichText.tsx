@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 export type RichBlock = { type: "p"; text: string } | { type: "ul"; items: string[] };
 
@@ -55,7 +55,7 @@ export function parseSections(text: string): RichSection[] {
 
 /** Split a hard-word line such as "minute (say my-NOOT) - very small (native words)". */
 export function parseGlossaryEntry(item: string): GlossaryEntry | null {
-  const split = /^(.+?)\s+[-\u2013\u2014:]\s+(.+)$/.exec(item.replaceAll("**", ""));
+  const split = /^(.+?)\s+[-\u2013\u2014:]\s+(.+)$/.exec(item.replaceAll("*", ""));
   if (!split?.[1] || !split[2]) return null;
   const termParts = /^(.*?)\s*\((.+)\)$/.exec(split[1].trim());
   const meaningParts = /^(.*?)\s*\(([^()]*)\)\.?$/.exec(split[2].trim());
@@ -79,10 +79,21 @@ function kindOf(label: string | null): SectionKind {
   return "plain";
 }
 
+// **bold**, then *italic* or _italic_. The end of the line also closes one, so an emphasis still streaming in
+// ("you *belie") never shows its asterisks. A star with a space after it ("2 * 3") is just a star.
+const EMPHASIS = /\*\*(.*?)(?:\*\*|$)|(?<![\w*])\*(?=[^\s*]|$)(.*?)(?:\*|$)|(?<!\w)_(?=[^\s_]|$)(.*?)(?:_(?!\w)|$)/g;
+
 function inline(text: string): ReactNode {
-  return text.split(/\*\*(.+?)\*\*/g).map((part, i) =>
-    i % 2 === 1 ? <strong key={i}>{part}</strong> : <Fragment key={i}>{part}</Fragment>,
-  );
+  const parts: ReactNode[] = [];
+  let from = 0;
+  for (const match of text.matchAll(EMPHASIS)) {
+    const [whole, bold, italic = match[3]] = match;
+    parts.push(text.slice(from, match.index));
+    parts.push(bold === undefined ? <em key={match.index}>{italic}</em> : <strong key={match.index}>{bold}</strong>);
+    from = match.index + whole.length;
+  }
+  parts.push(text.slice(from));
+  return parts;
 }
 
 function Glossary({ items }: { items: string[] }) {

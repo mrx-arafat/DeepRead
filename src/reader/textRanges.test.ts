@@ -1,5 +1,7 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { parseGlossaryEntry, parseSections } from "./RichText.tsx";
+import { parseGlossaryEntry, parseSections, RichText } from "./RichText.tsx";
 import { sentenceSpans, stepWord, termSpan, wordAt } from "./textRanges.ts";
 
 const cut = (text: string, span: { start: number; end: number } | null) => span && text.slice(span.start, span.end);
@@ -203,5 +205,29 @@ describe("parseGlossaryEntry", () => {
 
   it("should return null when the line has no term and meaning", () => {
     expect(parseGlossaryEntry("just some words")).toBeNull();
+  });
+});
+
+describe("RichText", () => {
+  const html = (text: string) => renderToStaticMarkup(createElement(RichText, { text }));
+
+  it("should show emphasis as bold or italic, never as the asterisks the AI typed", () => {
+    const answer = [
+      "You only see many looks, and you *believe* one **real** shirt is _behind_ them.",
+      "So 2 * 3 is still a sum.",
+      "**Hard words:**",
+      "- *evident* - easy to see",
+    ].join("\n");
+
+    expect(html(answer)).toContain(
+      "<p>You only see many looks, and you <em>believe</em> one <strong>real</strong> shirt is <em>behind</em> them.</p>",
+    );
+    expect(html(answer)).toContain("<p>So 2 * 3 is still a sum.</p>");
+    expect(html(answer)).toContain("<dt>evident</dt>");
+  });
+
+  it("should show an emphasis that is still streaming in without its asterisks", () => {
+    expect(html("and you *belie")).toContain("<p>and you <em>belie</em></p>");
+    expect(html("and the **")).not.toContain("*");
   });
 });
