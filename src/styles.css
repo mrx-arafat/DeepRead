@@ -1187,10 +1187,19 @@ h5[data-block] {
 }
 
 /* Wide screens: explanations move into the margin, level with their paragraph, like notes in a textbook.
-   The text is centred while the margin is empty. Once a note, the first-visit tip or the player is in it, the text moves
-   left only as far as the margin needs, and on a very wide screen not at all. The column is never so wide that the
-   margin cannot fit. */
+   The text is centred while the margin is empty. Once a note, the first-visit tip, the player or the Undo bar is in it,
+   the text moves left only as far as the margin needs, and on a very wide screen not at all. The column is never so
+   wide that the margin cannot fit. */
 @media (min-width: 72rem) {
+  /* Where the margin starts, for what is fixed to the window there (the player, the Undo bar): a gutter right of the
+     text column as it sits while the margin is in use. 100% is the window and 1.5rem the page's side padding. */
+  :root {
+    --margin-start: min(
+      50% + min(var(--column), 100% - 3rem - var(--gutter) - var(--margin-note)) / 2 + var(--gutter),
+      100% - 1.5rem - var(--margin-note)
+    );
+  }
+
   .chapter,
   .flow-back,
   .flow-end {
@@ -1201,7 +1210,7 @@ h5[data-block] {
     transition: margin-left 0.25s ease-out;
   }
 
-  .reader:has(.note, .tip, .listen-bar) :is(.chapter, .flow-back, .flow-end) {
+  .reader:has(.note, .tip, .listen-bar, .toast) :is(.chapter, .flow-back, .flow-end) {
     margin-left: min((100% - var(--text-width)) / 2, 100% - var(--text-width) - var(--gutter) - var(--margin-note));
   }
 
@@ -1492,14 +1501,10 @@ h5[data-block] {
   transform: translateX(-50%);
 }
 
-/* Wide screens: the player sits at the foot of the margin, where the notes go, so it covers none of the text.
-   The margin starts a gutter right of the text column, which the player moves left as far as the margin needs
-   (see the chapter's wide-screen rules; 1.5rem is the page's side padding). */
+/* Wide screens: the player sits at the foot of the margin, where the notes go, so it covers none of the text. */
 @media (min-width: 72rem) {
   .listen-bar {
-    --text-width: min(var(--column), 100% - 3rem - var(--gutter) - var(--margin-note));
-
-    left: min(50% + var(--text-width) / 2 + var(--gutter), 100% - 1.5rem - var(--margin-note));
+    left: var(--margin-start);
     transform: none;
   }
 
@@ -1633,7 +1638,7 @@ h5[data-block] {
 
 @media (min-width: 72rem) {
   .toast {
-    left: calc(50% + (var(--column) + var(--gutter) + var(--margin-note)) / 2 - var(--margin-note));
+    left: var(--margin-start);
     transform: none;
   }
 }
