@@ -1063,7 +1063,8 @@ function buildBlocks(pages, stats, starts, lex) {
       const kind = l.headingLevel ? "heading" : l.size >= 1.1 * stats.bodySize && !l.mono ? "large" : l.size < 0.85 * stats.bodySize ? "small" : "body";
       const isFootnote = fnStart >= 0 && i >= fnStart && kind === "small";
 
-      let startNew = !cur || forced;
+      // a contents entry is a block of its own, whatever its spacing says
+      let startNew = !cur || forced || l.contentsRow || cur.lastLine.contentsRow;
       if (!startNew) {
         const headingLike = (k) => k === "heading" || k === "large";
         if (headingLike(kind) && headingLike(cur.kind) && isLabel(cur.text) && prev && prev.y - l.y < 4.5 * Math.max(prev.size, l.size)) {
@@ -1329,6 +1330,7 @@ export async function parsePdf(filePath, options = {}) {
     })
     .sort((a, b) => a.page - b.page || (b.y ?? Infinity) - (a.y ?? Infinity));
   pullBackTitlePages(starts, pages, stats);
+  markContentsRows(pages, starts, stats);
 
   const blocks = buildBlocks(pages, stats, starts, lex);
   const chapters = assemble(blocks, starts, numPages);
@@ -1392,6 +1394,24 @@ function pullBackTitlePages(starts, pages, stats) {
     if (prev.lines.length && prev.lines.length <= 4 && prev.lines.every((l) => l.size >= 1.1 * stats.bodySize)) {
       s.page = prev.num;
       s.y = null;
+    }
+  }
+}
+
+/**
+ * A contents page lists the chapters, one per line. Without page numbers its rows look like the lines of a
+ * paragraph and run together ("CHAPTER VII. ... CHAPTER VIII. ..."), so a body-type line naming a chapter the
+ * parser found is marked as an entry of its own. One such line can be a cross-reference; three on a page are a list.
+ */
+function markContentsRows(pages, starts, stats) {
+  const titles = new Set(starts.map((s) => normKey(s.title)).filter((k) => k.length >= 3));
+  for (const pg of pages) {
+    const rows = pg.lines.filter((l) => !l.headingLevel && l.size < 1.1 * stats.bodySize && titles.has(normKey(l.text)));
+    if (new Set(rows.map((l) => normKey(l.text))).size < 3) continue;
+    for (const l of rows) {
+      l.contentsRow = true;
+      // an unnumbered entry keeps the link text of its empty number column: ". PREFACE"
+      l.text = l.text.replace(/^\.+\s+/, "");
     }
   }
 }
