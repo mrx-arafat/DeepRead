@@ -10,7 +10,7 @@ export type TextActions = {
   onWord: (lookup: Lookup) => void;
   onSelect: (lookup: Lookup) => void;
   onDismiss: () => void;
-  onCloseNote: (id: string) => void;
+  onCloseNote: (id: string, byKeyboard: boolean) => void;
 };
 
 type Props = {

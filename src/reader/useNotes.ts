@@ -6,8 +6,18 @@ export type Notes = {
   notes: Note[];
   /** Adds a note in the current language; asking the same thing about the same text again replaces the old one. */
   addNote: (note: Omit<Note, "id" | "lang">) => void;
+  /** Removes a note. It can be put back with `restoreNote` until another is removed or `forgetRemoved` is called. */
   removeNote: (id: string) => void;
+  /** The note removed last, while it can still be put back. */
+  removed: Note | null;
+  restoreNote: () => void;
+  forgetRemoved: () => void;
 };
+
+/** Whether two notes ask the same thing about the same text: a newer one replaces the older. */
+function sameQuestion(a: Omit<Note, "id" | "lang">, b: Omit<Note, "id" | "lang">): boolean {
+  return a.blockId === b.blockId && a.quote === b.quote && a.mode === b.mode;
+}
 
 // Notes outlive a page reload. Only the request is kept: the server caches the answers.
 const notesKey = (bookId: string) => `deepread.notes.${bookId}`;
@@ -63,14 +73,33 @@ export function useNotes(bookId: string, lang: LangCode): Notes {
 
   const addNote = useCallback(
     (note: Omit<Note, "id" | "lang">) =>
-      change((all) => [
-        ...all.filter((old) => !(old.blockId === note.blockId && old.quote === note.quote && old.mode === note.mode)),
-        { ...note, lang, id: crypto.randomUUID() },
-      ]),
+      change((all) => [...all.filter((old) => !sameQuestion(old, note)), { ...note, lang, id: crypto.randomUUID() }]),
     [change, lang],
   );
 
-  const removeNote = useCallback((id: string) => change((all) => all.filter((note) => note.id !== id)), [change]);
+  const [removed, setRemoved] = useState<{ note: Note; index: number } | null>(null);
 
-  return { notes, addNote, removeNote };
+  const removeNote = useCallback(
+    (id: string) => {
+      const index = notes.findIndex((note) => note.id === id);
+      if (index === -1) return;
+      setRemoved({ note: notes[index]!, index });
+      change((all) => all.filter((note) => note.id !== id));
+    },
+    [notes, change],
+  );
+
+  const restoreNote = useCallback(() => {
+    if (!removed) return;
+    setRemoved(null);
+    // Back in its old place, so it shows where it was beside its paragraph. The same question asked again since gives way.
+    change((all) => {
+      const rest = all.filter((note) => !sameQuestion(note, removed.note));
+      return [...rest.slice(0, removed.index), removed.note, ...rest.slice(removed.index)];
+    });
+  }, [removed, change]);
+
+  const forgetRemoved = useCallback(() => setRemoved(null), []);
+
+  return { notes, addNote, removeNote, removed: removed?.note ?? null, restoreNote, forgetRemoved };
 }

@@ -15,6 +15,7 @@ import { ReadingSettings } from "./ReadingSettings.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
 import { canSpeak } from "./speech.ts";
 import { setHighlight } from "./textRanges.ts";
+import { UndoToast } from "./UndoToast.tsx";
 import { useChapterFlow } from "./useChapterFlow.ts";
 import { useListen } from "./useListen.ts";
 import { useNotes } from "./useNotes.ts";
@@ -31,7 +32,9 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const [tocOpen, setTocOpen] = useState(false);
   const [word, setWord] = useState<Lookup | null>(null);
   const [selection, setSelection] = useState<Lookup | null>(null);
-  const { notes, addNote, removeNote } = useNotes(bookId, prefs.lang);
+  const { notes, addNote, removeNote, removed, restoreNote, forgetRemoved } = useNotes(bookId, prefs.lang);
+  const [undoFocus, setUndoFocus] = useState(false);
+  const focusNote = useRef<string | null>(null);
   const flow = useChapterFlow(bookId, chapterId, book);
   const first = flow.chapters[0];
   const position = useReadingPosition(bookId, chapterId, book, first);
@@ -128,9 +131,30 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     setSelection(lookup);
   }, []);
 
+  // A keyboard reader's focus was on the card's Remove button, which is gone: it goes to Undo, not the page body.
+  const closeNote = useCallback(
+    (id: string, byKeyboard: boolean) => {
+      setUndoFocus(byKeyboard);
+      removeNote(id);
+    },
+    [removeNote],
+  );
+
+  /** Puts the removed note back. Focus on Undo goes back to the note's Remove button, as if it had never gone. */
+  function undoRemove() {
+    if (document.activeElement?.closest(".toast")) focusNote.current = removed?.id ?? null;
+    restoreNote();
+  }
+
+  useEffect(() => {
+    if (!focusNote.current) return;
+    document.querySelector<HTMLElement>(`[data-note="${focusNote.current}"] button[aria-label="Remove note"]`)?.focus();
+    focusNote.current = null;
+  });
+
   const actions = useMemo<TextActions>(
-    () => ({ onWord: handleWord, onSelect: handleSelect, onDismiss: dismiss, onCloseNote: removeNote }),
-    [handleWord, handleSelect, dismiss, removeNote],
+    () => ({ onWord: handleWord, onSelect: handleSelect, onDismiss: dismiss, onCloseNote: closeNote }),
+    [handleWord, handleSelect, dismiss, closeNote],
   );
 
   function explain(mode: ExplainMode) {
@@ -268,6 +292,13 @@ export function ReaderPage({ bookId, chapterId }: Props) {
           </>
         )}
       </main>
+
+      {/* Always on the page, so a screen reader hears "Note removed" the moment it appears. */}
+      <div role="status">
+        {removed && (
+          <UndoToast key={removed.id} message="Note removed" autoFocus={undoFocus} onUndo={undoRemove} onTimeout={forgetRemoved} />
+        )}
+      </div>
 
       {word && (
         <WordPopover

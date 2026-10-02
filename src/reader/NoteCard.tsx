@@ -17,7 +17,8 @@ export type Note = {
 type Props = {
   note: Note;
   bookId: string;
-  onClose: (id: string) => void;
+  /** `byKeyboard`: pressed with Enter or Space, so focus was on the button that is about to go. */
+  onClose: (id: string, byKeyboard: boolean) => void;
 };
 
 function label(mode: ExplainMode, lang: LangCode): string {
@@ -40,10 +41,10 @@ export function NoteCard({ note, bookId, onClose }: Props) {
   const answer = useAiStream("/api/ai/explain", request);
 
   return (
-    <aside className="note" aria-label={`${label(note.mode, lang)}: ${note.quote.slice(0, 60)}`}>
+    <aside className="note" data-note={note.id} aria-label={`${label(note.mode, lang)}: ${note.quote.slice(0, 60)}`}>
       <header className="note-head">
         <span className="note-label">{label(note.mode, lang)}</span>
-        <button type="button" className="icon-button" aria-label="Remove note" onClick={() => onClose(note.id)}>
+        <button type="button" className="icon-button" aria-label="Remove note" onClick={(event) => onClose(note.id, event.detail === 0)}>
           <X size={16} aria-hidden />
         </button>
       </header>

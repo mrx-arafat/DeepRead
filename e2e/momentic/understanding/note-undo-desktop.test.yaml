@@ -1,0 +1,85 @@
+fileType: momentic/test/v2
+id: dr-und-note-undo-desktop
+description: Desktop 1440. Remove a margin note and bring it back with Undo, by mouse and by keyboard; a removal left alone stands, also after a reload.
+viewport: "1440, 900"
+steps:
+  - module:
+      path: ./modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+  - module:
+      path: ./modules/ask-about.module.yaml
+      inputs:
+        PHRASE:
+          string: Is there any knowledge in the world which is so certain that no reasonable man could doubt it?
+  - checkElementVisible:
+      css: .row:has([data-block="c3-b2"]) .note .rich-section:first-child
+      timeout: 120000
+  # By mouse: the card goes, and a short "Note removed" offers it back.
+  - click:
+      css: .row:has([data-block="c3-b2"]) .note button[aria-label="Remove note"]
+  - checkElementDoesNotExist:
+      css: .note
+  - checkElementVisible:
+      css: '[role="status"] .toast button'
+      timeout: 2000
+  - javascript:
+      environment: browser
+      code: |-
+        const status = document.querySelector('[role="status"]:has(.toast)');
+        if (!status.textContent.includes("Note removed")) throw new Error(`screen readers hear: "${status.textContent}"`);
+        if (document.activeElement?.closest(".toast")) throw new Error("a mouse removal moved focus into the toast");
+        return "announced";
+  - click:
+      css: .toast button
+  - checkElementVisible:
+      css: .row:has([data-block="c3-b2"]) .note .rich-section:first-child
+      timeout: 10000
+  - checkElementDoesNotExist:
+      css: .toast
+  # By keyboard: focus goes to Undo, then back to the restored card's Remove button.
+  - focus:
+      css: .row:has([data-block="c3-b2"]) .note button[aria-label="Remove note"]
+  - press: Enter
+  - checkElementDoesNotExist:
+      css: .note
+  - javascript:
+      environment: browser
+      code: |-
+        const focused = document.activeElement;
+        if (!focused?.closest(".toast") || focused.textContent.trim() !== "Undo") throw new Error(`focus went to ${focused?.outerHTML.slice(0, 120)}`);
+        return "on Undo";
+  # It does not slip away while the reader is on it.
+  - wait: 10000
+  - assertVisually:
+      that: A small box at the bottom of the right margin says "Note removed" with an "Undo" button that has a focus ring, and it covers none of the book text
+      timeout: 10000
+  - press: Enter
+  - checkElementVisible:
+      css: .row:has([data-block="c3-b2"]) .note
+      timeout: 5000
+  - javascript:
+      environment: browser
+      code: |-
+        const focused = document.activeElement;
+        if (focused?.getAttribute("aria-label") !== "Remove note" || !focused.closest('.row:has([data-block="c3-b2"])')) {
+          throw new Error(`after Undo focus is on ${focused?.outerHTML.slice(0, 120)}`);
+        }
+        return "back on Remove note";
+  # Left alone, the toast goes and the removal stands.
+  - click:
+      css: .row:has([data-block="c3-b2"]) .note button[aria-label="Remove note"]
+  - checkElementVisible:
+      css: .toast
+      timeout: 2000
+  - wait: 10000
+  - checkElementDoesNotExist:
+      css: .toast
+  - refresh
+  - checkElementVisible:
+      css: article[data-chapter="c3"] h2
+      timeout: 20000
+  - wait: 2000
+  - checkElementDoesNotExist:
+      css: .note
