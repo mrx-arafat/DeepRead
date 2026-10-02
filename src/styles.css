@@ -1005,8 +1005,7 @@ li:not(.toc-matter) + .toc-matter {
   line-height: 1.7;
 }
 
-/* A first-visit hint just above the first paragraph: how to ask about a word or a passage. It sits in the text column
-   on every screen: the margin is only cleared when a note arrives, and a hint must not move the centred text.
+/* A first-visit hint above the first paragraph (beside it on wide screens): how to ask about a word or a passage.
    Quiet by design: a pointing hand and one marked phrase, no box, so it never looks like an explanation. */
 .tip {
   display: flex;
@@ -1261,6 +1260,18 @@ h5[data-block] {
     width: var(--margin-note);
     margin-right: calc(-1 * (var(--gutter) + var(--margin-note)));
     margin-bottom: 1rem;
+  }
+
+  /* In the margin, level with the first paragraph (which starts 2.5rem below what comes before it). */
+  .tip {
+    float: right;
+    clear: right;
+    width: var(--margin-note);
+    margin: 2.5rem calc(-1 * (var(--gutter) + var(--margin-note))) 0 0;
+  }
+
+  .tip + .chapter-text {
+    margin-top: 2.5rem;
   }
 }
 
