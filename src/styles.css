@@ -931,6 +931,33 @@ li:not(.toc-matter) + .toc-matter {
   text-align: center;
 }
 
+/* The last page of the book: it opens under a rule like a new chapter, says so, and offers the way back to the shelf. */
+.book-end {
+  padding-top: 3rem;
+  border-top: 1px solid var(--ink);
+  color: var(--ink-soft);
+  font-size: 1rem;
+  text-align: left;
+}
+
+.book-end h2 {
+  color: var(--ink);
+  font-family: var(--font-book);
+  font-size: calc(var(--book-size) * 1.4);
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.book-end p {
+  margin-top: 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.book-end .button {
+  margin-top: 1.5rem;
+}
+
 .chapter-meta {
   color: var(--ink-faint);
   font-size: 0.9375rem;

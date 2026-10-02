@@ -38,5 +38,6 @@ steps:
         const bar = document.querySelector('.listen-bar');
         need(window.__stub.spoken.length >= 3, 'the last paragraphs should have been read, got ' + window.__stub.spoken.length);
         need(bar && bar.querySelector('.listen-play').getAttribute('aria-label') === 'Play', 'at the end the player is paused with a Play button');
-        need(end && end.textContent.trim() === 'End of the book', 'the page ends with the End of the book line');
+        need(end && /^End of the book/.test(end.textContent.trim()), 'the page ends with the End of the book heading');
+        need(end.querySelector('a[href="/"]'), 'the End of the book page links back to the library');
         return JSON.stringify({ flowEnd: end.textContent.trim(), spoken: window.__stub.spoken.length, last: window.__stub.spoken.slice(-1).map((s) => s.text.slice(0, 40)) });

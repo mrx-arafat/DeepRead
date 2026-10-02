@@ -13,5 +13,11 @@ steps:
         - module: ./modules/probe.module.yaml
   - module: ./modules/metrics.module.yaml
   - assertVisually:
-      that: The very end of the book is on screen, with a quiet "End of the book" line under the last section and no spinner or error
+      that: The very end of the book is on screen. Under the last section there is a closing "End of the book" heading, a short line naming the book, and a clear "Back to your books" button, with no spinner or error
       timeout: 20000
+  # The closing page is also the way back to the shelf.
+  - click:
+      css: .book-end a.button
+  - checkPageContains:
+      text: Your books
+      timeout: 10000

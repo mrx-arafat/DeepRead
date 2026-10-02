@@ -309,7 +309,15 @@ export function ReaderPage({ bookId, chapterId }: Props) {
                 {flow.loadingNext ? "Opening the next chapter..." : ""}
               </p>
             ) : (
-              <p className="flow-end">End of the book</p>
+              <section className="flow-end" aria-labelledby="book-end-title">
+                <div className="book-end">
+                  <h2 id="book-end-title">End of the book</h2>
+                  <p>You have reached the end of {book.title}.</p>
+                  <Link href="/" className="button">
+                    <ArrowLeft size={18} aria-hidden /> Back to your books
+                  </Link>
+                </div>
+              </section>
             )}
           </>
         )}
