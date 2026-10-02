@@ -2,6 +2,16 @@ fileType: momentic/module/v2
 id: dr-read-m-open-book
 name: Open the book from the library
 steps:
+  # Journeys share one book and run side by side, and opening any chapter is saved as where the reader is, so
+  # another journey may have left the reader anywhere (the licence, say). Start every journey from the test
+  # library's own place, partway through Chapter II.
+  - javascript:
+      environment: browser
+      code: |-
+        const id = document.querySelector('a.shelf-link').getAttribute('href').split('/')[2];
+        const res = await fetch(`/api/books/${id}/progress`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chapterId: 'c4', blockId: 'c4-b5' }) });
+        if (!res.ok) throw new Error(`could not set where the reader is: ${res.status} ${await res.text()}`);
+        return 'reader is in Chapter II';
   - click:
       css: a.shelf-link
   - waitForUrl:

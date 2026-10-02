@@ -17,6 +17,13 @@ steps:
   - checkPageContains:
       text: Before you read
       timeout: 15000
+  # Journeys run side by side on one book, and another may have left the reader partway through this chapter.
+  # This check is about how a chapter opens, so look at its top.
+  - javascript:
+      environment: browser
+      code: |-
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        return 'at top';
   - assertVisually:
       that: A chapter opens with a clear heading, a small line above it, a "Before you read" box and then paragraphs of book text
       timeout: 20000
