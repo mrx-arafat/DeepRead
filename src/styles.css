@@ -26,7 +26,9 @@
   --font-ui: "Atkinson Hyperlegible Next Variable", "Noto Sans Bengali Variable", system-ui, sans-serif;
 
   --book-size: 19px;
-  --column: 38rem;
+  /* About 66 characters a line at every text size, so the column grows and shrinks with the book text.
+     Counted in book text sizes rather than ch, which would measure the interface font of the element using it. */
+  --column: calc(var(--book-size) * 32);
   --margin-note: 26rem;
   --gutter: 2.5rem;
   --topbar: 3.25rem;
@@ -937,7 +939,8 @@ li:not(.toc-matter) + .toc-matter {
 .chapter-head h2 {
   margin-top: 0.375rem;
   font-family: var(--font-book);
-  font-size: clamp(1.75rem, 1.2rem + 2vw, 2.375rem);
+  /* Twice the book text, so it keeps its place above a column that grows and shrinks with it; smaller on a phone. */
+  font-size: min(var(--book-size) * 2, max(1.75rem, 1.2rem + 2vw));
   font-weight: 650;
   line-height: 1.2;
   letter-spacing: -0.01em;

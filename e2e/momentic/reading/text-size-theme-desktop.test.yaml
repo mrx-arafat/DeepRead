@@ -23,6 +23,9 @@ steps:
       css: button[aria-label="Larger text"]
       times: 6
   - module: ./modules/metrics.module.yaml
+  - javascript: |-
+      const m = JSON.parse(env.METRICS);
+      assert(m.charsPerLineMedian >= 55 && m.charsPerLineMedian <= 75, `at the largest text size a line holds ${m.charsPerLineMedian} characters, not 55-75`)
   - assertVisually:
       that: The book text is at its largest size, the Larger text button in the reading settings menu looks disabled, and the paragraphs still fit the column without clipping
       timeout: 20000
@@ -30,6 +33,9 @@ steps:
       css: button[aria-label="Smaller text"]
       times: 11
   - module: ./modules/metrics.module.yaml
+  - javascript: |-
+      const m = JSON.parse(env.METRICS);
+      assert(m.charsPerLineMedian >= 55 && m.charsPerLineMedian <= 75, `at the smallest text size a line holds ${m.charsPerLineMedian} characters, not 55-75`)
   - assertVisually:
       that: The book text is at its smallest size and the Smaller text button in the reading settings menu looks disabled
       timeout: 20000
