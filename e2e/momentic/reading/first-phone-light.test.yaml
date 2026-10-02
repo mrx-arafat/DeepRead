@@ -4,8 +4,9 @@ description: Journey 1 at phone 390 wide, light theme.
 viewport: "390, 844"
 steps:
   - module: ./modules/open-book.module.yaml
+  # The book reopens at the line where the reader stopped, which is usually partway through a chapter.
   - assertVisually:
-      that: The reading page shows a top bar, then a chapter heading, then a "Before you read" box with a "Preview this chapter" button, and then the book text, with no overlapping elements
+      that: The reading page shows a top bar and the book text under it, with no overlapping elements
       timeout: 20000
   - module: ./modules/metrics.module.yaml
   - scrollDown: 700
