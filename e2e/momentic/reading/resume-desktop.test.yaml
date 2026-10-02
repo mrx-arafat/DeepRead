@@ -56,3 +56,35 @@ steps:
   - javascript: |-
       const a = JSON.parse(env.SPOT1), c = JSON.parse(env.SPOT3);
       assert(a.eyeText === c.eyeText, `after reopening the book the line under the reader's eyes is "${c.eyeText}" (${c.intoBlockPx}px into its paragraph) but it was "${a.eyeText}" (${a.intoBlockPx}px into its paragraph)`)
+  # A chapter opened by its link and left without scrolling is still where the reader is: the library says so, and
+  # the book reopens at that chapter's top, heading and all, as it was left.
+  - navigate: /book/{{ env.BOOK_ID }}/c10
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - wait: 2600
+  - click:
+      coords: "32, 26"
+  - checkPageContains:
+      text: Your books
+      timeout: 10000
+  - javascript:
+      environment: browser
+      saveAs: SHELF_C10
+      code: return document.querySelector('.shelf-item').innerText
+  - click:
+      css: a.shelf-link
+  - waitForUrl:
+      substring: /book/
+      timeout: 15000
+  - wait: 1800
+  - javascript:
+      environment: browser
+      saveAs: REOPEN_C10
+      code: |-
+        const h = document.querySelector('.chapter-head h2');
+        return JSON.stringify({ heading: h && h.textContent, headingTop: h && Math.round(h.getBoundingClientRect().top), scrollY: Math.round(scrollY) });
+  - javascript: |-
+      const r = JSON.parse(env.REOPEN_C10);
+      assert(/CHAPTER VIII/.test(env.SHELF_C10), `after opening Chapter VIII and leaving without scrolling, the library row says "${env.SHELF_C10}"`)
+      assert(/CHAPTER VIII/.test(r.heading) && r.headingTop > 52 && r.headingTop < 900, `reopening after a look at the top of Chapter VIII shows "${r.heading}" with its heading at ${r.headingTop}px (scrollY ${r.scrollY})`)

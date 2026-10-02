@@ -130,7 +130,9 @@ export function useReadingPosition(
     const progress = saved.current ?? book.progress;
     const element =
       progress?.chapterId === first.id && document.querySelector<HTMLElement>(`[data-block="${CSS.escape(progress.blockId)}"]`);
-    if (element) {
+    // A reader who stayed at the chapter's heading is saved at the very start of its text: that reopens at the heading.
+    const atStart = element && !progress.offset && element.closest("[data-chapter]")?.querySelector("[data-block]") === element;
+    if (element && !atStart) {
       element.scrollIntoView({ block: "start" });
       // Then on to the reader's line, so it lands where the paragraph's first line would. Progress saved before
       // lines were kept has no offset and opens at the paragraph.
@@ -185,6 +187,8 @@ export function useReadingPosition(
     };
 
     measure();
+    // Opening a chapter is being there, even for a reader who leaves without scrolling.
+    saving = window.setTimeout(save, 1200);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       window.removeEventListener("scroll", onScroll);
