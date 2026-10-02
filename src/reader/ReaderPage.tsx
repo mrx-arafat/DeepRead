@@ -227,13 +227,14 @@ export function ReaderPage({ bookId, chapterId }: Props) {
         <button type="button" className="icon-button" aria-label="Chapters" aria-expanded={tocOpen} onClick={() => setTocOpen(true)}>
           <List size={20} aria-hidden />
         </button>
-        {/* The page's one h1: the book. Chapter titles are h2; the chapter named here is for the eye alone. */}
+        {/* The page's one h1: the book. Chapter titles are h2; the chapter named here is for the eye alone.
+            On a phone the book and the chapter take a line each, so the dot between them is for wider screens. */}
         <h1 className="topbar-title">
-          {book?.title ?? ""}
+          <span className="topbar-book">{book?.title ?? ""}</span>
           {currentTitle && (
             <span className="topbar-chapter" aria-hidden>
-              {" "}
-              {"\u00b7"} {currentTitle}
+              <span className="topbar-dot"> {"\u00b7"} </span>
+              {currentTitle}
             </span>
           )}
         </h1>
@@ -247,11 +248,12 @@ export function ReaderPage({ bookId, chapterId }: Props) {
             <button
               ref={listenButton}
               type="button"
-              className="quiet-button"
+              className="quiet-button topbar-listen"
               onClick={listen.active ? stopListening : listenFromView}
               aria-pressed={listen.active}
             >
-              <Headphones size={18} aria-hidden /> Listen
+              <Headphones size={18} aria-hidden />
+              <span className="topbar-listen-label">Listen</span>
             </button>
           )}
           <ReadingSettings prefs={prefs} />

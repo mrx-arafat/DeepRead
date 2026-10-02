@@ -1708,9 +1708,73 @@ h5[data-block] {
   }
 }
 
+/* Phones: one line between the chapters button and Listen held only "The Proble...". The book and the chapter now
+   take a short line each, the percentage moves to the end of the chapter line, and Listen shows just its
+   headphones, so a reader can tell where they are without any control getting smaller. */
 @media (max-width: 40rem) {
+  .topbar {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+  }
+
+  .topbar-title,
+  .topbar-percent {
+    grid-row: 1;
+    grid-column: 3;
+  }
+
+  .topbar-title {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0;
+    line-height: 1.125rem;
+  }
+
+  .topbar-book,
   .topbar-chapter {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topbar-book {
+    color: var(--ink);
+    font-size: 0.875rem;
+  }
+
+  /* Leaves room for the percentage, which sits at the end of this line. */
+  .topbar-chapter {
+    padding-right: 2.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .topbar-dot {
     display: none;
+  }
+
+  /* An empty first line puts the number level with the chapter. */
+  .topbar-percent {
+    justify-self: end;
+    padding: 1.125rem 0 0;
+    font-size: 0.8125rem;
+    line-height: 1.125rem;
+  }
+
+  /* The same size as the icon buttons beside it. */
+  .topbar-listen {
+    justify-content: center;
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+    padding: 0;
+    border-color: transparent;
+  }
+
+  .topbar-listen-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
@@ -1731,6 +1795,10 @@ h5[data-block] {
   .note-more,
   select {
     min-height: 2.75rem;
+  }
+
+  .topbar-listen {
+    min-width: 2.75rem;
   }
 
   .listen-controls {

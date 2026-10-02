@@ -1,10 +1,17 @@
 fileType: momentic/test/v2
 id: dr-read-phone-controls
-description: "Journeys 5, 6 and 7 at phone 390: which top bar controls a phone reader actually has, touch target sizes, and whether text size, theme and language can be changed from the Aa menu."
+description: "Journeys 5, 6 and 7 at phone 390: which top bar controls a phone reader actually has, touch target sizes, whether the top bar names the book and the chapter, and whether text size, theme and language can be changed from the Aa menu."
 viewport: "390, 844"
 steps:
   - module: ./modules/open-book.module.yaml
   - module: ./modules/metrics.module.yaml
+  - javascript:
+      environment: browser
+      saveAs: PHONE_WHERE
+      code: |-
+        const book = document.querySelector('.topbar-book');
+        const chapter = document.querySelector('.topbar-chapter');
+        return JSON.stringify({ book: book && book.textContent, bookCut: !book || book.scrollWidth > book.clientWidth, chapterWidth: chapter ? Math.round(chapter.getBoundingClientRect().width) : 0 });
   - click:
       css: button[aria-label="Reading settings"]
   - javascript:
@@ -31,8 +38,9 @@ steps:
       const items = JSON.parse(env.PHONE_CONTROLS);
       const by = (label) => items.find((i) => i.label === label);
       const failures = [];
-      const title = items.find((i) => i.cls === 'topbar-title');
-      if (title.w < 140) failures.push(`the book title in the top bar is only ${title.w}px wide (shown as "The Proble...")`);
+      const where = JSON.parse(env.PHONE_WHERE);
+      if (where.bookCut) failures.push(`the book title "${where.book}" is cut off in the top bar`);
+      if (where.chapterWidth < 60) failures.push('the top bar does not show which chapter is being read');
       for (const label of ['Smaller text', 'Larger text']) if (!by(label) || by(label).w === 0) failures.push(`"${label}" is not available on a phone`);
       const lang = items.find((i) => i.label.startsWith('Bangla'));
       if (!lang || lang.w === 0) failures.push('the language picker is not available on a phone');
