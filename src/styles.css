@@ -1778,9 +1778,10 @@ h5[data-block] {
   }
 }
 
-/* Touch screens: every control a finger aims at is at least 44px, and the player's buttons sit further apart,
-   so reading one-handed does not hit Stop instead of Next. A mouse keeps the compact sizes. */
-@media (pointer: coarse) {
+/* Touch screens and phone-width windows: every control a finger aims at is at least 44px, and the player's buttons
+   sit further apart, so reading one-handed does not hit Stop instead of Next. A phone that reports a fine pointer
+   still gets them. A mouse on a wider window keeps the compact sizes. */
+@media (pointer: coarse), (max-width: 40rem) {
   .icon-button,
   .note-head .icon-button,
   .tip .icon-button {
