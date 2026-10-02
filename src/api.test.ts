@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "./api.ts";
+import { api, streamText } from "./api.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -57,5 +57,36 @@ describe("api.uploadBook", () => {
     vi.stubGlobal("fetch", () => Promise.resolve(new Response(bookJson, { status: 201 })));
 
     await expect(api.uploadBook(file)).resolves.toMatchObject({ book: { id: "book-12345678" }, alreadyHad: false });
+  });
+});
+
+describe("streamText", () => {
+  /** A streamed answer that sends `frames`, then closes normally or breaks off like a lost connection. */
+  const answer = (frames: string[], end: "close" | "break") =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
+        },
+        // The ending comes a moment after the text, as it does over a real connection.
+        async pull(controller) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          if (end === "close") controller.close();
+          else controller.error(new TypeError("network error"));
+        },
+      }),
+    );
+
+  it("should fail with a sentence when the answer stops before the server says it is done", async () => {
+    for (const end of ["close", "break"] as const) {
+      vi.stubGlobal("fetch", () => Promise.resolve(answer(['event: delta\ndata: {"text":"In sim"}\n\n'], end)));
+      const seen: string[] = [];
+
+      await expect(streamText("/api/ai/explain", {}, (text) => seen.push(text))).rejects.toMatchObject({
+        code: "cut_off",
+        message: "The answer stopped before it was finished.",
+      });
+      expect(seen).toEqual(["In sim"]);
+    }
   });
 });

@@ -1112,6 +1112,12 @@ h5[data-block] {
   gap: 0.875rem;
 }
 
+/* An error under part of an answer (it was cut off) stands apart, so it does not read as the answer's last line. */
+.rich + .inline-error,
+:has(> .rich) + .inline-error {
+  margin-top: 0.625rem;
+}
+
 .rich-section {
   display: grid;
   gap: 0.375rem;

@@ -86,9 +86,12 @@ export const api = {
   chooseAi: (id: AiProviderId) => request<AiStatus>("/api/ai/provider", json("PUT", { id })),
 };
 
+const CUT_OFF = "The answer stopped before it was finished.";
+
 /**
  * POST to a streaming AI route and report the text as it grows.
- * Resolves with the full text; rejects if the server reports an error mid-stream.
+ * Resolves with the full text once the server says it is done; rejects if the server reports an error
+ * mid-stream, or if the stream ends or breaks without that word, so a half answer never passes for a whole one.
  */
 export async function streamText(
   path: string,
@@ -96,16 +99,19 @@ export async function streamText(
   onText: (textSoFar: string) => void,
   signal?: AbortSignal,
 ): Promise<string> {
-  const res = await fetch(path, { ...json("POST", body), signal });
-  if (!res.ok) throw await failure(res);
+  const res = await accept(path, { ...json("POST", body), signal });
   if (!res.body) throw new ApiFailure("no_stream", "The server sent an empty answer.", 502);
 
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
   let text = "";
   for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
+    const { value, done } = await reader.read().catch((error: unknown) => {
+      // A lost connection (the server stopped, the network dropped) reads as the browser's bare "network error".
+      if (signal?.aborted) throw error;
+      throw new ApiFailure("cut_off", CUT_OFF, 502);
+    });
+    if (done) throw new ApiFailure("cut_off", CUT_OFF, 502);
     buffer += value.replaceAll("\r\n", "\n");
     let end: number;
     while ((end = buffer.indexOf("\n\n")) !== -1) {
@@ -127,5 +133,4 @@ export async function streamText(
       }
     }
   }
-  return text;
 }

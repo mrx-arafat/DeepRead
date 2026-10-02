@@ -17,7 +17,18 @@ export default defineConfig({
     // The API still refuses those devices until they unlock with DEEPREAD_REMOTE_KEY.
     allowedHosts: [".trycloudflare.com"],
     proxy: {
-      "/api": `http://127.0.0.1:${API_PORT}`,
+      "/api": {
+        target: `http://127.0.0.1:${API_PORT}`,
+        // If the server stops in the middle of a streamed answer, break the browser's connection too, as the
+        // server itself would have. Left alone, the proxy holds it open and the half answer waits forever.
+        configure: (proxy) => {
+          proxy.on("proxyRes", (proxyRes, _req, res) => {
+            proxyRes.on("close", () => {
+              if (!proxyRes.complete) res.destroy();
+            });
+          });
+        },
+      },
     },
   },
   test: {
