@@ -1,17 +1,11 @@
 // Read-aloud through the browser's built-in voices (works offline, no keys).
+import { pickVoice } from "./voicing.ts";
 
 let cachedVoice: SpeechSynthesisVoice | null = null;
 
-/** Prefer a natural-sounding English voice that runs on this machine (those report word positions). */
+/** The best English voice on this computer (see pickVoice), looked up once. */
 function englishVoice(): SpeechSynthesisVoice | null {
-  if (cachedVoice) return cachedVoice;
-  const voices = speechSynthesis.getVoices().filter((voice) => voice.lang.startsWith("en"));
-  const score = (voice: SpeechSynthesisVoice) =>
-    (voice.localService ? 4 : 0) +
-    (/premium|enhanced|natural/i.test(voice.name) ? 3 : 0) +
-    (/samantha|ava|allison|daniel/i.test(voice.name) ? 2 : 0) +
-    (voice.lang === "en-US" ? 1 : 0);
-  cachedVoice = voices.sort((a, b) => score(b) - score(a))[0] ?? null;
+  cachedVoice ??= pickVoice(speechSynthesis.getVoices());
   return cachedVoice;
 }
 

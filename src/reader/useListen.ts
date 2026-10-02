@@ -3,7 +3,8 @@ import type { Block } from "../../shared/types.ts";
 import { speak, whenVoiceFree } from "./speech.ts";
 import { placeInView, scrollTopFor, type Place } from "./sentenceView.ts";
 import { rangeInBlock, sentenceIndex, sentencesOf, setHighlight, wordAt, type SentenceAt } from "./textRanges.ts";
-import { forSpeech, pauseBetween } from "./voicing.ts";
+import { isTitleId } from "./listenBlocks.ts";
+import { forSpeech, pauseBetween, type Spoken } from "./voicing.ts";
 
 /** What the page can say about the chapter that follows the last one on it. */
 export type NextChapter = {
@@ -62,7 +63,15 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   const resume = useRef<{ place: string; offset: number } | null>(null);
   // The silence to leave before the next sentence starts, when reading carries on by itself (see voicing.ts).
   const gap = useRef(0);
-  const titles = useMemo(() => new Set(blocks.filter((block) => block.type === "heading").map((block) => block.id)), [blocks]);
+  const headings = useMemo(() => new Set(blocks.filter((block) => block.type === "heading").map((block) => block.id)), [blocks]);
+  const spoken = useCallback(
+    (item: { blockId: string; text?: string; start: number; end?: number }): Spoken => ({
+      blockId: item.blockId,
+      kind: isTitleId(item.blockId) ? "title" : headings.has(item.blockId) ? "heading" : "text",
+      length: (item.end ?? item.start) - item.start,
+    }),
+    [headings],
+  );
 
   const index = useMemo(() => (at ? sentenceIndex(sentences, at) : -1), [sentences, at]);
   const sentence = index === -1 ? null : (sentences[index] ?? null);
@@ -82,12 +91,13 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   useEffect(() => {
     if (!waiting || !at) return;
     const done = sentenceIndex(sentences, at);
-    const after = done === -1 ? undefined : sentences[done + 1];
-    if (!after) return;
+    const ended = sentences[done];
+    const after = sentences[done + 1];
+    if (!ended || !after) return;
     setWaiting(false);
-    gap.current = pauseBetween({ blockId: at.blockId, title: false }, after, rate);
+    gap.current = pauseBetween(spoken(ended), spoken(after), rate);
     setAt({ blockId: after.blockId, start: after.start });
-  }, [waiting, sentences, at]);
+  }, [waiting, sentences, at, rate, spoken]);
 
   // The sentence is gone from the page (the reader opened another part of the book): close the player.
   useEffect(() => {
@@ -183,7 +193,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
           const done = sentenceIndex(list, sentence);
           const after = done === -1 ? undefined : list[done + 1];
           if (after) {
-            gap.current = pauseBetween({ blockId: sentence.blockId, title: titles.has(sentence.blockId) }, after, rate);
+            gap.current = pauseBetween(spoken(sentence), spoken(after), rate);
             setAt({ blockId: after.blockId, start: after.start });
           } else if (following.current.coming) {
             // The next chapter is not on the page yet: ask for it (the reader may be far from where it loads
