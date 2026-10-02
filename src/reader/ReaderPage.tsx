@@ -33,7 +33,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const [tocOpen, setTocOpen] = useState(false);
   const [word, setWord] = useState<Lookup | null>(null);
   const [selection, setSelection] = useState<Lookup | null>(null);
-  // Until the reader has looked something up, a tip beside the first chapter shows how.
+  // Until the reader has looked something up, a tip above the first chapter's text shows how.
   const [tipOpen, setTipOpen] = useState(() => !lookupTipDone());
   const { notes, addNote, removeNote, removed, restoreNote, forgetRemoved } = useNotes(bookId, prefs.lang);
   const [undoFocus, setUndoFocus] = useState(false);

@@ -3,7 +3,7 @@ import { useRef, useSyncExternalStore } from "react";
 import { lookupTipDone, subscribeLookupTip } from "./lookupTip.ts";
 
 /**
- * A quiet first-visit hint beside the first paragraph: the way to ask about a word or a passage is invisible
+ * A quiet first-visit hint just above the first paragraph: the way to ask about a word or a passage is invisible
  * until someone shows it. The wording follows the device (a touch screen taps and presses, a mouse clicks and
  * selects) through `(pointer: coarse)`, the same test the rest of the page uses for touch.
  * Once the reader has used a lookup it fades but keeps its place, so a phone's text does not jump up under the

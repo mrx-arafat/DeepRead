@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
 id: dr-und-lookup-tip-desktop
-description: Journey 9 at desktop 1440. A first-time reader opens Chapter I and finds a quiet tip in the empty right margin saying how to ask about a word or a passage. Looking a word up fades it, and it stays gone after a reload.
+description: Journey 9 at desktop 1440. A first-time reader opens Chapter I and finds a quiet tip just above the first paragraph saying how to ask about a word or a passage, without the text moving off centre. Looking a word up fades it, and it stays gone after a reload.
 viewport: "1440, 900"
 steps:
   # Straight to the chapter, so it is the first on the page whatever place the book was left at.
@@ -17,7 +17,7 @@ steps:
   - checkElementVisible:
       css: .tip
       timeout: 5000
-  # The tip names a mouse's actions, sits in the margin level with the first paragraph, and covers none of the text.
+  # The tip names a mouse's actions, sits in the text column right above the first paragraph, and is fully on screen with its close button.
   - javascript:
       environment: browser
       code: |-
@@ -27,11 +27,14 @@ steps:
         if (!/Click any word/.test(text) || !/Select a passage/.test(text)) throw new Error(`the tip does not say how to look things up with a mouse: "${text}"`);
         const t = tip.getBoundingClientRect();
         const p = first.getBoundingClientRect();
-        if (t.left < p.right) throw new Error(`the tip (left ${Math.round(t.left)}) overlaps the text column (right edge ${Math.round(p.right)})`);
-        if (Math.abs(t.top - p.top) > 24) throw new Error(`the tip (top ${Math.round(t.top)}) is not level with the first paragraph (top ${Math.round(p.top)})`);
-        if (!tip.querySelector('button[aria-label="Dismiss tip"]')) throw new Error("the tip has no way to be dismissed");
+        if (t.left < p.left - 2 || t.right > p.right + 2) throw new Error(`the tip (${Math.round(t.left)} to ${Math.round(t.right)}) is not within the text column (${Math.round(p.left)} to ${Math.round(p.right)})`);
+        if (t.bottom > p.top || p.top - t.bottom > 64) throw new Error(`the tip (bottom ${Math.round(t.bottom)}) is not just above the first paragraph (top ${Math.round(p.top)})`);
+        const close = tip.querySelector('button[aria-label="Dismiss tip"]');
+        if (!close) throw new Error("the tip has no way to be dismissed");
+        const c = close.getBoundingClientRect();
+        if (c.right > innerWidth || c.left < 0) throw new Error(`the close button (${Math.round(c.left)} to ${Math.round(c.right)}) is off screen`);
   - assertVisually:
-      that: A short, quiet tip in the empty margin to the right of the first paragraph says to click any word for its meaning and to select a passage to get it explained, with the words "any word" highlighted and a small close button. It does not overlap the book text
+      that: A short, quiet tip just above the first paragraph, in line with the book text, says to click any word for its meaning and to select a passage to get it explained, with the words "any word" highlighted and a small close button at its right end. Nothing overlaps or is cut off
       timeout: 10000
   - module:
       path: ./modules/locate-text.module.yaml
