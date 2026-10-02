@@ -104,6 +104,17 @@ export type LangCode = keyof typeof LANGUAGES;
 
 export const DEFAULT_LANG: LangCode = "bn";
 
+/** The AI tools DeepRead can answer with, in the order it prefers them. */
+export const AI_PROVIDERS = { claude: "Claude Code", codex: "Codex" } as const;
+
+export type AiProviderId = keyof typeof AI_PROVIDERS;
+
+/** Which AI tools are installed on this computer, and which one answers (null: none is installed). */
+export type AiStatus = {
+  active: AiProviderId | null;
+  providers: Array<{ id: AiProviderId; name: string; installed: boolean }>;
+};
+
 /** Fast, keyless lookup shown the instant a word is tapped. */
 export type QuickTranslation = {
   text: string;

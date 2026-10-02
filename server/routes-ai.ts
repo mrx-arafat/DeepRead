@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
-import { LANGUAGES } from "../shared/types.ts";
+import { AI_PROVIDERS, LANGUAGES } from "../shared/types.ts";
 import type {
   AskRequest,
   Chapter,
@@ -28,7 +28,9 @@ import {
 } from "./http.ts";
 import { isBookId } from "./library.ts";
 import type { Library } from "./library.ts";
-import { completeText, LlmError, TASK_PROFILES } from "./llm.ts";
+import type { Ai } from "./ai.ts";
+import { isAiProviderId } from "./ai.ts";
+import { completeText, LlmError } from "./llm.ts";
 import type { Llm } from "./llm.ts";
 import { askPrompt, chapterAidPrompt, explainPrompt } from "./prompts.ts";
 import type { Prompt } from "./prompts.ts";
@@ -146,7 +148,7 @@ async function locate(c: Context, library: Library, bookId: string, chapterId: s
   return chapter ? { book, chapter } : chapterNotFound(c);
 }
 
-export function aiRoutes(deps: { library: Library; llm: Llm }): Hono {
+export function aiRoutes(deps: { library: Library; llm: Ai }): Hono {
   const { library, llm } = deps;
   const routes = new Hono();
 
@@ -193,7 +195,7 @@ export function aiRoutes(deps: { library: Library; llm: Llm }): Hono {
       chapterId,
       blockId,
       selection,
-      model: TASK_PROFILES[task].model,
+      model: llm.model(task),
       prompt,
     });
     return answerStream(c, library, {
@@ -227,7 +229,7 @@ export function aiRoutes(deps: { library: Library; llm: Llm }): Hono {
       chapterText: buildChapterText(chapter.blocks),
       language: LANGUAGES[lang],
     });
-    const key = cacheKey({ task: kind, lang, chapterId, model: TASK_PROFILES[kind].model, prompt });
+    const key = cacheKey({ task: kind, lang, chapterId, model: llm.model(kind), prompt });
 
     if (kind !== "quiz") {
       return answerStream(c, library, {
@@ -292,6 +294,23 @@ export function aiRoutes(deps: { library: Library; llm: Llm }): Hono {
       refresh: false,
       generate: (signal) => llm.streamText({ task: "ask", ...prompt, signal }),
     });
+  });
+
+  routes.get("/providers", async (c) => c.json(await llm.status()));
+
+  routes.put("/provider", async (c) => {
+    const body = await readJsonObject(c);
+    if (!body) return invalidBody(c, "send a JSON object.");
+    const { id } = body;
+    if (!isAiProviderId(id)) {
+      return apiError(c, 400, "invalid_provider", `Unknown AI helper. Pick one of: ${Object.keys(AI_PROVIDERS).join(", ")}.`);
+    }
+    try {
+      return c.json(await llm.choose(id));
+    } catch (error) {
+      if (error instanceof LlmError) return apiError(c, 409, "ai_not_installed", error.message);
+      throw error;
+    }
   });
 
   return routes;

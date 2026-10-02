@@ -1,16 +1,20 @@
-// Model access through the locally installed Claude Code CLI in headless mode - no API key involved.
-// The flags keep the user's own hooks, plugins, MCP servers and CLAUDE.md out of the answers.
+// Model access through an AI command-line tool the reader already has (Claude Code or Codex), run headless with
+// their own sign-in - no API key involved. Each tool runs without any tools of its own, so text in a book cannot
+// make it touch the computer, and in an empty directory, so no project instructions are picked up.
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { parseStreamLine } from "./claude-stream.ts";
 import type { StreamEvent } from "./claude-stream.ts";
+import { parseCodexLine } from "./codex-stream.ts";
 
 export type LlmTask = "word" | "explain" | "preview" | "recap" | "quiz" | "ask";
 
 /**
- * The one place that decides which model answers what, and how long it gets.
+ * The one place that decides which Claude model answers what, and how long any tool gets.
  * Everything goes to Sonnet. Haiku is about twice as fast, but on passages it invented events and wrote
  * broken Bangla, and on words it gave the term of the wrong field ("induction" as the physics আবেশ instead of
  * the logic আরোহ, in every run) and unnatural examples. The reader trusts the Bangla line most.
@@ -35,6 +39,8 @@ export type LlmRequest = {
 export type Llm = {
   /** Yields answer text as it is generated. Throws LlmError on any failure. */
   streamText(request: LlmRequest): AsyncIterable<string>;
+  /** Names what answers `task`, so a cached answer is only reused from the same model. */
+  model(task: LlmTask): string;
 };
 
 export type LlmErrorKind = "cli_missing" | "not_logged_in" | "timeout" | "failed" | "aborted";
@@ -57,17 +63,35 @@ export async function completeText(llm: Llm, request: LlmRequest): Promise<strin
   return text;
 }
 
-export type ClaudeLlmOptions = {
-  /** Executable to run. Defaults to `claude` on PATH. */
+export type CliLlmOptions = {
+  /** Executable to run. Defaults to the tool's usual name on PATH. */
   bin?: string;
   maxConcurrent?: number;
   /** Replaces every task's time limit. */
   timeoutMs?: number;
 };
 
-export type ClaudeLlm = Llm & {
+export type CliLlm = Llm & {
   /** Kills any model process still running; call on shutdown. */
   close(): void;
+};
+
+/** How to run one AI command-line tool for a single answer, and read what it prints. */
+type CliSpec = {
+  /** The tool's name as the reader knows it. */
+  name: string;
+  bin: string;
+  /** `scratch` is an empty directory of this request's own, removed when it ends; the tool runs in it. */
+  args(request: LlmRequest, scratch: string): string[];
+  /** Files to write into `scratch` before the tool starts. */
+  files?(request: LlmRequest): Record<string, string>;
+  env(): NodeJS.ProcessEnv;
+  /** What goes in on stdin: prompts can be far too big for argv. */
+  input(request: LlmRequest): string;
+  parse(line: string): StreamEvent | null;
+  model(task: LlmTask): string;
+  /** What to tell a reader whose tool is installed but not signed in. */
+  signIn: string;
 };
 
 const MAX_CONCURRENT = 3;
@@ -75,7 +99,7 @@ const STDERR_TAIL_CHARS = 600;
 const KILL_GRACE_MS = 2_000;
 
 // --tools "" and an empty --setting-sources are what keep the user's config out; see the header comment.
-const FIXED_FLAGS = [
+const CLAUDE_FLAGS = [
   "--tools",
   "",
   "--strict-mcp-config",
@@ -89,7 +113,7 @@ const FIXED_FLAGS = [
   "--include-partial-messages",
 ];
 
-function childEnv(): NodeJS.ProcessEnv {
+function claudeEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   // Nested-session guard: with these set the CLI refuses to start inside another Claude Code session.
   delete env.CLAUDECODE;
@@ -145,37 +169,44 @@ function createGate(limit: number) {
   };
 }
 
-function failureFromResult(result: Extract<StreamEvent, { kind: "result" }>): LlmError {
+function failureFromResult(spec: CliSpec, result: Extract<StreamEvent, { kind: "result" }>): LlmError {
   if (result.apiStatus === 401 || /not logged in|\/login/i.test(result.text)) {
-    return new LlmError(
-      "not_logged_in",
-      "Claude Code is not signed in on this computer. Open a terminal, run `claude`, sign in, then try again.",
-    );
+    return new LlmError("not_logged_in", spec.signIn);
   }
   return new LlmError("failed", `The AI could not answer: ${result.text || "unknown error"}`);
 }
 
-function failureFromSpawn(error: unknown): LlmError {
+function failureFromSpawn(spec: CliSpec, error: unknown): LlmError {
   if (error instanceof Error && "code" in error && error.code === "ENOENT") {
     return new LlmError(
       "cli_missing",
-      "The AI helper (Claude Code) is not installed on this computer. Install it, sign in, then try again.",
+      `The AI helper (${spec.name}) is not installed on this computer. Install it, sign in, then try again.`,
     );
   }
   const detail = error instanceof Error ? error.message : String(error);
   return new LlmError("failed", `The AI helper could not start: ${detail}`);
 }
 
-export function createClaudeLlm(options: ClaudeLlmOptions = {}): ClaudeLlm {
-  const bin = options.bin ?? "claude";
+function createCliLlm(spec: CliSpec, options: CliLlmOptions): CliLlm {
+  const bin = options.bin ?? spec.bin;
   const gate = createGate(options.maxConcurrent ?? MAX_CONCURRENT);
   const running = new Set<ChildProcess>();
 
   async function* execute(request: LlmRequest): AsyncGenerator<string, void, undefined> {
     const profile = TASK_PROFILES[request.task];
-    const args = ["-p", "--model", profile.model, "--system-prompt", request.system, ...FIXED_FLAGS];
-    // cwd is a neutral directory so no project CLAUDE.md or settings can be picked up.
-    const child = spawn(bin, args, { cwd: tmpdir(), env: childEnv(), stdio: ["pipe", "pipe", "pipe"] });
+    const scratch = await mkdtemp(join(tmpdir(), "deepread-"));
+    try {
+      for (const [name, content] of Object.entries(spec.files?.(request) ?? {})) {
+        await writeFile(join(scratch, name), content);
+      }
+      yield* run(request, profile.timeoutMs, scratch);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  }
+
+  async function* run(request: LlmRequest, timeoutMs: number, scratch: string): AsyncGenerator<string, void, undefined> {
+    const child = spawn(bin, spec.args(request, scratch), { cwd: scratch, env: spec.env(), stdio: ["pipe", "pipe", "pipe"] });
     running.add(child);
 
     let stderrTail = "";
@@ -198,35 +229,39 @@ export function createClaudeLlm(options: ClaudeLlmOptions = {}): ClaudeLlm {
     // Awaited below; this only stops an early return from leaving an unhandled rejection behind.
     exited.catch(() => {});
 
-    let stopReason: "timeout" | "aborted" | null = null;
-    const stop = (reason: "timeout" | "aborted") => {
+    // "failed": the tool reported a failure it would otherwise keep retrying, so it was stopped early.
+    let stopReason: "timeout" | "aborted" | "failed" | null = null;
+    const stop = (reason: "timeout" | "aborted" | "failed") => {
       if (stopReason || hasExited) return;
       stopReason = reason;
       child.kill("SIGTERM");
       killTimer = setTimeout(() => child.kill("SIGKILL"), KILL_GRACE_MS);
       killTimer.unref();
     };
-    const timeout = setTimeout(() => stop("timeout"), options.timeoutMs ?? profile.timeoutMs);
+    const timeout = setTimeout(() => stop("timeout"), options.timeoutMs ?? timeoutMs);
     const onAbort = () => stop("aborted");
     request.signal?.addEventListener("abort", onAbort, { once: true });
     if (request.signal?.aborted) onAbort();
 
-    // Chapter prompts are far too big for argv, so the prompt goes in on stdin.
     // EPIPE here only means the process already exited; its exit status explains why.
     child.stdin.on("error", () => {});
-    child.stdin.end(request.user);
+    child.stdin.end(spec.input(request));
 
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     try {
       let streamed = false;
       let result: Extract<StreamEvent, { kind: "result" }> | null = null;
       for await (const line of lines) {
-        const event = parseStreamLine(line);
+        const event = spec.parse(line);
         if (event?.kind === "text") {
           streamed = true;
           yield event.text;
         } else if (event?.kind === "result") {
           result = event;
+          if (event.isError) {
+            stop("failed");
+            break;
+          }
         }
       }
 
@@ -234,13 +269,13 @@ export function createClaudeLlm(options: ClaudeLlmOptions = {}): ClaudeLlm {
       try {
         code = await exited;
       } catch (error) {
-        throw failureFromSpawn(error);
+        throw failureFromSpawn(spec, error);
       }
       if (stopReason === "timeout") {
         throw new LlmError("timeout", "The AI took too long to answer. Please try again.");
       }
       if (stopReason === "aborted") throw aborted();
-      if (result?.isError) throw failureFromResult(result);
+      if (result?.isError) throw failureFromResult(spec, result);
       if (code !== 0) {
         const tail = stderrTail.trim();
         throw new LlmError(
@@ -275,8 +310,83 @@ export function createClaudeLlm(options: ClaudeLlmOptions = {}): ClaudeLlm {
 
   return {
     streamText,
+    model: spec.model,
     close() {
       for (const child of running) child.kill("SIGTERM");
     },
   };
+}
+
+/** Claude Code (`claude`), signed in with the reader's Claude account. */
+export function createClaudeLlm(options: CliLlmOptions = {}): CliLlm {
+  return createCliLlm(
+    {
+      name: "Claude Code",
+      bin: "claude",
+      args: (request) => ["-p", "--model", TASK_PROFILES[request.task].model, "--system-prompt", request.system, ...CLAUDE_FLAGS],
+      env: claudeEnv,
+      input: (request) => request.user,
+      parse: parseStreamLine,
+      model: (task) => TASK_PROFILES[task].model,
+      signIn: "Claude Code is not signed in on this computer. Open a terminal, run `claude`, sign in, then try again.",
+    },
+    options,
+  );
+}
+
+// Codex is a coding agent: every tool it has that could act on the computer is switched off, and the sandbox is
+// read-only besides. Names a Codex version does not know are ignored, so older versions still start.
+const CODEX_TOOLS_OFF = [
+  "shell_tool",
+  "unified_exec",
+  "browser_use",
+  "browser_use_external",
+  "computer_use",
+  "in_app_browser",
+  "image_generation",
+  "memories",
+  "plugins",
+  "skill_search",
+  "tool_suggest",
+].flatMap((feature) => ["-c", `features.${feature}=false`]);
+
+const CODEX_INSTRUCTIONS = "instructions.md";
+
+/**
+ * Codex (`codex`), signed in with the reader's ChatGPT account. DeepRead's instructions replace Codex's own coding
+ * instructions. Codex still reads the reader's personal ~/.codex/AGENTS.md; it has no switch to leave that out.
+ */
+export function createCodexLlm(options: CliLlmOptions = {}): CliLlm {
+  return createCliLlm(
+    {
+      name: "Codex",
+      bin: "codex",
+      files: (request) => ({ [CODEX_INSTRUCTIONS]: request.system }),
+      args: (_request, scratch) => [
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--sandbox",
+        "read-only",
+        "--cd",
+        scratch,
+        // JSON strings are valid TOML strings, which is what -c reads.
+        "-c",
+        `model_instructions_file=${JSON.stringify(join(scratch, CODEX_INSTRUCTIONS))}`,
+        "-c",
+        'model_reasoning_effort="low"',
+        ...CODEX_TOOLS_OFF,
+        "-",
+      ],
+      env: () => ({ ...process.env }),
+      input: (request) => request.user,
+      parse: parseCodexLine,
+      model: () => "codex",
+      signIn: "Codex is not signed in on this computer. Open a terminal, run `codex login`, sign in, then try again.",
+    },
+    options,
+  );
 }

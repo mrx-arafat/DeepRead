@@ -1,8 +1,8 @@
 // Wires the real implementations together and starts the server. Tests use createApp with fakes instead.
 import { serve } from "@hono/node-server";
 import { join, resolve } from "node:path";
+import { createAi } from "./ai.ts";
 import { createApp } from "./app.ts";
-import { createClaudeLlm } from "./llm.ts";
 import { parsePdf } from "./parser/index.ts";
 import { createQuickTranslate } from "./translate.ts";
 
@@ -10,7 +10,9 @@ const port = Number(process.env.DEEPREAD_API_PORT ?? 8787);
 const dataDir = resolve(process.env.DEEPREAD_DATA_DIR ?? "./data");
 const production = process.env.NODE_ENV === "production";
 
-const llm = createClaudeLlm();
+const llm = createAi({ dataDir });
+// Settles which AI tool answers before the first request, so cache keys name the right model.
+const ai = await llm.status();
 const translator = createQuickTranslate({ cacheFile: join(dataDir, "translate-cache.json") });
 
 const app = createApp({
@@ -25,6 +27,8 @@ const app = createApp({
 // Bound to loopback on purpose: this is a single-user app with no login.
 const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) => {
   console.log(`DeepRead API listening on http://127.0.0.1:${info.port} (data: ${dataDir})`);
+  const helper = ai.providers.find((provider) => provider.id === ai.active);
+  console.log(helper ? `Explanations by ${helper.name}.` : "No AI helper found (Claude Code or Codex): reading works, explanations do not.");
 });
 
 let stopping = false;

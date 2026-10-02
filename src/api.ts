@@ -1,4 +1,6 @@
 import type {
+  AiProviderId,
+  AiStatus,
   ApiError,
   BookDetail,
   BookSummary,
@@ -80,6 +82,8 @@ export const api = {
       `/api/translate?q=${encodeURIComponent(text)}&lang=${lang}`,
       { signal },
     ),
+  aiStatus: () => request<AiStatus>("/api/ai/providers"),
+  chooseAi: (id: AiProviderId) => request<AiStatus>("/api/ai/provider", json("PUT", { id })),
 };
 
 /**

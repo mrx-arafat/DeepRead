@@ -167,16 +167,19 @@ export function WordPopover({ lookup, bookId, lang, onListenFromHere, onClose }:
         {native ?? <span className="skeleton" style={{ width: "7rem" }} />}
       </p>
 
-      <dl className="word-lines" aria-live="polite">
-        <dt>Meaning</dt>
-        <dd>{meaning ?? (answer.status === "error" ? "" : <span className="skeleton" />)}</dd>
-        {(example || answer.status === "loading") && (
-          <>
-            <dt>Example</dt>
-            <dd>{example ?? <span className="skeleton" />}</dd>
-          </>
-        )}
-      </dl>
+      {/* Without an answer (no AI helper, or it failed) there is nothing to label: the error below says why. */}
+      {(meaning || answer.status !== "error") && (
+        <dl className="word-lines" aria-live="polite">
+          <dt>Meaning</dt>
+          <dd>{meaning ?? <span className="skeleton" />}</dd>
+          {(example || answer.status === "loading") && (
+            <>
+              <dt>Example</dt>
+              <dd>{example ?? <span className="skeleton" />}</dd>
+            </>
+          )}
+        </dl>
+      )}
 
       {answer.status === "error" && (
         <p className="inline-error">

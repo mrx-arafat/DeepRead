@@ -5,11 +5,12 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApiError, BookDetail, BookSummary, ParsedBook } from "../shared/types.ts";
+import type { AiProviderId, AiStatus, ApiError, BookDetail, BookSummary, ParsedBook } from "../shared/types.ts";
+import type { Ai } from "./ai.ts";
 import { createApp } from "./app.ts";
 import type { ParsePdf } from "./deps.ts";
 import { LlmError } from "./llm.ts";
-import type { Llm, LlmRequest } from "./llm.ts";
+import type { LlmRequest } from "./llm.ts";
 import { ParseError } from "./parser/errors.ts";
 
 const sampleBook = (title = "Sample Book"): ParsedBook => ({
@@ -59,8 +60,16 @@ const fakeParsePdf: ParsePdf = async (path) => {
 type Script = (request: LlmRequest, call: number) => Iterable<string> | AsyncIterable<string>;
 
 function fakeLlm() {
-  const state = { calls: 0, aborted: false, script: ((): Iterable<string> => ["ok"]) as Script };
-  const llm: Llm = {
+  const state = { calls: 0, aborted: false, script: ((): Iterable<string> => ["ok"]) as Script, active: "claude" as AiProviderId };
+  // Claude Code is installed, Codex is not.
+  const status = (): AiStatus => ({
+    active: state.active,
+    providers: [
+      { id: "claude", name: "Claude Code", installed: true },
+      { id: "codex", name: "Codex", installed: false },
+    ],
+  });
+  const llm: Ai = {
     streamText(request) {
       state.calls += 1;
       const call = state.calls;
@@ -68,6 +77,14 @@ function fakeLlm() {
         yield* state.script(request, call);
       })();
     },
+    model: () => "fake-model",
+    status: async () => status(),
+    async choose(id) {
+      if (id === "codex") throw new LlmError("cli_missing", "Codex is not installed on this computer. Install it and sign in first.");
+      state.active = id;
+      return status();
+    },
+    close() {},
   };
   return { llm, state };
 }
@@ -624,6 +641,20 @@ describe("DeepRead API", () => {
       expect((await app.request("/api/translate?q=hello&lang=xx")).status).toBe(400);
       expect((await app.request(`/api/translate?q=${"a".repeat(201)}&lang=bn`)).status).toBe(400);
       expect((await app.request(`/api/translate?q=${"a".repeat(200)}&lang=bn`)).status).toBe(200);
+    });
+  });
+
+  describe("AI helper", () => {
+    it("should list the installed helpers and switch only to one that is installed", async () => {
+      expect(await (await app.request("/api/ai/providers")).json()).toMatchObject({ active: "claude" });
+
+      const put = (body: unknown) =>
+        app.request("/api/ai/provider", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      expect((await put({ id: "gemini" })).status).toBe(400);
+      const missing = await put({ id: "codex" });
+      expect(missing.status).toBe(409);
+      expect(((await missing.json()) as ApiError).message).toContain("Codex is not installed");
+      expect(((await (await put({ id: "claude" })).json()) as AiStatus).active).toBe("claude");
     });
   });
 

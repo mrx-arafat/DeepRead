@@ -1,11 +1,11 @@
-// Drives the real process handling in llm.ts against a fake `claude` executable written to a temp dir,
-// so spawning, stdin, abort, timeout and the concurrency limit are exercised without the real CLI or network.
-import { readFileSync, writeFileSync } from "node:fs";
+// Drives the real process handling in llm.ts against a fake `claude` / `codex` executable written to a temp dir,
+// so spawning, stdin, abort, timeout and the concurrency limit are exercised without the real CLIs or network.
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { completeText, createClaudeLlm } from "./llm.ts";
+import { completeText, createClaudeLlm, createCodexLlm } from "./llm.ts";
 import type { LlmRequest } from "./llm.ts";
 
 // First line of the prompt (stdin) picks the behaviour: "<mode> key=value ...". The rest is the real prompt.
@@ -17,7 +17,31 @@ const [directive] = input.split("\\n");
 const [mode, ...pairs] = directive.split(" ");
 const opts = Object.fromEntries(pairs.map((p) => p.split("=")));
 const fixture = (name) => readFileSync(join(process.env.FAKE_FIXTURES, name), "utf8");
-if (mode === "replay") {
+if (process.argv[2] === "exec") {
+  // Codex.
+  const args = process.argv.slice(3);
+  if (mode === "replay") {
+    process.stdout.write(fixture("codex-stream.jsonl"));
+  } else if (mode === "signedout") {
+    // The real Codex reports the refused sign-in, then keeps retrying for about twenty seconds.
+    writeFileSync(opts.pidfile, String(process.pid));
+    process.stdout.write(fixture("codex-error-not-logged-in.jsonl").split("\\n").slice(0, 3).join("\\n") + "\\n");
+    setInterval(() => {}, 1000);
+  } else if (mode === "echo") {
+    const setting = (key) => args.find((arg) => arg.startsWith(key + "="))?.slice(key.length + 1);
+    const info = {
+      sandbox: args[args.indexOf("--sandbox") + 1],
+      ignoresUserConfig: args.includes("--ignore-user-config"),
+      instructions: readFileSync(JSON.parse(setting("model_instructions_file")), "utf8"),
+      toolsOff: args.filter((arg) => /^features\\..*=false$/.test(arg)).map((arg) => arg.slice(9, -6)),
+      lastArg: args.at(-1),
+      prompt: input.slice(directive.length + 1),
+      cwd: process.cwd(),
+    };
+    console.log(JSON.stringify({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: JSON.stringify(info) } }));
+    console.log(JSON.stringify({ type: "turn.completed", usage: {} }));
+  }
+} else if (mode === "replay") {
   process.stdout.write(fixture("claude-haiku-stream.jsonl"));
 } else if (mode === "signedout") {
   process.stdout.write(fixture("claude-error-not-logged-in.jsonl"));
@@ -52,6 +76,13 @@ if (mode === "replay") {
   }, Number(opts.ms));
 }
 `;
+
+/** The tool ran in an empty directory of its own under the temp dir, removed once the answer was in. */
+function expectPrivateDirectoryGone(cwd: string) {
+  // realpath: macOS reports its temp dir through the /private symlink.
+  expect(cwd.replace(/^\/private/, "").startsWith(join(tmpdir(), "deepread-").replace(/^\/private/, ""))).toBe(true);
+  expect(existsSync(cwd)).toBe(false);
+}
 
 const CAPTURED_ANSWER =
   "**Ubiquitous** means something that is everywhere at the same time. It's something you find or see constantly all around you.\n\nFor example, smartphones are ubiquitous today because almost everyone has one.";
@@ -112,8 +143,7 @@ describe("createClaudeLlm", () => {
       maxThinking: "0",
     });
     expect(word.prompt).toBe(hugePrompt);
-    // realpath: macOS reports its temp dir through the /private symlink.
-    expect(word.cwd.replace(/^\/private/, "")).toBe(tmpdir().replace(/\/$/, ""));
+    expectPrivateDirectoryGone(word.cwd);
   });
 
   it("should fail with a readable error when the CLI is missing, signed out, or crashes", async () => {
@@ -174,5 +204,59 @@ describe("createClaudeLlm", () => {
     }
     expect(peak).toBeLessThanOrEqual(3);
     expect(peak).toBeGreaterThan(1);
+  });
+});
+
+describe("createCodexLlm", () => {
+  let workDir: string;
+  let fakeBin: string;
+
+  const request = (user: string): LlmRequest => ({ task: "word", system: "You are a tutor.", user });
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  beforeAll(async () => {
+    workDir = await mkdtemp(join(tmpdir(), "deepread-llm-codex-"));
+    fakeBin = join(workDir, "fake-codex");
+    writeFileSync(fakeBin, FAKE_CLAUDE);
+    await chmod(fakeBin, 0o755);
+    process.env.FAKE_FIXTURES = join(import.meta.dirname, "fixtures");
+  });
+
+  afterAll(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("should read the answer from a captured real run", async () => {
+    const llm = createCodexLlm({ bin: fakeBin });
+    expect(await completeText(llm, request("replay\nWhat does ubiquitous mean?"))).toBe(
+      "\u201cUbiquitous\u201d means present or found everywhere, like smartphones today.",
+    );
+  });
+
+  it("should run with DeepRead's instructions, a read-only sandbox and no tools, and send the prompt on stdin", async () => {
+    const hugePrompt = "x".repeat(300_000);
+    const info = JSON.parse(await completeText(createCodexLlm({ bin: fakeBin }), request(`echo\n${hugePrompt}`)));
+    expect(info).toMatchObject({ sandbox: "read-only", ignoresUserConfig: true, instructions: "You are a tutor.", lastArg: "-" });
+    expect(info.toolsOff).toEqual(expect.arrayContaining(["shell_tool", "unified_exec", "computer_use", "browser_use"]));
+    expect(info.prompt).toBe(hugePrompt);
+    expectPrivateDirectoryGone(info.cwd);
+  });
+
+  it("should stop at a refused sign-in and say how to sign in, instead of waiting out the retries", async () => {
+    const pidFile = join(workDir, "signedout.pid");
+    const started = Date.now();
+    await expect(completeText(createCodexLlm({ bin: fakeBin }), request(`signedout pidfile=${pidFile}\n`))).rejects.toMatchObject({
+      kind: "not_logged_in",
+      message: expect.stringContaining("codex login"),
+    });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(alive(Number(readFileSync(pidFile, "utf8")))).toBe(false);
   });
 });
