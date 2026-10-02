@@ -19,6 +19,7 @@ import { setHighlight } from "./textRanges.ts";
 import { UndoToast } from "./UndoToast.tsx";
 import { useChapterFlow } from "./useChapterFlow.ts";
 import { useListen } from "./useListen.ts";
+import { useNoteMarks } from "./useNoteMarks.ts";
 import { useNotes } from "./useNotes.ts";
 import { blockAtTop, EYE_LINE, useReadingPosition } from "./useReadingPosition.ts";
 import { WordPopover, type Lookup } from "./WordPopover.tsx";
@@ -39,6 +40,9 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const [undoFocus, setUndoFocus] = useState(false);
   const focusNote = useRef<string | null>(null);
   const flow = useChapterFlow(bookId, chapterId, book);
+  // The chapters are on the page only once the book's details are in as well.
+  const shown = useMemo(() => (book ? flow.chapters : []), [book, flow.chapters]);
+  useNoteMarks(notes, shown);
   const first = flow.chapters[0];
   const position = useReadingPosition(bookId, chapterId, book, first);
 

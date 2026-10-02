@@ -1,0 +1,59 @@
+fileType: momentic/test/v2
+id: dr-und-note-mark-desktop
+description: Desktop 1440. Ask about two sentences of Chapter I. Each stays quietly marked in the text while its card exists; pointing at a card or moving focus into it marks its own sentence more strongly; removing a card removes its mark.
+viewport: "1440, 900"
+steps:
+  - module:
+      path: ./modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+  - module:
+      path: ./modules/ask-about.module.yaml
+      inputs:
+        PHRASE:
+          string: Is there any knowledge in the world which is so certain that no reasonable man could doubt it?
+  - module:
+      path: ./modules/ask-about.module.yaml
+      inputs:
+        PHRASE:
+          string: Thus it becomes evident that the real table, if there is one, is not the same as what we immediately experience by sight or touch or hearing.
+        BUTTON:
+          string: "2"
+  - checkElementVisible:
+      css: .note[aria-label^="Example"]
+      timeout: 5000
+  - javascript:
+      environment: browser
+      code: |-
+        const marked = (name) => [...(CSS.highlights.get(name) ?? [])].map((range) => range.toString()).sort();
+        const want = [
+          "Is there any knowledge in the world which is so certain that no reasonable man could doubt it?",
+          "Thus it becomes evident that the real table, if there is one, is not the same as what we immediately experience by sight or touch or hearing.",
+        ];
+        if (JSON.stringify(marked("dr-note")) !== JSON.stringify(want)) throw new Error(`marked in the text: ${JSON.stringify(marked("dr-note"))}`);
+        return "both marked";
+  # Through focus rather than the pointer: taking a screenshot can tell the page the pointer has left.
+  - focus:
+      css: .note[aria-label^="Example"] button[aria-label="Remove note"]
+  - javascript:
+      environment: browser
+      code: |-
+        const marked = [...(CSS.highlights.get("dr-note-active") ?? [])].map((range) => range.toString());
+        if (marked.length !== 1 || !marked[0].startsWith("Thus it becomes evident")) throw new Error(`focus in the Example card marks: ${JSON.stringify(marked)}`);
+        return "paired";
+  - assertVisually:
+      that: The sentence "Thus it becomes evident that the real table, if there is one, is not the same as what we immediately experience by sight or touch or hearing." has a light blue background and an underline in the text, the same light blue as the Example card beside it, and the rest of that paragraph is not marked
+      timeout: 15000
+  - click:
+      css: .note[aria-label^="Example"] button[aria-label="Remove note"]
+  - checkElementDoesNotExist:
+      css: .note[aria-label^="Example"]
+  - javascript:
+      environment: browser
+      code: |-
+        const marked = (name) => [...(CSS.highlights.get(name) ?? [])].map((range) => range.toString());
+        if (marked("dr-note-active").length) throw new Error(`a removed card's sentence is still marked strongly: ${JSON.stringify(marked("dr-note-active"))}`);
+        const left = marked("dr-note");
+        if (left.length !== 1 || !left[0].startsWith("Is there any knowledge")) throw new Error(`after removing a card, marked: ${JSON.stringify(left)}`);
+        return "unmarked";

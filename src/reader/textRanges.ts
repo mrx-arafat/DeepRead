@@ -175,6 +175,29 @@ export function sentenceIndex(sentences: Sentence[], at: SentenceAt): number {
   return sentences.findIndex((sentence) => sentence.blockId === at.blockId && sentence.start === at.start);
 }
 
+/**
+ * Where a quote the reader selected sits, starting in block `blockId`: one span in each block it covers, none if it
+ * is not there.
+ */
+export function quoteSpans(blocks: Block[], blockId: string, quote: string): { blockId: string; span: Span }[] {
+  let at = blocks.findIndex((block) => block.id === blockId);
+  const text = blocks[at]?.text ?? "";
+  const whole = text.indexOf(quote);
+  if (whole !== -1) return [{ blockId, span: { start: whole, end: whole + quote.length } }];
+  // A selection over several paragraphs: the copied text breaks lines between them. It runs from somewhere in the
+  // first paragraph to its end, over whole ones, into the start of the last. A note card in between came along too.
+  const [first = "", ...rest] = quote.split(/\s*\n\s*/);
+  if (!first || !text.endsWith(first)) return [];
+  const spans = [{ blockId, span: { start: text.length - first.length, end: text.length } }];
+  for (const part of rest) {
+    const next = blocks[at + 1];
+    if (!part || !next?.text.startsWith(part)) continue;
+    spans.push({ blockId: next.id, span: { start: 0, end: part.length } });
+    at += 1;
+  }
+  return spans;
+}
+
 /** The book block element that contains `node`, if any. */
 export function blockOf(node: Node | null): HTMLElement | null {
   const element = node instanceof Element ? node : (node?.parentElement ?? null);
@@ -226,17 +249,18 @@ export function rangeInBlock(blockId: string, span: Span): Range | null {
 }
 
 // Where marks overlap, a later one here is painted over an earlier one: a word looked up inside the sentence
-// being read keeps its own mark.
-const LAYERS = ["dr-sentence", "dr-spoken", "dr-word", "dr-cursor"];
+// being read keeps its own mark, and passages with notes lie under everything.
+const LAYERS = ["dr-note", "dr-note-active", "dr-sentence", "dr-spoken", "dr-word", "dr-cursor"];
 
 /** Paint (or clear) a named highlight without touching the DOM. Styled via `::highlight(name)`. */
-export function setHighlight(name: string, range: Range | null) {
+export function setHighlight(name: string, range: Range | Range[] | null) {
   if (!("highlights" in CSS)) return;
-  if (!range) {
+  const ranges = [range ?? []].flat();
+  if (!ranges.length) {
     CSS.highlights.delete(name);
     return;
   }
-  const highlight = new Highlight(range);
+  const highlight = new Highlight(...ranges);
   highlight.priority = LAYERS.indexOf(name);
   CSS.highlights.set(name, highlight);
 }

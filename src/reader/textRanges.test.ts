@@ -1,8 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import type { Block } from "../../shared/types.ts";
 import { parseGlossaryEntry, parseSections, RichText } from "./RichText.tsx";
-import { sentenceSpans, stepWord, termSpan, wordAt } from "./textRanges.ts";
+import { quoteSpans, sentenceSpans, stepWord, termSpan, wordAt } from "./textRanges.ts";
 
 const cut = (text: string, span: { start: number; end: number } | null) => span && text.slice(span.start, span.end);
 
@@ -140,6 +141,35 @@ describe("sentenceSpans", () => {
       "In our case, the data are merely the known cases of coexistence of A and B.",
       "There may be other data, which might be taken into account.",
     ]);
+  });
+});
+
+describe("quoteSpans", () => {
+  const block = (id: string, text: string): Block => ({ id, type: "paragraph", text, page: 1 });
+  const blocks = [
+    block("b1", "Is there any knowledge? This question is hard."),
+    block("b2", "In daily life, we assume as certain many things."),
+    block("b3", "To make our difficulties plain, let us look at the table."),
+  ];
+  const marked = (blockId: string, quote: string) =>
+    quoteSpans(blocks, blockId, quote).map(({ blockId, span }) => cut(blocks.find((b) => b.id === blockId)!.text, span));
+
+  it("should find a quote inside its own paragraph", () => {
+    expect(marked("b1", "This question is hard.")).toEqual(["This question is hard."]);
+  });
+
+  it("should follow a quote over the paragraphs it runs into, skipping a note card copied along with it", () => {
+    const quote = "This question is hard.\n\nExplanation\nAn answer.\n\nIn daily life, we assume as certain many things.\n\nTo make our";
+    expect(marked("b1", quote)).toEqual([
+      "This question is hard.",
+      "In daily life, we assume as certain many things.",
+      "To make our",
+    ]);
+  });
+
+  it("should mark nothing when the text is no longer there", () => {
+    expect(marked("b1", "Not in the book")).toEqual([]);
+    expect(marked("gone", "This question is hard.")).toEqual([]);
   });
 });
 

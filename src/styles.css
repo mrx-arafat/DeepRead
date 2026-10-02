@@ -127,6 +127,19 @@ a {
   color: var(--ink);
 }
 
+/* A passage with a note in the margin: a faint pen line under it, as a student would draw. */
+::highlight(dr-note) {
+  text-decoration: underline 1.5px color-mix(in srgb, var(--pen) 50%, transparent);
+  text-underline-offset: 0.25em;
+}
+
+/* Pointing at a note marks its passage in the note's own wash and a firm line, so the two read as a pair. */
+::highlight(dr-note-active) {
+  background-color: var(--pen-wash);
+  text-decoration: underline 1.5px var(--pen);
+  text-underline-offset: 0.25em;
+}
+
 /* A word looked up: yellow, and underlined in pen like a word with a note in the margin. The underline tells it apart from the green marks whatever colours the reader sees. */
 ::highlight(dr-word) {
   background-color: var(--marker);
