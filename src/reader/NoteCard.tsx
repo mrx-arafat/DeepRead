@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
+import { useState } from "react";
 import { LANGUAGES, type ExplainMode, type ExplainRequest, type LangCode } from "../../shared/types.ts";
-import { RichText } from "./RichText.tsx";
+import { parseSections, RichText } from "./RichText.tsx";
 import { useAiStream } from "./useAiStream.ts";
 
 export type Note = {
@@ -17,6 +18,8 @@ export type Note = {
 type Props = {
   note: Note;
   bookId: string;
+  /** The most recently asked note. In the margin only it shows its whole answer; older cards fold to their first part. */
+  latest: boolean;
   /** `byKeyboard`: pressed with Enter or Space, so focus was on the button that is about to go. */
   onClose: (id: string, byKeyboard: boolean) => void;
 };
@@ -28,8 +31,11 @@ function label(mode: ExplainMode, lang: LangCode): string {
 }
 
 /** One explanation, shown in the margin beside the paragraph it belongs to. */
-export function NoteCard({ note, bookId, onClose }: Props) {
+export function NoteCard({ note, bookId, latest, onClose }: Props) {
   const { lang } = note;
+  // Folded unless it is the newest card, until the reader opens or folds it themselves.
+  const [unfolded, setUnfolded] = useState<boolean | null>(null);
+  const open = unfolded ?? latest;
   const request: ExplainRequest = {
     bookId,
     chapterId: note.chapterId,
@@ -39,9 +45,16 @@ export function NoteCard({ note, bookId, onClose }: Props) {
     lang,
   };
   const answer = useAiStream("/api/ai/explain", request);
+  // Folding only hides something when the answer has more than one part.
+  const more = parseSections(answer.text).length > 1;
 
   return (
-    <aside className="note" data-note={note.id} aria-label={`${label(note.mode, lang)}: ${note.quote.slice(0, 60)}`}>
+    <aside
+      className="note"
+      data-note={note.id}
+      data-folded={open ? undefined : ""}
+      aria-label={`${label(note.mode, lang)}: ${note.quote.slice(0, 60)}`}
+    >
       <header className="note-head">
         <span className="note-label">{label(note.mode, lang)}</span>
         <button type="button" className="icon-button" aria-label="Remove note" onClick={(event) => onClose(note.id, event.detail === 0)}>
@@ -67,6 +80,11 @@ export function NoteCard({ note, bookId, onClose }: Props) {
           )
         )}
       </div>
+      {more && (
+        <button type="button" className="link-button note-more" aria-expanded={open} onClick={() => setUnfolded(!open)}>
+          {open ? "Show less" : "Show more"}
+        </button>
+      )}
       {answer.status === "error" && (
         <p className="inline-error">
           {answer.error}{" "}

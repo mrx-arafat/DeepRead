@@ -906,9 +906,7 @@ li:not(.toc-matter) + .toc-matter {
   margin: 0 auto;
 }
 
-/* Clears the margin notes of the chapter above, so this chapter's notes start level with its own text. */
 .chapter {
-  clear: both;
   padding: 3rem 0 6rem;
 }
 
@@ -946,7 +944,6 @@ li:not(.toc-matter) + .toc-matter {
 
 /* After the last chapter on the page: where the next one is loading, or the end of the book. */
 .flow-end {
-  clear: both;
   min-height: 2.75rem;
   padding-bottom: 4rem;
   color: var(--ink-faint);
@@ -1197,6 +1194,11 @@ h5[data-block] {
   line-clamp: 2;
 }
 
+/* Only the wide margin folds older cards; under its paragraph a card is always whole. */
+.note-more {
+  display: none;
+}
+
 .note-wait {
   display: grid;
   gap: 0.5rem;
@@ -1254,12 +1256,32 @@ h5[data-block] {
     display: block;
   }
 
+  /* Each card starts level with its own paragraph, and moves down only as far as it must to clear the card above.
+     Its left margin spans the text column, so two cards never fit side by side and a later one goes under an earlier
+     one; its empty float shape lets the text run on beside it as if it were not there. */
   .note {
     float: right;
-    clear: right;
     width: var(--margin-note);
-    margin-right: calc(-1 * (var(--gutter) + var(--margin-note)));
-    margin-bottom: 1rem;
+    margin: 0 calc(-1 * (var(--gutter) + var(--margin-note))) 1rem calc(100% + var(--gutter));
+    shape-outside: inset(0 0 0 100%);
+  }
+
+  /* The text ends below its last card, so what follows (the summary, the next chapter) never sits beside one. */
+  .chapter-text::after {
+    content: "";
+    display: block;
+    clear: both;
+  }
+
+  /* Older cards fold to their first part, so a run of questions about neighbouring paragraphs stays level with them. */
+  .note[data-folded] .rich-section + .rich-section {
+    display: none;
+  }
+
+  .note-more {
+    display: block;
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
   }
 
   /* In the margin, level with the first paragraph (which starts 2.5rem below what comes before it). */
@@ -1706,6 +1728,7 @@ h5[data-block] {
   .selection-bar button,
   .listen-back,
   .toast-undo,
+  .note-more,
   select {
     min-height: 2.75rem;
   }

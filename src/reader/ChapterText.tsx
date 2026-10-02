@@ -142,7 +142,7 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions }: Props
           {notes
             .filter((note) => note.blockId === block.id)
             .map((note) => (
-              <NoteCard key={note.id} note={note} bookId={bookId} onClose={onCloseNote} />
+              <NoteCard key={note.id} note={note} bookId={bookId} latest={note.id === notes.at(-1)?.id} onClose={onCloseNote} />
             ))}
           <BlockText block={block} tabbable={block.id === cursor.tabbable} />
         </div>
