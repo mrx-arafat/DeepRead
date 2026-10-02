@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Block, ChapterSummary } from "../../shared/types.ts";
-import { bookPercent, indexAtLine, nextInFlow, openingChapter } from "./book.ts";
+import { bookPercent, chapterPosition, indexAtLine, nextInFlow, openingChapter } from "./book.ts";
 import { sentenceIndex, sentencesOf } from "./textRanges.ts";
 
 const section = (id: string, wordCount: number, kind?: ChapterSummary["kind"]): ChapterSummary => ({
@@ -69,6 +69,28 @@ describe("the flow through a book with front and back matter", () => {
   it("should carry on through the back matter when the reader opened it on purpose", () => {
     expect(nextInFlow(chapters, "c4")?.id).toBe("c5");
     expect(nextInFlow(chapters, "c5")).toBeUndefined();
+  });
+});
+
+describe("chapterPosition", () => {
+  const titled = (id: string, title: string, kind: ChapterSummary["kind"]) => ({ ...section(id, 100, kind), title });
+
+  it("should count the chapters of the book's own text when their titles carry no number", () => {
+    const chapters = [titled("c1", "Front Matter", "front"), titled("c2", "It's All Invented", "body"), titled("c3", "Being a Contribution", "body")];
+    expect(chapterPosition(chapters, "c3")).toEqual({ number: 2, count: 2 });
+    expect(chapterPosition(chapters, "c1")).toBeUndefined();
+  });
+
+  it("should give no number of its own when the book numbers its chapters, so a preface cannot put 2 above CHAPTER I", () => {
+    const chapters = [
+      titled("c1", "Front Matter", "front"),
+      titled("c2", "PREFACE", "body"),
+      titled("c3", "CHAPTER I. APPEARANCE AND REALITY", "body"),
+      titled("c4", "CHAPTER II. THE EXISTENCE OF MATTER", "body"),
+    ];
+    expect(chapterPosition(chapters, "c2")).toBeUndefined();
+    expect(chapterPosition(chapters, "c3")).toBeUndefined();
+    expect(chapterPosition([titled("c1", "1. It's All Invented", "body"), titled("c2", "2. Being a Contribution", "body")], "c2")).toBeUndefined();
   });
 });
 

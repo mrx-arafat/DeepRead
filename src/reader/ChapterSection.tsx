@@ -1,6 +1,6 @@
 import { memo, useMemo } from "react";
 import type { BookDetail, Chapter, LangCode } from "../../shared/types.ts";
-import { kindOf, minutes, readableBlocks } from "./book.ts";
+import { chapterPosition, kindOf, minutes, readableBlocks } from "./book.ts";
 import { ChapterAid } from "./ChapterAid.tsx";
 import { ChapterText, type TextActions } from "./ChapterText.tsx";
 import { titleId } from "./listenBlocks.ts";
@@ -20,10 +20,9 @@ type Props = {
  */
 export const ChapterSection = memo(function ChapterSection({ chapter, book, notes, lang, actions }: Props) {
   const blocks = useMemo(() => readableBlocks(chapter), [chapter]);
-  const text = book.chapters.filter((item) => kindOf(item) === "body");
-  const index = text.findIndex((item) => item.id === chapter.id);
-  const summary = text[index];
-  const kind = kindOf(book.chapters.find((item) => item.id === chapter.id) ?? chapter);
+  const summary = book.chapters.find((item) => item.id === chapter.id);
+  const kind = kindOf(summary ?? chapter);
+  const position = chapterPosition(book.chapters, chapter.id);
   const headingId = titleId(chapter.id);
 
   return (
@@ -34,7 +33,9 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
             ? "Before the main text"
             : kind === "back"
               ? "After the main text"
-              : `Chapter ${index + 1} of ${text.length}${summary ? ` · about ${minutes(summary.wordCount)} min` : ""}`}
+              : position
+                ? `Chapter ${position.number} of ${position.count} · about ${minutes(summary?.wordCount ?? 0)} min`
+                : `About ${minutes(summary?.wordCount ?? 0)} min`}
         </p>
         <h2 id={headingId}>{chapter.title}</h2>
       </header>

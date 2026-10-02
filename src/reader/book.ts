@@ -10,6 +10,21 @@ export const minutes = (words: number): number => Math.max(1, Math.round(words /
 /** Books parsed before sections had kinds have none: all of such a book reads as its own text. */
 export const kindOf = (section: { kind?: SectionKind }): SectionKind => section.kind ?? "body";
 
+// A title that carries the book's own number: "CHAPTER I. ...", "Chapter Three", "Part 2", "12. The End", "IV. Idealism".
+const NUMBERED_TITLE = /^(?:chapter\b|(?:part|book)\s+(?:\d+|[ivxlc]+\b|one|two|three|four|five|six|seven|eight|nine|ten)|\d+[.:]?\s|[ivxlc]+[.:]\s)/i;
+
+/**
+ * Where a chapter sits in the book's own text, for the line above its title ("Chapter 3 of 12"). None for front and
+ * back matter, and none in a book that numbers its chapters in their titles: there the count would disagree with
+ * the book as soon as a preface comes first, putting "Chapter 2" above "CHAPTER I.".
+ */
+export function chapterPosition(chapters: ChapterSummary[], chapterId: string): { number: number; count: number } | undefined {
+  const text = chapters.filter((chapter) => kindOf(chapter) === "body");
+  if (text.some((chapter) => NUMBERED_TITLE.test(chapter.title))) return undefined;
+  const index = text.findIndex((chapter) => chapter.id === chapterId);
+  return index < 0 ? undefined : { number: index + 1, count: text.length };
+}
+
 /** Where a book with no saved place opens: its first section of real reading, past the title page and contents. */
 export function openingChapter(chapters: ChapterSummary[]): ChapterSummary | undefined {
   return chapters.find((chapter) => kindOf(chapter) === "body") ?? chapters[0];
