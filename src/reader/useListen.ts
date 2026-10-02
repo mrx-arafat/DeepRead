@@ -46,7 +46,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   const [at, setAt] = useState<SentenceAt | null>(null);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Bumped to speak the sentence again after something else (a word from its card) had the voice.
+  // Bumped to carry on with the sentence after something else (a word from its card) had the voice.
   const [again, setAgain] = useState(0);
   const [waiting, setWaiting] = useState(false);
   const [away, setAway] = useState<Listen["away"]>(null);
@@ -55,6 +55,10 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   const shown = useRef<Range | null>(null);
   // When the player last scrolled the page: a smooth scroll still under way is not the reader leaving.
   const scrolledAt = useRef(-Infinity);
+  // The word the voice is on. Play after a pause, a new speed, or a word said from its card carry on from that word
+  // instead of the sentence's beginning. The engines' own pause and resume are not used: Chrome on Android has no
+  // pause, and its network voices stall after a resume.
+  const resume = useRef<{ place: string; offset: number } | null>(null);
 
   const index = useMemo(() => (at ? sentenceIndex(sentences, at) : -1), [sentences, at]);
   const sentence = index === -1 ? null : (sentences[index] ?? null);
@@ -150,17 +154,20 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   }, [place]);
 
   useEffect(() => {
-    if (!playing || !sentence) return;
+    if (!playing || !sentence || !place) return;
     setWaiting(false);
+    const from = resume.current?.place === place ? resume.current.offset : 0;
     let unwait = () => {};
-    const cancel = speak(sentence.text, {
+    const cancel = speak(sentence.text.slice(from), {
       rate,
       onWord: (start) => {
-        const word = wordAt(sentence.text, start);
+        const word = wordAt(sentence.text, from + start);
+        if (word) resume.current = { place, offset: word.start };
         const span = word && { start: sentence.start + word.start, end: sentence.start + word.end };
         setHighlight("dr-spoken", span ? rangeInBlock(sentence.blockId, span) : null);
       },
       onEnd: () => {
+        resume.current = null;
         const list = latest.current;
         const done = sentenceIndex(list, sentence);
         const after = done === -1 ? undefined : list[done + 1];
@@ -193,6 +200,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
 
   const move = useCallback(
     (step: number) => {
+      resume.current = null;
       setAt((current) => {
         const from = current ? sentenceIndex(sentences, current) : -1;
         if (from === -1) return current;
@@ -207,6 +215,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
 
   const begin = useCallback((target: SentenceAt | undefined) => {
     if (!target) return;
+    resume.current = null;
     setError(null);
     setAt({ blockId: target.blockId, start: target.start });
     setPlaying(true);
@@ -237,6 +246,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   }, [playing]);
 
   const stop = useCallback(() => {
+    resume.current = null;
     setPlaying(false);
     setWaiting(false);
     setAt(null);

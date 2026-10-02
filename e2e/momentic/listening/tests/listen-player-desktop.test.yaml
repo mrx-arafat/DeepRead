@@ -56,8 +56,11 @@ steps:
         const need = (ok, msg) => { if (!ok) throw new Error(msg); };
         const S = window.__stub;
         need(S.spoken.length === window.__n0 + 1, 'pressing Play should speak again');
-        need(S.spoken[S.spoken.length - 1].text === S.spoken[window.__n0 - 1].text, 'Play resumes at the paused sentence');
-        return JSON.stringify({ restartedSameSentence: true });
+        const before = S.spoken[window.__n0 - 1].text;
+        const after = S.spoken[S.spoken.length - 1].text;
+        const sentence = [...CSS.highlights.get('dr-sentence')][0].toString();
+        need(after !== before && sentence.includes(after), 'Play carries on from the word where it paused, not from the start of the sentence; got ' + JSON.stringify(after));
+        return JSON.stringify({ before, after });
   - click:
       css: '.listen-bar button[aria-label="Next sentence"]'
   - wait: 800
