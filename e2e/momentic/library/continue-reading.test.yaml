@@ -11,7 +11,7 @@ steps:
   - wait: 2500
   - javascript:
       code: |-
-        const res = await fetch("http://localhost:5181/api/books");
+        const res = await fetch(`${env.BASE_URL}/api/books`);
         const books = await res.json();
         return books.map((b) => ({ title: b.title, progress: b.progress }));
       saveAs: API_AFTER_READING

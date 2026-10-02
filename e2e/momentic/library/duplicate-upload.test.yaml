@@ -15,7 +15,7 @@ steps:
   - javascript:
       saveAs: BOOK_COUNT
       code: |-
-        const res = await fetch("http://localhost:5181/api/books");
+        const res = await fetch(`${env.BASE_URL}/api/books`);
         const books = await res.json();
         return { count: books.length, titles: books.map((b) => b.title) };
   - javascript:

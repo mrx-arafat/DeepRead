@@ -50,7 +50,7 @@ steps:
   - checkPageDoesNotContain: The Problems of Philosophy
   - javascript:
       code: |-
-        const res = await fetch("http://localhost:5181/api/books");
+        const res = await fetch(`${env.BASE_URL}/api/books`);
         return { status: res.status, books: (await res.json()).length };
       saveAs: API_AFTER_REMOVE
   - navigate: "{{ env.BOOK_HREF }}"

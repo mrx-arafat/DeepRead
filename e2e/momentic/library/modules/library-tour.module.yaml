@@ -33,7 +33,7 @@ steps:
         };
         return document.documentElement.dataset.theme;
       saveAs: T_THEME
-  - assertVisually: The library page has a bold DeepRead title, a short grey intro, a dashed drop box with a blue Add a book (PDF) button and the hint or drop a PDF here, and a small No books yet sentence. Text is readable against the background, spacing is even and nothing is cut off
+  - assertVisually: The library page has a bold DeepRead title, a short grey intro, a dashed drop box with a blue Add a book (PDF) button (on a wide screen also the hint "or drop a PDF here"; a phone leaves it out, since a phone cannot drop files), and a small No books yet sentence. Text is readable against the background, spacing is even and nothing is cut off
   - javascript:
       environment: browser
       code: return window.__measure();

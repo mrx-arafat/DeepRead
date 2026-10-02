@@ -46,7 +46,7 @@ steps:
         return { saveDisabled: save.disabled, titleValue: title.value, titleRequired: title.required, formText: f.innerText, alerts: [...f.querySelectorAll("[role=alert]")].map((a) => a.innerText), describedBy: title.getAttribute("aria-describedby"), invalid: title.getAttribute("aria-invalid") };
       environment: browser
       saveAs: EMPTY_TITLE
-  - assertVisually: The edit form is open with an empty Title field and a greyed out Save button
+  - assertVisually: The edit form is open with an empty Title field, a message under it saying the title cannot be empty, and the Save button still shown as usable
   - press: Enter
   - javascript:
       code: |-

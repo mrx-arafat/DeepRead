@@ -4,7 +4,7 @@ name: reset-library
 steps:
   - javascript:
       code: |-
-        const base = "http://localhost:5181/api/books";
+        const base = `${env.BASE_URL}/api/books`;
         const list = await (await fetch(base)).json();
         for (const book of list) {
           await fetch(`${base}/${book.id}`, { method: "DELETE" });
