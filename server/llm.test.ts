@@ -60,6 +60,7 @@ if (process.argv[2] === "exec") {
     hasClaudeCode: "CLAUDECODE" in process.env,
     hasEntrypoint: "CLAUDE_CODE_ENTRYPOINT" in process.env,
     maxThinking: process.env.MAX_THINKING_TOKENS,
+    effort: process.env.CLAUDE_CODE_EFFORT_LEVEL,
     cwd: process.cwd(),
   };
   const text = JSON.stringify(info);
@@ -128,6 +129,8 @@ describe("createClaudeLlm", () => {
   it("should send the prompt on stdin with the right model, flags, directory and a clean environment", async () => {
     process.env.CLAUDECODE = "1";
     process.env.CLAUDE_CODE_ENTRYPOINT = "cli";
+    // The reader's own Claude Code setting, which DeepRead inherits when started from inside Claude Code.
+    process.env.CLAUDE_CODE_EFFORT_LEVEL = "xhigh";
     const llm = createClaudeLlm({ bin: fakeBin });
     const hugePrompt = "x".repeat(300_000);
 
@@ -141,6 +144,8 @@ describe("createClaudeLlm", () => {
       hasClaudeCode: false,
       hasEntrypoint: false,
       maxThinking: "0",
+      // Measured: at xhigh Sonnet thought before every word, 3-10 s before the Bangla line.
+      effort: "high",
     });
     expect(word.prompt).toBe(hugePrompt);
     expectPrivateDirectoryGone(word.cwd);

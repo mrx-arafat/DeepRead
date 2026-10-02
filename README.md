@@ -319,6 +319,7 @@ The model sees the paragraph you are on plus the paragraphs before and after it,
 The AI helper is run headless, one process per answer, in an empty folder, with its tools switched off ([`server/llm.ts`](server/llm.ts)).
 With Claude Code every answer comes from Claude Sonnet, chosen by measuring models on real passages and words.
 Claude Haiku is about twice as fast, but it invented events and wrote broken Bangla on full passages, and on single words it gave the term of the wrong field, such as the physics word for "induction" in a chapter on logic.
+A tapped word is answered at Claude Code's "high" effort level, whatever yours is set to, so an everyday word shows its Bangla line in about a second and only a term of the book's subject waits while Sonnet thinks.
 With Codex, answers come from Codex's default model at low reasoning effort; its own coding instructions are replaced by DeepRead's.
 Codex still reads your personal `~/.codex/AGENTS.md`, because it has no switch to leave that out.
 

@@ -14,13 +14,18 @@ import { parseCodexLine } from "./codex-stream.ts";
 export type LlmTask = "word" | "explain" | "preview" | "recap" | "quiz" | "ask";
 
 /**
- * The one place that decides which Claude model answers what, and how long any tool gets.
+ * The one place that decides which Claude model answers what, how hard it thinks, and how long any tool gets.
  * Everything goes to Sonnet. Haiku is about twice as fast, but on passages it invented events and wrote
  * broken Bangla, and on words it gave the term of the wrong field ("induction" as the physics আবেশ instead of
  * the logic আরোহ, in every run) and unnatural examples. The reader trusts the Bangla line most.
+ *
+ * `effort` is Claude Code's effort level, which decides how long Sonnet thinks before it writes. Left unset,
+ * the CLI takes the reader's own Claude Code setting from the environment. At xhigh Sonnet thought before
+ * every word, 3-10 s before the Bangla line; at high it answers an everyday word at once (about 1.2 s) and
+ * still thinks over a term of the book's subject, which the word prompt asks it to.
  */
-export const TASK_PROFILES: Record<LlmTask, { model: "haiku" | "sonnet"; timeoutMs: number }> = {
-  word: { model: "sonnet", timeoutMs: 120_000 },
+export const TASK_PROFILES: Record<LlmTask, { model: "haiku" | "sonnet"; effort?: "high"; timeoutMs: number }> = {
+  word: { model: "sonnet", effort: "high", timeoutMs: 120_000 },
   explain: { model: "sonnet", timeoutMs: 120_000 },
   ask: { model: "sonnet", timeoutMs: 120_000 },
   preview: { model: "sonnet", timeoutMs: 300_000 },
@@ -85,7 +90,7 @@ type CliSpec = {
   args(request: LlmRequest, scratch: string): string[];
   /** Files to write into `scratch` before the tool starts. */
   files?(request: LlmRequest): Record<string, string>;
-  env(): NodeJS.ProcessEnv;
+  env(request: LlmRequest): NodeJS.ProcessEnv;
   /** What goes in on stdin: prompts can be far too big for argv. */
   input(request: LlmRequest): string;
   parse(line: string): StreamEvent | null;
@@ -113,8 +118,11 @@ const CLAUDE_FLAGS = [
   "--include-partial-messages",
 ];
 
-function claudeEnv(): NodeJS.ProcessEnv {
+function claudeEnv(request: LlmRequest): NodeJS.ProcessEnv {
   const env = { ...process.env };
+  // Set, not inherited: this variable overrides --effort and every settings file (see TASK_PROFILES).
+  const { effort } = TASK_PROFILES[request.task];
+  if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort;
   // Nested-session guard: with these set the CLI refuses to start inside another Claude Code session.
   delete env.CLAUDECODE;
   delete env.CLAUDE_CODE_ENTRYPOINT;
@@ -206,7 +214,7 @@ function createCliLlm(spec: CliSpec, options: CliLlmOptions): CliLlm {
   }
 
   async function* run(request: LlmRequest, timeoutMs: number, scratch: string): AsyncGenerator<string, void, undefined> {
-    const child = spawn(bin, spec.args(request, scratch), { cwd: scratch, env: spec.env(), stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(bin, spec.args(request, scratch), { cwd: scratch, env: spec.env(request), stdio: ["pipe", "pipe", "pipe"] });
     running.add(child);
 
     let stderrTail = "";

@@ -433,7 +433,7 @@ describe("DeepRead API", () => {
       llm.state.script = (request) => [`${request.task}|${request.system}\n---\n${request.user}`];
 
       const text = textOf(await readSse(await send("POST", "/api/ai/explain", explainBody(id))));
-      // A single tapped word is its own task: it goes to the fast model.
+      // A single tapped word is its own task, with its own effort level (TASK_PROFILES).
       expect(text).toContain("word|");
       expect(text).toContain("first language is Bangla");
       expect(text).toContain("[Text just before]\nFirst Chapter\n\nAlpha paragraph has five words.");
