@@ -1,5 +1,7 @@
+/// <reference types="vitest/config" />
+// Types only from vitest: a reader's install has no test tools, and `vite build` must still load this file.
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vitest/config";
+import { defineConfig } from "vite";
 
 const API_PORT = Number(process.env.DEEPREAD_API_PORT ?? 8787);
 
