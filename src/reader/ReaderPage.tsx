@@ -97,6 +97,20 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [dismiss, word, selection, tocOpen, listenActive, stopListening]);
 
+  // A press anywhere outside the word card or the Explain bar closes it, like any popover: the margin, a gap
+  // between paragraphs, a title, the top bar. A press on the book text is left to ChapterText, which opens the
+  // next word or selection there, or closes them, once the press ends.
+  useEffect(() => {
+    if (!word && !selection) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0 || !(event.target instanceof Element)) return;
+      if (event.target.closest(".word-popover, .selection-bar, [data-block]")) return;
+      dismiss();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [dismiss, word, selection]);
+
   // A keyboard reader who starts listening lands on the player, so Pause and Next are right there.
   useEffect(() => {
     if (!focusPlayer.current || !playButton.current) return;
