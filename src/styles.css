@@ -1372,6 +1372,10 @@ h4[data-block] {
   line-height: 1.4;
 }
 
+.listen-error {
+  color: var(--danger);
+}
+
 .listen-back {
   display: inline-flex;
   align-items: center;
@@ -1390,10 +1394,6 @@ h4[data-block] {
   background: var(--pen-wash);
 }
 
-.listen-bar .inline-error {
-  max-width: 20rem;
-  padding: 0.25rem 0.5rem 0;
-}
 
 .listen-controls {
   display: flex;

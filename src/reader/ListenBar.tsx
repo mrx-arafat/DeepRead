@@ -19,8 +19,14 @@ export function ListenBar({
 }) {
   return (
     <div className="listen-bar" role="region" aria-label="Read aloud">
-      {(listen.away || listen.waiting) && (
+      {/* Above the controls and out of their flow, so a message never moves the button the reader reaches for. */}
+      {(listen.error || listen.away || listen.waiting) && (
         <div className="listen-status">
+          {listen.error && (
+            <p className="listen-note listen-error" role="alert">
+              {listen.error}
+            </p>
+          )}
           {listen.waiting === "opening" && <p className="listen-note">Opening the next chapter...</p>}
           {listen.waiting === "failed" && (
             <p className="listen-note">
@@ -38,7 +44,6 @@ export function ListenBar({
           )}
         </div>
       )}
-      {listen.error && <p className="inline-error">{listen.error}</p>}
       <div className="listen-controls">
         <button type="button" className="icon-button" aria-label="Previous sentence" onClick={listen.previous}>
           <SkipBack size={18} aria-hidden />

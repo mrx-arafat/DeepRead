@@ -10,10 +10,14 @@ steps:
   - javascript:
       environment: browser
       code: window.__stub.wordMs = 700; return 'slow';
+  # The dark page is chosen in the Aa menu.
   - click:
-      coords: 1408, 25
+      css: 'button[popovertarget="reading-settings"]'
   - click:
-      coords: 1119, 25
+      css: '#reading-settings input[value="dark"]'
+  - press: Escape
+  - click:
+      css: '.topbar-tools button[aria-pressed]'
   - wait: 1800
   - assert: In the dark theme the spoken sentence has a dark green highlight and the spoken word a brighter green highlight, and both are easy to tell apart from the page and from each other
   - click:
@@ -22,7 +26,8 @@ steps:
       environment: browser
       saveAs: PLAY_BUTTON_BEFORE
       code: |-
-        return String(Math.round(document.querySelector('.listen-bar button[aria-label="Play"]').getBoundingClientRect().left));
+        window.__playLeft = Math.round(document.querySelector('.listen-bar button[aria-label="Play"]').getBoundingClientRect().left);
+        return String(window.__playLeft);
   - javascript:
       environment: browser
       code: |-
@@ -38,5 +43,7 @@ steps:
       code: |-
         const need = (ok, msg) => { if (!ok) throw new Error(msg); };
         const bar = document.querySelector('.listen-bar');
-        need(bar.querySelector('.inline-error'), 'an error message is shown');
-        return String(Math.round(bar.querySelector('.listen-play').getBoundingClientRect().left));
+        need(bar.querySelector('.listen-error'), 'an error message is shown');
+        const left = Math.round(bar.querySelector('.listen-play').getBoundingClientRect().left);
+        need(left === window.__playLeft, 'the play button moved when the error appeared: ' + window.__playLeft + ' -> ' + left);
+        return String(left);

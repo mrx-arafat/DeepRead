@@ -20,5 +20,5 @@ steps:
           pressed: (document.querySelector('.topbar-tools .quiet-button') || { getAttribute: () => 'none' }).getAttribute('aria-pressed'),
           rate: bar && bar.querySelector('select') && bar.querySelector('select').value,
           n: spoken.length, last: last && String(last.text).slice(0, 30), lastRate: last && last.rate,
-          slog: stub ? stub.log.slice(-8).map((x) => x.join(':')).join(' ') : null, sc: stub ? stub.scrolls.slice(-3) : null, ck: stub ? stub.clicks.slice(-2) : null, err: bar && bar.querySelector('.inline-error') && bar.querySelector('.inline-error').textContent
+          slog: stub ? stub.log.slice(-8).map((x) => x.join(':')).join(' ') : null, sc: stub ? stub.scrolls.slice(-3) : null, ck: stub ? stub.clicks.slice(-2) : null, err: bar && bar.querySelector('.listen-error') && bar.querySelector('.listen-error').textContent
         });
