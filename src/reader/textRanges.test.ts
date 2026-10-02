@@ -209,7 +209,7 @@ describe("parseGlossaryEntry", () => {
 });
 
 describe("RichText", () => {
-  const html = (text: string) => renderToStaticMarkup(createElement(RichText, { text }));
+  const html = (text: string, writing = false) => renderToStaticMarkup(createElement(RichText, { text, writing }));
 
   it("should show emphasis as bold or italic, never as the asterisks the AI typed", () => {
     const answer = [
@@ -229,5 +229,17 @@ describe("RichText", () => {
   it("should show an emphasis that is still streaming in without its asterisks", () => {
     expect(html("and you *belie")).toContain("<p>and you <em>belie</em></p>");
     expect(html("and the **")).not.toContain("*");
+  });
+
+  it("should end an answer that is still being written with quiet dots after its last word, and only then", () => {
+    const dots = ' <span class="writing" aria-hidden="true"></span>';
+    const first = "**In simple words:** He doubts it.\n";
+
+    expect(html(`${first}**In context:** Russell asks`, true)).toContain(`<p>He doubts it.</p>`);
+    expect(html(`${first}**In context:** Russell asks`, true)).toContain(`<p>Russell asks${dots}</p>`);
+    expect(html(`${first}- one\n- two`, true)).toContain(`<li>one</li><li>two${dots}</li>`);
+    expect(html(`${first}**Hard words:**\n- doubt - not be sure`, true)).toContain(`<dd>not be sure${dots}</dd>`);
+    expect(html(`${first}**Deeper mea`, true)).toContain(`<span>Deeper mea</span>${dots}</h3>`);
+    expect(html(`${first}**In context:** Russell asks.`)).not.toContain("writing");
   });
 });

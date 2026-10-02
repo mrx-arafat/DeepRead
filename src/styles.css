@@ -243,6 +243,15 @@ select {
   animation: wait 1.1s ease-in-out infinite alternate;
 }
 
+/* Three quiet dots after the last word of an answer that is still being written. */
+.writing {
+  display: inline-block;
+  width: 1.125em;
+  height: 0.25em;
+  background: radial-gradient(circle closest-side, var(--ink-soft) 80%, transparent) 0 0 / 0.375em 100% repeat-x;
+  animation: wait 1.1s ease-in-out infinite alternate;
+}
+
 @keyframes wait {
   from {
     opacity: 0.35;
@@ -253,7 +262,8 @@ select {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skeleton {
+  .skeleton,
+  .writing {
     animation: none;
   }
 }

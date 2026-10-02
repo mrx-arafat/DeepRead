@@ -96,15 +96,20 @@ function inline(text: string): ReactNode {
   return parts;
 }
 
-function Glossary({ items }: { items: string[] }) {
+/** `end` follows the meaning in the last row. */
+function Glossary({ items, end }: { items: string[]; end: ReactNode }) {
   return (
     <dl className="glossary">
       {items.map((item, i) => {
         const entry = parseGlossaryEntry(item);
+        const tail = i === items.length - 1 && end;
         if (!entry) {
           return (
             <div className="glossary-row glossary-row-plain" key={i}>
-              <dd>{inline(item)}</dd>
+              <dd>
+                {inline(item)}
+                {tail}
+              </dd>
             </div>
           );
         }
@@ -117,6 +122,7 @@ function Glossary({ items }: { items: string[] }) {
             <dd>
               {entry.meaning}
               {entry.native && <span className="glossary-native">{entry.native}</span>}
+              {tail}
             </dd>
           </div>
         );
@@ -125,27 +131,47 @@ function Glossary({ items }: { items: string[] }) {
   );
 }
 
-export function RichText({ text }: { text: string }) {
+/** `writing` means the answer is still streaming in. */
+export function RichText({ text, writing = false }: { text: string; writing?: boolean }) {
+  const sections = parseSections(text);
+  // Quiet dots after the last word until the answer is complete, so a half answer never passes for a whole one.
+  // A space, not a margin, sets them apart: it collapses into a space the text already ends with, and if the dots
+  // wrap, it stays behind at the end of the line so they start flush with the text.
+  const dots = writing && (
+    <>
+      {" "}
+      <span className="writing" aria-hidden />
+    </>
+  );
   return (
     <div className="rich">
-      {parseSections(text).map((section, i) => {
+      {sections.map((section, i) => {
         const kind = kindOf(section.label);
+        const last = i === sections.length - 1;
+        const end = (j: number) => last && j === section.blocks.length - 1 && dots;
         return (
           <section className="rich-section" data-kind={kind} key={i}>
             {section.label && (
               <h3 className="rich-label">
                 <span>{section.label}</span>
+                {last && section.blocks.length === 0 && dots}
               </h3>
             )}
             {section.blocks.map((block, j) =>
               block.type === "p" ? (
-                <p key={j}>{inline(block.text)}</p>
+                <p key={j}>
+                  {inline(block.text)}
+                  {end(j)}
+                </p>
               ) : kind === "glossary" ? (
-                <Glossary key={j} items={block.items} />
+                <Glossary key={j} items={block.items} end={end(j)} />
               ) : (
                 <ul key={j}>
                   {block.items.map((item, k) => (
-                    <li key={k}>{inline(item)}</li>
+                    <li key={k}>
+                      {inline(item)}
+                      {k === block.items.length - 1 && end(j)}
+                    </li>
                   ))}
                 </ul>
               ),

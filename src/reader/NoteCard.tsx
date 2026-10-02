@@ -51,11 +51,12 @@ export function NoteCard({ note, bookId, onClose }: Props) {
       <blockquote className="note-quote">{note.quote}</blockquote>
       <div
         aria-live="polite"
+        aria-busy={answer.status === "loading"}
         className={note.mode === "native" ? "note-native" : undefined}
         lang={note.mode === "native" ? lang : undefined}
       >
         {answer.text ? (
-          <RichText text={answer.text} />
+          <RichText text={answer.text} writing={answer.status === "loading"} />
         ) : (
           answer.status === "loading" && (
             <p className="note-wait" lang="en">

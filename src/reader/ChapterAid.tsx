@@ -45,8 +45,12 @@ export function ChapterAid({ kind, bookId, chapterId, lang }: Props) {
           </button>
         </div>
       ) : (
-        <div aria-live="polite">
-          {answer.text ? <RichText text={answer.text} /> : answer.status === "loading" && <p className="aid-wait">{copy.waiting}</p>}
+        <div aria-live="polite" aria-busy={answer.status === "loading"}>
+          {answer.text ? (
+            <RichText text={answer.text} writing={answer.status === "loading"} />
+          ) : (
+            answer.status === "loading" && <p className="aid-wait">{copy.waiting}</p>
+          )}
           {answer.status === "error" && (
             <p className="inline-error">
               {answer.error}{" "}
