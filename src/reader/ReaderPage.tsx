@@ -168,10 +168,16 @@ export function ReaderPage({ bookId, chapterId }: Props) {
         <button type="button" className="icon-button" aria-label="Chapters" aria-expanded={tocOpen} onClick={() => setTocOpen(true)}>
           <List size={20} aria-hidden />
         </button>
-        <p className="topbar-title">
+        {/* The page's one h1: the book. Chapter titles are h2; the chapter named here is for the eye alone. */}
+        <h1 className="topbar-title">
           {book?.title ?? ""}
-          {currentTitle && <span className="topbar-chapter"> · {currentTitle}</span>}
-        </p>
+          {currentTitle && (
+            <span className="topbar-chapter" aria-hidden>
+              {" "}
+              {"\u00b7"} {currentTitle}
+            </span>
+          )}
+        </h1>
         {book && (
           <span className="topbar-percent" aria-hidden>
             {position.percent}%

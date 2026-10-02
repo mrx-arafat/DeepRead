@@ -34,7 +34,7 @@ export function ChapterAid({ kind, bookId, chapterId, lang }: Props) {
 
   return (
     <section className="aid" aria-label={copy.title}>
-      <h2 className="aid-title">{copy.title}</h2>
+      <h3 className="aid-title">{copy.title}</h3>
       {!open ? (
         <div className="aid-closed">
           <p>{copy.prompt}</p>

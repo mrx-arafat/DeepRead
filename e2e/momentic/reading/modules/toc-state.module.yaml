@@ -24,5 +24,5 @@ steps:
           scrollY: Math.round(scrollY), url: location.pathname.split('/').pop(), sections: Array.from(document.querySelectorAll('[data-chapter]')).map((a) => a.dataset.chapter),
           percent: (document.querySelector('.topbar-percent') || {}).textContent, title: (document.querySelector('.topbar-title') || {}).textContent,
           flowBack: (document.querySelector('.flow-back') || {}).textContent, flowEnd: fe && fe.textContent,
-          h1Tops: Array.from(document.querySelectorAll('.chapter h1')).map((h) => h.textContent + '@' + Math.round(h.getBoundingClientRect().top)),
+          h1Tops: Array.from(document.querySelectorAll('.chapter-head h2')).map((h) => h.textContent + '@' + Math.round(h.getBoundingClientRect().top)),
         });

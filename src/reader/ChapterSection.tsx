@@ -36,7 +36,7 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
               ? "After the main text"
               : `Chapter ${index + 1} of ${text.length}${summary ? ` · about ${minutes(summary.wordCount)} min` : ""}`}
         </p>
-        <h1 id={headingId}>{chapter.title}</h1>
+        <h2 id={headingId}>{chapter.title}</h2>
       </header>
 
       {/* A title page or a licence needs no preview or summary. */}

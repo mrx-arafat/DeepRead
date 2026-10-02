@@ -43,7 +43,7 @@ steps:
         const speaking = () => {
           const sentence = CSS.highlights.get('dr-sentence');
           const el = sentence && [...sentence][0].startContainer.parentElement;
-          return el && el.tagName === 'H2' && CSS.highlights.get('dr-spoken');
+          return el && el.tagName === 'H3' && CSS.highlights.get('dr-spoken');
         };
         for (let waited = 0; waited < 60000 && !speaking(); waited += 50) await new Promise((resolve) => setTimeout(resolve, 50));
         return window.__seen.length;
@@ -58,9 +58,9 @@ steps:
       saveAs: HEADING_ASSERT
       code: |-
         const need = (ok, msg) => { if (!ok) throw new Error(msg); };
-        const heads = window.__seen.filter((s) => s[0] === 'H2' || s[0] === 'H3');
-        need(heads.some((s) => s[1].startsWith('THE PROBLEMS OF PHILOSOPHY')), 'the h2 heading inside the text should be read and highlighted');
-        const hs = window.__seen.find((s) => s[0] === 'H2');
+        const heads = window.__seen.filter((s) => s[0] === 'H3' || s[0] === 'H4');
+        need(heads.some((s) => s[1].startsWith('THE PROBLEMS OF PHILOSOPHY')), 'the heading inside the text should be read and highlighted');
+        const hs = window.__seen.find((s) => s[0] === 'H3');
         need(hs[2] > 60 && hs[2] < innerHeight - 140, 'the highlighted heading is kept in the comfortable middle of the window, top=' + hs[2]);
         need(document.querySelector('.listen-bar'), 'player still open');
         return JSON.stringify(heads);

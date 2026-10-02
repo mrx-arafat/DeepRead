@@ -23,7 +23,8 @@ type Props = {
   actions: TextActions;
 };
 
-const HEADING_TAGS = { 1: "h2", 2: "h3", 3: "h4" } as const;
+// The book is the page's h1 and each chapter title an h2, so headings inside the text start at h3.
+const HEADING_TAGS = { 1: "h3", 2: "h4", 3: "h5" } as const;
 
 /** One block of book text. Must stay a single text node: word and sentence ranges rely on it. */
 const BlockText = memo(function BlockText({ block, tabbable }: { block: Block; tabbable: boolean }) {

@@ -34,6 +34,7 @@ steps:
         need([...document.querySelectorAll('svg')].every((s) => s.getAttribute('aria-hidden') === 'true'), 'icons are hidden from assistive tech');
         const hs = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map((h) => Number(h.tagName[1]));
         need(hs[0] === 1, 'first heading is an h1');
+        need(hs.filter((level) => level === 1).length === 1, 'the page has exactly one h1, the book, with chapter titles as h2');
         for (let i = 1; i < hs.length; i++) need(hs[i] - hs[i - 1] <= 1, 'no skipped heading levels');
         const sel = document.querySelector('#reading-settings-lang');
         need(name(sel).startsWith('Explain in'), 'language picker is labelled');
