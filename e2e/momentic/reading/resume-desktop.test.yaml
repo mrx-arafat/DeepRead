@@ -20,6 +20,8 @@ steps:
   - wait: 2600
   - module: ./modules/spot.module.yaml
   - javascript: setVariable('SPOT1', env.SPOT)
+  - module: ./modules/eye-line.module.yaml
+  - javascript: setVariable('LINE1', env.EYE_LINE)
   - refresh
   - checkPageContains:
       text: Before you read
@@ -27,6 +29,8 @@ steps:
   - wait: 1500
   - module: ./modules/spot.module.yaml
   - javascript: setVariable('SPOT2', env.SPOT)
+  - module: ./modules/eye-line.module.yaml
+  - javascript: setVariable('LINE2', env.EYE_LINE)
   - javascript: |-
       const a = JSON.parse(env.SPOT1), b = JSON.parse(env.SPOT2);
       assert(a.block === b.block, `after reload the reader is in ${b.block} ("${b.snippet}") but was in ${a.block} ("${a.snippet}")`)
@@ -47,15 +51,24 @@ steps:
   - wait: 1800
   - module: ./modules/spot.module.yaml
   - javascript: setVariable('SPOT3', env.SPOT)
+  # The book reopens in the same page, so pick the line under the top bar afresh rather than follow the last one.
+  - javascript:
+      environment: browser
+      code: |-
+        window.__eyeLine = null;
+        return 'picking afresh';
+  - module: ./modules/eye-line.module.yaml
+  - javascript: setVariable('LINE3', env.EYE_LINE)
   - javascript: |-
       const a = JSON.parse(env.SPOT1), c = JSON.parse(env.SPOT3);
       assert(a.block === c.block, `after leaving and reopening the book the reader is in ${c.block} ("${c.snippet}") but was in ${a.block} ("${a.snippet}")`)
+  # The same line comes back under the top bar. Not to the pixel: it opens where a paragraph's first line would.
   - javascript: |-
-      const a = JSON.parse(env.SPOT1), b = JSON.parse(env.SPOT2);
-      assert(a.eyeText === b.eyeText, `after reload the line under the reader's eyes is "${b.eyeText}" (${b.intoBlockPx}px into its paragraph) but it was "${a.eyeText}" (${a.intoBlockPx}px into its paragraph)`)
+      const a = JSON.parse(env.LINE1), b = JSON.parse(env.LINE2);
+      assert(a.block === b.block && a.offset === b.offset, `after reload the line under the top bar starts "${b.text}" (${b.block}, ${b.top}px down) but it was "${a.text}" (${a.block}, ${a.top}px down)`)
   - javascript: |-
-      const a = JSON.parse(env.SPOT1), c = JSON.parse(env.SPOT3);
-      assert(a.eyeText === c.eyeText, `after reopening the book the line under the reader's eyes is "${c.eyeText}" (${c.intoBlockPx}px into its paragraph) but it was "${a.eyeText}" (${a.intoBlockPx}px into its paragraph)`)
+      const a = JSON.parse(env.LINE1), c = JSON.parse(env.LINE3);
+      assert(a.block === c.block && a.offset === c.offset, `after reopening the book the line under the top bar starts "${c.text}" (${c.block}, ${c.top}px down) but it was "${a.text}" (${a.block}, ${a.top}px down)`)
   # A chapter opened by its link and left without scrolling is still where the reader is: the library says so, and
   # the book reopens at that chapter's top, heading and all, as it was left.
   - navigate: /book/{{ env.BOOK_ID }}/c10
