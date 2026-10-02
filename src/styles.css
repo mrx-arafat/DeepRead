@@ -1406,7 +1406,6 @@ h4[data-block] {
   background: var(--pen-wash);
 }
 
-
 .listen-controls {
   display: flex;
   align-items: center;
@@ -1431,5 +1430,26 @@ h4[data-block] {
 @media (max-width: 40rem) {
   .topbar-chapter {
     display: none;
+  }
+}
+
+/* Touch screens: every control a finger aims at is at least 44px, and the player's buttons sit further apart,
+   so reading one-handed does not hit Stop instead of Next. A mouse keeps the compact sizes. */
+@media (pointer: coarse) {
+  .icon-button,
+  .note-head .icon-button {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .quiet-button,
+  .selection-bar button,
+  .listen-back,
+  select {
+    min-height: 2.75rem;
+  }
+
+  .listen-controls {
+    gap: 0.5rem;
   }
 }
