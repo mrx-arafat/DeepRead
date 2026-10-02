@@ -10,8 +10,14 @@ steps:
   - javascript:
       environment: browser
       code: window.__stub.wordMs = 700; return 'slow';
+  - module:
+      path: ../modules/locate-text.module.yaml
+      inputs:
+        PHRASE:
+          string: any
   - click:
-      coords: 130, 591
+      x: "{{ env.AT.cx }}"
+      y: "{{ env.AT.cy }}"
   - checkElementVisible:
       css: '.word-popover'
       timeout: 5000
@@ -39,9 +45,16 @@ steps:
   - click:
       css: '.listen-bar button[aria-label="Stop listening"]'
   - wait: 300
-  - mouseDrag:
-      coords: 24, 720
-      delta: 250, 0
+  - module:
+      path: ../modules/locate-text.module.yaml
+      inputs:
+        PHRASE:
+          string: This question, which
+  - dragAndDrop:
+      fromX: "{{ env.AT.sx }}"
+      fromY: "{{ env.AT.sy }}"
+      toX: "{{ env.AT.ex }}"
+      toY: "{{ env.AT.ey }}"
       steps: 12
   - checkElementVisible:
       css: '.selection-bar'

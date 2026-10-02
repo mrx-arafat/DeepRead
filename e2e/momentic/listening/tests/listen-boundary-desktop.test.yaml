@@ -14,8 +14,14 @@ steps:
   - javascript:
       environment: browser
       code: window.__stub.wordMs = 25; return 'fast words';
+  - module:
+      path: ../modules/locate-text.module.yaml
+      inputs:
+        PHRASE:
+          string: Murray
   - click:
-      coords: 310, 761
+      x: "{{ env.AT.cx }}"
+      y: "{{ env.AT.cy }}"
   - checkElementVisible:
       css: '.word-popover'
       timeout: 5000

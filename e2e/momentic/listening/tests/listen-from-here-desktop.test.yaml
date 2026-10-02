@@ -10,8 +10,14 @@ steps:
   - javascript:
       environment: browser
       code: window.__stub.wordMs = 500; return 'slow words';
+  - module:
+      path: ../modules/locate-text.module.yaml
+      inputs:
+        PHRASE:
+          string: difficult
   - click:
-      coords: 370, 622
+      x: "{{ env.AT.cx }}"
+      y: "{{ env.AT.cy }}"
   - checkElementVisible:
       css: '.word-popover'
       timeout: 5000
@@ -32,9 +38,16 @@ steps:
   - click:
       css: '.listen-bar button[aria-label="Stop listening"]'
   - wait: 300
-  - mouseDrag:
-      coords: 276, 655
-      delta: 380, 0
+  - module:
+      path: ../modules/locate-text.module.yaml
+      inputs:
+        PHRASE:
+          string: When we have realized the obstacles
+  - dragAndDrop:
+      fromX: "{{ env.AT.sx }}"
+      fromY: "{{ env.AT.sy }}"
+      toX: "{{ env.AT.ex }}"
+      toY: "{{ env.AT.ey }}"
       steps: 12
   - checkElementVisible:
       css: '.selection-bar'

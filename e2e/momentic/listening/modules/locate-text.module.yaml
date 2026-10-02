@@ -1,0 +1,55 @@
+fileType: momentic/module/v2
+id: listening-locate-text
+name: locate-text
+description: Scroll the first whole-word match of a phrase in the book text into view and save where it sits on screen, so taps and drags follow the text when the layout changes
+parameters:
+  - name: PHRASE
+steps:
+  # Saves AT: cx, cy (middle of the phrase, where a reader taps), sx, sy (its first letter), ex, ey (its last letter, where a drag that selects it ends).
+  - javascript:
+      environment: browser
+      saveAs: AT
+      code: |-
+        const phrase = env.PHRASE;
+        // The reader restores its scroll position after a chapter opens; wait for the page to stop moving first.
+        const settle = async () => {
+          let last = window.scrollY;
+          let still = 0;
+          for (let i = 0; i < 60 && still < 6; i += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            still = window.scrollY === last ? still + 1 : 0;
+            last = window.scrollY;
+          }
+        };
+        await settle();
+        const word = new RegExp(`(^|[^\\p{L}])(${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})(?![\\p{L}])`, "u");
+        for (const block of document.querySelectorAll("main.page [data-block]")) {
+          const node = block.firstChild;
+          const match = node && node.data ? word.exec(node.data) : null;
+          if (!match) continue;
+          const at = match.index + match[1].length;
+          const range = document.createRange();
+          range.setStart(node, at);
+          range.setEnd(node, at + phrase.length);
+          block.scrollIntoView({ block: "center" });
+          await settle();
+          // Keep the phrase clear of the sticky top bar and of the screen edges.
+          const top = range.getBoundingClientRect().top;
+          if (top < 120) window.scrollBy(0, top - 200);
+          await settle();
+          const rects = [...range.getClientRects()].filter((r) => r.width > 0);
+          const first = rects[0];
+          const last = rects[rects.length - 1];
+          const whole = range.getBoundingClientRect();
+          const round = (n) => Math.round(n);
+          return {
+            block: block.dataset.block,
+            cx: round(first.left + Math.min(first.width, whole.width) / 2),
+            cy: round(first.top + first.height / 2),
+            sx: round(first.left + 2),
+            sy: round(first.top + first.height / 2),
+            ex: round(last.right - 1),
+            ey: round(last.top + last.height / 2),
+          };
+        }
+        throw new Error(`phrase not found on the page: ${phrase}`);
