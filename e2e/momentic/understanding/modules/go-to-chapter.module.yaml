@@ -8,7 +8,7 @@ steps:
   - click:
       css: button[aria-label="Chapters"]
   - click:
-      css: nav.toc a[href$="/{{ env.CHAPTER_ID }}"]
+      css: .toc a[href$="/{{ env.CHAPTER_ID }}"]
   - checkElementVisible:
-      css: article[data-chapter="{{ env.CHAPTER_ID }}"] h1
+      css: article[data-chapter="{{ env.CHAPTER_ID }}"] h2
       timeout: 20000

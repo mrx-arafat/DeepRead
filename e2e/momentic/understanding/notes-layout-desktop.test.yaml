@@ -71,7 +71,7 @@ steps:
   # Notes outlive a reload.
   - refresh
   - checkElementVisible:
-      css: article[data-chapter="c8"] h1
+      css: article[data-chapter="c8"] h2
       timeout: 20000
   - checkElementVisible:
       css: .row:has([data-block="c8-b4"]) .note .rich-section:first-child
