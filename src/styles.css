@@ -1332,6 +1332,22 @@ h4[data-block] {
   transform: translateX(-50%);
 }
 
+/* Wide screens: the player sits at the foot of the margin, where the notes go, so it covers none of the text.
+   The chapter (text, gutter, margin) is centred, so the margin starts half its width right of the window's middle,
+   less the margin itself. */
+@media (min-width: 72rem) {
+  .listen-bar {
+    left: calc(50% + (var(--column) + var(--gutter) + var(--margin-note)) / 2 - var(--margin-note));
+    transform: none;
+  }
+
+  /* -1px: offsets start inside the player's border, and the two frames should line up. */
+  .listen-bar .listen-status {
+    left: -1px;
+    transform: none;
+  }
+}
+
 /* A line above the player, out of its flow: what the reader needs to know, or a way back to the sentence. */
 .listen-status {
   position: absolute;

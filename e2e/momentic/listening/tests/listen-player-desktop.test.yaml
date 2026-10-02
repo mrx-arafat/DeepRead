@@ -27,6 +27,8 @@ steps:
         need(h('dr-spoken'), 'a spoken word should be highlighted');
         const sr = [...CSS.highlights.get('dr-sentence')][0].getBoundingClientRect();
         need(sr.bottom < bar.getBoundingClientRect().top, 'the player bar must not cover the sentence being read');
+        const column = document.querySelector('[data-block]').getBoundingClientRect();
+        need(bar.getBoundingClientRect().left >= column.right, 'on a wide window the player bar must sit in the margin, beside the text, not over it');
         return JSON.stringify({ sentence: h('dr-sentence').slice(0, 30), spokenN: window.__stub.spoken.length });
   - click:
       css: '.listen-bar button[aria-label="Pause"]'
