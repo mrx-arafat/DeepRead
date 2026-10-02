@@ -1380,8 +1380,8 @@ h5[data-block] {
 /* Chapter companion */
 
 .aid {
-  margin-top: 2.5rem;
-  padding: 1.25rem 1.5rem 1.5rem;
+  margin-top: 1.5rem;
+  padding: 0.75rem 1rem 1.25rem;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
 }
@@ -1392,17 +1392,37 @@ h5[data-block] {
 
 .aid-title {
   margin-bottom: 0.625rem;
-  font-size: 1.0625rem;
+  font-size: 1rem;
   font-weight: 700;
 }
 
-.aid-closed {
+/* Not asked for yet: one slim line, the title and a quiet way to ask, so the text below starts near the top.
+   The title keeps its place when the answer opens under it. */
+.aid[data-closed] {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  color: var(--ink-soft);
+  gap: 0.25rem 0.75rem;
+  padding: 0.375rem 0.375rem 0.375rem 1rem;
+}
+
+.aid[data-closed] .aid-title {
+  margin-bottom: 0;
+}
+
+/* A finger's button is taller, so the title sits lower in the slim line: the open box starts it as low. */
+@media (pointer: coarse) {
+  .aid {
+    padding-top: 1rem;
+  }
+}
+
+.aid-ask {
+  border-color: transparent;
+  color: var(--pen);
+  font-size: 0.9375rem;
+  font-weight: 600;
 }
 
 .aid-wait {

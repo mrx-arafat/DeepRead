@@ -10,17 +10,16 @@ type Props = {
   lang: LangCode;
 };
 
+// The actions are short so that, before it is asked for, each aid fits on one line beside its title, even on a phone.
 const COPY = {
   preview: {
     title: "Before you read",
-    prompt: "Get a short, simple preview of this chapter and its hard words.",
-    action: "Preview this chapter",
+    action: "Get a preview",
     waiting: "Reading the chapter for you...",
   },
   recap: {
     title: "What you just read",
-    prompt: "Finished? Get the key ideas of this chapter in simple words.",
-    action: "Summarize this chapter",
+    action: "Get a summary",
     waiting: "Writing your summary...",
   },
 } as const;
@@ -35,15 +34,12 @@ export function ChapterAid({ kind, bookId, chapterId, lang }: Props) {
   const copy = COPY[kind];
 
   return (
-    <section className="aid" aria-label={copy.title}>
+    <section className="aid" aria-label={copy.title} data-closed={!open || undefined}>
       <h3 className="aid-title">{copy.title}</h3>
       {!open ? (
-        <div className="aid-closed">
-          <p>{copy.prompt}</p>
-          <button type="button" className="button" onClick={() => setAskedIn(lang)}>
-            {copy.action}
-          </button>
-        </div>
+        <button type="button" className="quiet-button aid-ask" onClick={() => setAskedIn(lang)}>
+          {copy.action}
+        </button>
       ) : (
         <div aria-live="polite" aria-busy={answer.status === "loading"}>
           {answer.text ? (

@@ -17,6 +17,10 @@ type Props = {
   onDismissTip?: () => void;
 };
 
+// Below this (about three minutes), a section is read faster than a preview of it, and a box before and after it
+// would take more room than its text.
+const AID_MIN_WORDS = 500;
+
 /**
  * One chapter as the book flows past: where it sits, its title, a preview, the text and a recap.
  * Memoized: scrolling and popovers re-render the reader, and a long book must not re-render every chapter with it.
@@ -27,6 +31,8 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
   const kind = kindOf(summary ?? chapter);
   const position = chapterPosition(book.chapters, chapter.id);
   const headingId = titleId(chapter.id);
+  // A title page or a licence needs no preview or summary, and neither does a one-page preface.
+  const aids = kind === "body" && (summary?.wordCount ?? 0) >= AID_MIN_WORDS;
 
   return (
     <article className="chapter" data-chapter={chapter.id} aria-labelledby={headingId}>
@@ -43,11 +49,10 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
         <h2 id={headingId}>{chapter.title}</h2>
       </header>
 
-      {/* A title page or a licence needs no preview or summary. */}
-      {kind === "body" && <ChapterAid kind="preview" bookId={book.id} chapterId={chapter.id} lang={lang} />}
+      {aids && <ChapterAid kind="preview" bookId={book.id} chapterId={chapter.id} lang={lang} />}
       {onDismissTip && <LookupTip onDismiss={onDismissTip} />}
       <ChapterText blocks={blocks} notes={notes} bookId={book.id} chapterId={chapter.id} actions={actions} />
-      {kind === "body" && <ChapterAid kind="recap" bookId={book.id} chapterId={chapter.id} lang={lang} />}
+      {aids && <ChapterAid kind="recap" bookId={book.id} chapterId={chapter.id} lang={lang} />}
     </article>
   );
 });

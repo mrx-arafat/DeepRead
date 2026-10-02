@@ -12,8 +12,9 @@ steps:
   - waitForUrl:
       substring: /book/
       timeout: 15000
-  - checkPageContains:
-      text: Before you read
+  # Wait for the book text, not a preview box: a short section such as the preface has none.
+  - checkElementVisible:
+      css: "main.page > article.chapter:nth-of-type(1) .chapter-text"
       timeout: 20000
   - click:
       css: button[aria-label="Chapters"]

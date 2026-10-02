@@ -1,0 +1,37 @@
+fileType: momentic/test/v2
+id: dr-read-chapter-aids-phone
+description: "At phone 390: a one-page section has no preview or summary box, and a full chapter offers each as one slim line, so the text starts near the top of the screen."
+viewport: "390, 844"
+steps:
+  - module: ./modules/open-book.module.yaml
+  # The preface is 121 words: quicker to read than any preview of it.
+  - navigate: /book/{{ env.BOOK_ID }}/c2
+  - checkPageContains:
+      text: In the following pages
+      timeout: 15000
+  - javascript:
+      environment: browser
+      code: |-
+        const preface = document.querySelector('article[data-chapter="c2"]');
+        const aids = [...preface.querySelectorAll('section.aid')].map((aid) => aid.getAttribute('aria-label'));
+        if (aids.length) throw new Error(`the one-page preface still shows: ${aids.join(', ')}`);
+  - navigate: /book/{{ env.BOOK_ID }}/c3
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - javascript:
+      environment: browser
+      code: |-
+        const chapter = document.querySelector('article[data-chapter="c3"]');
+        for (const label of ['Before you read', 'What you just read']) {
+          const aid = chapter.querySelector(`section[aria-label="${label}"]`);
+          if (!aid) throw new Error(`Chapter I has no "${label}"`);
+          const height = Math.round(aid.getBoundingClientRect().height);
+          if (height > 70) throw new Error(`"${label}" is ${height}px tall, not one slim line`);
+          if (!aid.querySelector('button')) throw new Error(`"${label}" has no button to ask for it`);
+        }
+        const first = chapter.querySelector('.chapter-text p').getBoundingClientRect();
+        if (first.top > innerHeight * 0.6) throw new Error(`the chapter's first paragraph starts at y=${Math.round(first.top)} of ${innerHeight}`);
+  - assertVisually:
+      that: A chapter opens with a clear heading, a small line above it, one slim "Before you read" line with a button, and then paragraphs of book text. Nothing overlaps or is cut off
+      timeout: 20000
