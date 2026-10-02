@@ -1159,13 +1159,35 @@ h5[data-block] {
   line-height: 1.8;
 }
 
-/* Wide screens: explanations move into the margin, level with their paragraph, like notes in a textbook. */
+/* Wide screens: explanations move into the margin, level with their paragraph, like notes in a textbook.
+   The text is centred while the margin is empty. Once a note or the player is in it, the text moves left only as far
+   as the margin needs, and on a very wide screen not at all. The column is never so wide that the margin cannot fit. */
 @media (min-width: 72rem) {
   .chapter,
   .flow-back,
   .flow-end {
-    max-width: calc(var(--column) + var(--gutter) + var(--margin-note));
-    padding-right: calc(var(--gutter) + var(--margin-note));
+    --text-width: min(var(--column), 100% - var(--gutter) - var(--margin-note));
+
+    max-width: var(--text-width);
+    margin-left: calc((100% - var(--text-width)) / 2);
+    transition: margin-left 0.25s ease-out;
+  }
+
+  .reader:has(.note, .listen-bar) :is(.chapter, .flow-back, .flow-end) {
+    margin-left: min((100% - var(--text-width)) / 2, 100% - var(--text-width) - var(--gutter) - var(--margin-note));
+  }
+
+  /* While the text slides over, a note can reach past the window edge for a moment: never as a sideways scroll. */
+  .page {
+    overflow-x: clip;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chapter,
+    .flow-back,
+    .flow-end {
+      transition: none;
+    }
   }
 
   .row {
@@ -1443,11 +1465,13 @@ h5[data-block] {
 }
 
 /* Wide screens: the player sits at the foot of the margin, where the notes go, so it covers none of the text.
-   The chapter (text, gutter, margin) is centred, so the margin starts half its width right of the window's middle,
-   less the margin itself. */
+   The margin starts a gutter right of the text column, which the player moves left as far as the margin needs
+   (see the chapter's wide-screen rules; 1.5rem is the page's side padding). */
 @media (min-width: 72rem) {
   .listen-bar {
-    left: calc(50% + (var(--column) + var(--gutter) + var(--margin-note)) / 2 - var(--margin-note));
+    --text-width: min(var(--column), 100% - 3rem - var(--gutter) - var(--margin-note));
+
+    left: min(50% + var(--text-width) / 2 + var(--gutter), 100% - 1.5rem - var(--margin-note));
     transform: none;
   }
 

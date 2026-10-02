@@ -9,6 +9,11 @@ steps:
       that: The reading page shows a top bar and the book text under it, with no overlapping elements
       timeout: 20000
   - module: ./modules/metrics.module.yaml
+  # No notes yet, so nothing is in the margin: the text sits in the middle of the window.
+  - javascript: |-
+      const m = JSON.parse(env.METRICS);
+      const off = Math.round(m.text.x + m.text.w / 2 - m.viewport.w / 2);
+      assert(Math.abs(off) <= 10, `with no notes the text column sits ${off}px off the middle of the window`)
   - scrollDown: 700
   - assertVisually:
       that: The text on screen is book prose or front matter set in a serif typeface with comfortable spacing between paragraphs, and nothing overlaps. A line cut off cleanly at the lower edge of the top bar has only scrolled under the bar and is fine
