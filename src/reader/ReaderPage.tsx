@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import type { BookDetail, ExplainMode } from "../../shared/types.ts";
 import { api } from "../api.ts";
+import { readerTitle, useDocumentTitle } from "../pageTitle.ts";
 import { usePrefs } from "../prefs.ts";
 import { readableBlocks } from "./book.ts";
 import { ChapterList } from "./ChapterList.tsx";
@@ -146,6 +147,10 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   }
 
   const pageError = error ?? flow.error;
+  const currentTitle = book?.chapters.find((item) => item.id === position.chapterId)?.title;
+  // The tab and the history menu name the book and the chapter being read, so several tabs do not look alike.
+  useDocumentTitle(readerTitle(pageError ? undefined : book?.title, currentTitle));
+
   if (pageError) {
     return (
       <main className="page-message">
@@ -156,8 +161,6 @@ export function ReaderPage({ bookId, chapterId }: Props) {
       </main>
     );
   }
-
-  const currentTitle = book?.chapters.find((item) => item.id === position.chapterId)?.title;
 
   return (
     <div className="reader">

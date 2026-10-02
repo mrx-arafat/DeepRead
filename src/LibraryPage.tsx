@@ -7,6 +7,7 @@ import { api } from "./api.ts";
 import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
 import { addFailure, shortTitle } from "./library/bookText.ts";
+import { APP_NAME, useDocumentTitle } from "./pageTitle.ts";
 import { usePrefs } from "./prefs.ts";
 
 const ADD_BUTTON = "add";
@@ -33,6 +34,7 @@ function forgetNotes(bookId: string): void {
 
 export function LibraryPage() {
   const [, navigate] = useLocation();
+  useDocumentTitle(`Your books - ${APP_NAME}`);
   const { lang } = usePrefs();
   const [books, setBooks] = useState<BookSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
