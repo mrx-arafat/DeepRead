@@ -3,6 +3,7 @@ import type { Block } from "../../shared/types.ts";
 import { speak, whenVoiceFree } from "./speech.ts";
 import { placeInView, scrollTopFor, type Place } from "./sentenceView.ts";
 import { rangeInBlock, sentenceIndex, sentencesOf, setHighlight, wordAt, type SentenceAt } from "./textRanges.ts";
+import { forSpeech, pauseBetween } from "./voicing.ts";
 
 /** What the page can say about the chapter that follows the last one on it. */
 export type NextChapter = {
@@ -59,6 +60,9 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   // instead of the sentence's beginning. The engines' own pause and resume are not used: Chrome on Android has no
   // pause, and its network voices stall after a resume.
   const resume = useRef<{ place: string; offset: number } | null>(null);
+  // The silence to leave before the next sentence starts, when reading carries on by itself (see voicing.ts).
+  const gap = useRef(0);
+  const titles = useMemo(() => new Set(blocks.filter((block) => block.type === "heading").map((block) => block.id)), [blocks]);
 
   const index = useMemo(() => (at ? sentenceIndex(sentences, at) : -1), [sentences, at]);
   const sentence = index === -1 ? null : (sentences[index] ?? null);
@@ -81,6 +85,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
     const after = done === -1 ? undefined : sentences[done + 1];
     if (!after) return;
     setWaiting(false);
+    gap.current = pauseBetween({ blockId: at.blockId, title: false }, after, rate);
     setAt({ blockId: after.blockId, start: after.start });
   }, [waiting, sentences, at]);
 
@@ -157,41 +162,52 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
     if (!playing || !sentence || !place) return;
     setWaiting(false);
     const from = resume.current?.place === place ? resume.current.offset : 0;
+    const voiced = forSpeech(sentence.text.slice(from));
+    // A pause or a new speed during the silence starts this sentence at once when the reader presses Play again.
+    const silence = gap.current;
+    gap.current = 0;
     let unwait = () => {};
-    const cancel = speak(sentence.text.slice(from), {
-      rate,
-      onWord: (start) => {
-        const word = wordAt(sentence.text, from + start);
-        if (word) resume.current = { place, offset: word.start };
-        const span = word && { start: sentence.start + word.start, end: sentence.start + word.end };
-        setHighlight("dr-spoken", span ? rangeInBlock(sentence.blockId, span) : null);
-      },
-      onEnd: () => {
-        resume.current = null;
-        const list = latest.current;
-        const done = sentenceIndex(list, sentence);
-        const after = done === -1 ? undefined : list[done + 1];
-        if (after) {
-          setAt({ blockId: after.blockId, start: after.start });
-        } else if (following.current.coming) {
-          // The next chapter is not on the page yet: ask for it (the reader may be far from where it loads
-          // by itself) and carry on when it arrives.
-          setWaiting(true);
-          following.current.open();
-        } else {
+    let cancel = () => {};
+    const start = () => {
+      cancel = speak(voiced.text, {
+        rate,
+        onWord: (offset) => {
+          const word = wordAt(sentence.text, from + voiced.original(offset));
+          if (word) resume.current = { place, offset: word.start };
+          const span = word && { start: sentence.start + word.start, end: sentence.start + word.end };
+          setHighlight("dr-spoken", span ? rangeInBlock(sentence.blockId, span) : null);
+        },
+        onEnd: () => {
+          resume.current = null;
+          const list = latest.current;
+          const done = sentenceIndex(list, sentence);
+          const after = done === -1 ? undefined : list[done + 1];
+          if (after) {
+            gap.current = pauseBetween({ blockId: sentence.blockId, title: titles.has(sentence.blockId) }, after, rate);
+            setAt({ blockId: after.blockId, start: after.start });
+          } else if (following.current.coming) {
+            // The next chapter is not on the page yet: ask for it (the reader may be far from where it loads
+            // by itself) and carry on when it arrives.
+            setWaiting(true);
+            following.current.open();
+          } else {
+            setPlaying(false);
+          }
+        },
+        // Something else took the voice (a word said from its card): carry on with this sentence once it is done.
+        onInterrupted: () => {
+          unwait = whenVoiceFree(() => setAgain((count) => count + 1));
+        },
+        onError: (message) => {
           setPlaying(false);
-        }
-      },
-      // Something else took the voice (a word said from its card): carry on with this sentence once it is done.
-      onInterrupted: () => {
-        unwait = whenVoiceFree(() => setAgain((count) => count + 1));
-      },
-      onError: (message) => {
-        setPlaying(false);
-        setError(message);
-      },
-    });
+          setError(message);
+        },
+      });
+    };
+    const timer = silence > 0 ? window.setTimeout(start, silence) : undefined;
+    if (!timer) start();
     return () => {
+      window.clearTimeout(timer);
       unwait();
       cancel();
       setHighlight("dr-spoken", null);
