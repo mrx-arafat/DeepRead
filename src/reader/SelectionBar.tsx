@@ -10,9 +10,14 @@ type Props = {
   lang: LangCode;
   /** Opened from the keyboard: move focus to the first button. */
   autoFocus?: boolean;
+  /** Selected by touch: the phone's own Copy menu sits above the text, so the bar goes below, clear of the handle. */
+  touch?: boolean;
   onExplain: (mode: ExplainMode) => void;
   onListen: () => void;
 };
+
+// The end handle hangs about 24px below the last selected line on Android and iOS.
+const TOUCH_HANDLE_CLEARANCE = 32;
 
 /** Left and Right move between the buttons, as in any toolbar. */
 function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
@@ -25,10 +30,10 @@ function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
 }
 
 /** The small bar that appears over selected text: how do you want this explained? */
-export function SelectionBar({ range, lang, autoFocus, onExplain, onListen }: Props) {
+export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListen }: Props) {
   const { refs, floatingStyles } = useFloating({
-    placement: "top",
-    middleware: [inline(), offset(8), flip({ padding: 64 }), shift({ padding: 12 })],
+    placement: touch ? "bottom" : "top",
+    middleware: [inline(), offset(touch ? TOUCH_HANDLE_CLEARANCE : 8), flip({ padding: 64, crossAxis: false }), shift({ padding: 12 })],
     whileElementsMounted: autoUpdate,
   });
   useLayoutEffect(() => {

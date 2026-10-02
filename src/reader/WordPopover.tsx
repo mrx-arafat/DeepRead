@@ -13,8 +13,8 @@ export type Lookup = {
   text: string;
   chapterId: string;
   blockId: string;
-  /** Asked for from the keyboard, so the bar that opens takes focus. */
-  keyboard?: boolean;
+  /** How the reader asked: from the keyboard the bar that opens takes focus; by touch it opens below the text. */
+  via?: "mouse" | "keyboard" | "touch";
 };
 
 type Props = {

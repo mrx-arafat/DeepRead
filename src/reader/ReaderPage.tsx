@@ -266,7 +266,8 @@ export function ReaderPage({ bookId, chapterId }: Props) {
         <SelectionBar
           range={selection.range}
           lang={prefs.lang}
-          autoFocus={selection.keyboard}
+          autoFocus={selection.via === "keyboard"}
+          touch={selection.via === "touch"}
           onExplain={explain}
           onListen={() => listenFrom(selection)}
         />

@@ -1,4 +1,4 @@
-import { memo, useRef, type MouseEvent } from "react";
+import { memo, useEffect, useEffectEvent, useRef, type MouseEvent } from "react";
 import type { Block, LangCode } from "../../shared/types.ts";
 import { NoteCard, type Note } from "./NoteCard.tsx";
 import { blockOf, termSpan, wordRangeAtPoint } from "./textRanges.ts";
@@ -26,6 +26,9 @@ type Props = {
 // The book is the page's h1 and each chapter title an h2, so headings inside the text start at h3.
 const HEADING_TAGS = { 1: "h3", 2: "h4", 3: "h5" } as const;
 
+// How long a touch selection must rest before the bar offers explanations: the handles may still be moving.
+const TOUCH_SETTLE_MS = 400;
+
 /** One block of book text. Must stay a single text node: word and sentence ranges rely on it. */
 const BlockText = memo(function BlockText({ block, tabbable }: { block: Block; tabbable: boolean }) {
   const tabIndex = tabbable ? 0 : -1;
@@ -48,10 +51,10 @@ const BlockText = memo(function BlockText({ block, tabbable }: { block: Block; t
 export function ChapterText({ blocks, notes, bookId, chapterId, lang, actions }: Props) {
   const { onWord, onSelect, onDismiss, onCloseNote } = actions;
   const container = useRef<HTMLDivElement>(null);
-  const cursor = useWordCursor(blocks[0]?.id, (word) => ask(word, true));
+  const cursor = useWordCursor(blocks[0]?.id, (word) => ask(word, "keyboard"));
 
   /** Ask about the selected text if there is any, else about `word`; with neither, close what is open. */
-  function ask(word: Range | null, keyboard: boolean) {
+  function ask(word: Range | null, via: "mouse" | "keyboard" | "touch") {
     const selection = window.getSelection();
     const selected = selection?.toString().trim() ?? "";
     if (selection && !selection.isCollapsed && selected) {
@@ -61,7 +64,8 @@ export function ChapterText({ blocks, notes, bookId, chapterId, lang, actions }:
       if (!block?.dataset.block || !container.current?.contains(block)) return;
       const blockId = block.dataset.block;
       // A word or a short term ("a priori") gets its meaning, like a tap; anything longer is a passage to explain.
-      const term = range.startContainer === range.endContainer ? termSpan(range.toString()) : null;
+      // Not by touch: a long-press selects one word first, and its handles must stay to drag over the rest.
+      const term = range.startContainer === range.endContainer && via !== "touch" ? termSpan(range.toString()) : null;
       if (term) {
         const from = range.startOffset;
         range.setStart(range.startContainer, from + term.start);
@@ -69,7 +73,7 @@ export function ChapterText({ blocks, notes, bookId, chapterId, lang, actions }:
         selection.removeAllRanges();
         onWord({ range, text: range.toString(), chapterId, blockId });
       } else {
-        onSelect({ range, text: selected.slice(0, 1500), chapterId, blockId, keyboard });
+        onSelect({ range, text: selected.slice(0, 1500), chapterId, blockId, via });
       }
       return;
     }
@@ -85,9 +89,45 @@ export function ChapterText({ blocks, notes, bookId, chapterId, lang, actions }:
     setTimeout(() => {
       const word = wordRangeAtPoint(clientX, clientY);
       if (word) cursor.placeAt(word);
-      ask(word, false);
+      ask(word, "mouse");
     }, 0);
   }
+
+  // A touch selection is made by a long-press and the handles, and neither sends a mouseup. So after a touch,
+  // follow the selection itself: hide the bar while the handles move, and offer it again once they rest.
+  // Mouse selections stay with mouseup, and keyboard ones with Enter, so neither pops the bar mid-selection.
+  const askByTouch = useEffectEvent(() => ask(null, "touch"));
+  useEffect(() => {
+    let touch = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onPointerDown = (event: PointerEvent) => {
+      touch = event.pointerType !== "mouse";
+    };
+    // A key, or a mouseup (a pen, a double-tap), hands the selection back to the keyboard or the mouse.
+    const onOtherInput = () => {
+      touch = false;
+      clearTimeout(timer);
+    };
+    const onSelectionChange = () => {
+      clearTimeout(timer);
+      const selection = window.getSelection();
+      // A collapsed selection is a tap, which mouseup already handles.
+      if (!touch || !selection || selection.isCollapsed || !container.current?.contains(selection.anchorNode)) return;
+      onDismiss();
+      timer = setTimeout(askByTouch, TOUCH_SETTLE_MS);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onOtherInput, true);
+    document.addEventListener("mouseup", onOtherInput, true);
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onOtherInput, true);
+      document.removeEventListener("mouseup", onOtherInput, true);
+      document.removeEventListener("selectionchange", onSelectionChange);
+    };
+  }, [onDismiss]);
 
   return (
     <div

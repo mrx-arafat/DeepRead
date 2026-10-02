@@ -1,0 +1,50 @@
+fileType: momentic/test/v2
+id: dr-und-touch-selection-phone
+description: "Journey 3 on a phone 390. Long-press a word and drag the selection handles over a sentence: the Explain bar must appear, below the selection where the phone's own menu is not. Touch is simulated the way a phone delivers it: a touch pointerdown, then selection changes with no mouseup, since handle drags send the page nothing."
+viewport: "390, 844"
+steps:
+  - module:
+      path: ./modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+        PHRASE:
+          string: Is there any knowledge in the world which is so certain that no reasonable man could doubt it?
+  - javascript:
+      environment: browser
+      saveAs: TOUCH_SELECTION
+      code: |-
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        const phrase = "Is there any knowledge in the world which is so certain that no reasonable man could doubt it?";
+        const block = document.querySelector(`[data-block="${env.TEXT_AT.block}"]`);
+        const text = block.firstChild;
+        const at = text.data.indexOf(phrase);
+        const selection = getSelection();
+        // A long-press: the finger lands on the first word and the phone selects it. No mouseup ever follows.
+        block.dispatchEvent(new PointerEvent("pointerdown", { pointerType: "touch", bubbles: true, clientX: env.TEXT_AT.sx, clientY: env.TEXT_AT.sy }));
+        selection.setBaseAndExtent(text, at, text, at + 2);
+        await wait(1000);
+        // The word must stay selected, or its handles vanish and the reader cannot drag them over the sentence.
+        if (selection.toString() !== "Is") throw new Error(`the long-pressed word lost its selection: "${selection}"`);
+        // Dragging the end handle changes only the selection.
+        selection.setBaseAndExtent(text, at, text, at + phrase.length);
+        await wait(1000);
+        const bar = document.querySelector(".selection-bar");
+        if (!bar) throw new Error("no Explain bar after a touch selection");
+        const rects = [...selection.getRangeAt(0).getClientRects()].filter((r) => r.width > 0);
+        const last = rects[rects.length - 1];
+        const box = bar.getBoundingClientRect();
+        // The phone's own Copy menu sits above a selection, and the end handle hangs about 24px below its last line.
+        if (box.top < last.bottom + 24) throw new Error(`the bar (top ${Math.round(box.top)}) is not clear below the selection's handle (last line ends ${Math.round(last.bottom)})`);
+        return { selected: selection.toString(), barTop: Math.round(box.top), lastLineBottom: Math.round(last.bottom) };
+  - checkElementVisible:
+      css: .selection-bar
+      timeout: 5000
+  - assertVisually:
+      that: The sentence starting "Is there any knowledge in the world" is highlighted as selected, and a small toolbar with the buttons Explain, Example, "In Bangla" and Listen sits just below its last line, fully on screen and not covering any selected words
+      timeout: 10000
