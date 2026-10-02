@@ -4,6 +4,7 @@ import { chapterPosition, kindOf, minutes, readableBlocks } from "./book.ts";
 import { ChapterAid } from "./ChapterAid.tsx";
 import { ChapterText, type TextActions } from "./ChapterText.tsx";
 import { titleId } from "./listenBlocks.ts";
+import { LookupTip } from "./LookupTip.tsx";
 import type { Note } from "./NoteCard.tsx";
 
 type Props = {
@@ -12,13 +13,15 @@ type Props = {
   notes: Note[];
   lang: LangCode;
   actions: TextActions;
+  /** Shows the how-to-look-things-up tip above the text; closing it calls this. */
+  onDismissTip?: () => void;
 };
 
 /**
  * One chapter as the book flows past: where it sits, its title, a preview, the text and a recap.
  * Memoized: scrolling and popovers re-render the reader, and a long book must not re-render every chapter with it.
  */
-export const ChapterSection = memo(function ChapterSection({ chapter, book, notes, lang, actions }: Props) {
+export const ChapterSection = memo(function ChapterSection({ chapter, book, notes, lang, actions, onDismissTip }: Props) {
   const blocks = useMemo(() => readableBlocks(chapter), [chapter]);
   const summary = book.chapters.find((item) => item.id === chapter.id);
   const kind = kindOf(summary ?? chapter);
@@ -42,6 +45,7 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
 
       {/* A title page or a licence needs no preview or summary. */}
       {kind === "body" && <ChapterAid kind="preview" bookId={book.id} chapterId={chapter.id} lang={lang} />}
+      {onDismissTip && <LookupTip onDismiss={onDismissTip} />}
       <ChapterText blocks={blocks} notes={notes} bookId={book.id} chapterId={chapter.id} actions={actions} />
       {kind === "body" && <ChapterAid kind="recap" bookId={book.id} chapterId={chapter.id} lang={lang} />}
     </article>

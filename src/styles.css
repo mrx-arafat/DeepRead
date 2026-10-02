@@ -955,6 +955,81 @@ li:not(.toc-matter) + .toc-matter {
   line-height: 1.7;
 }
 
+/* A first-visit hint above the first paragraph (beside it on wide screens): how to ask about a word or a passage.
+   Quiet by design: a pointing hand and one marked phrase, no box, so it never looks like an explanation. */
+.tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin-top: 1.5rem;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.tip-icon {
+  flex: none;
+  margin-top: 0.25rem;
+  color: var(--pen);
+}
+
+.tip + .chapter-text {
+  margin-top: 1.5rem;
+}
+
+/* Used: it fades but keeps its height, so the text below does not jump up under the reader's finger. */
+.tip[data-used] {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.3s,
+    visibility 0s 0.3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tip[data-used] {
+    transition: none;
+  }
+}
+
+.tip-text {
+  flex: 1;
+  min-width: 0;
+  padding-top: 0.125rem;
+  /* No lone word on the last line. */
+  text-wrap: pretty;
+}
+
+/* The phrase to act on, marked the way a looked-up word is marked in the text. */
+.tip-word {
+  padding: 0 0.2em;
+  border-radius: 2px;
+  background: var(--marker);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.tip .icon-button {
+  width: 2rem;
+  height: 2rem;
+  margin-top: -0.125rem;
+}
+
+/* Say what the reader's own device does: a touch screen taps and presses, a mouse clicks and selects. */
+.tip-touch {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .tip-touch {
+    display: inline;
+  }
+
+  .tip-mouse {
+    display: none;
+  }
+}
+
 /* `[data-block]` is the book's own text; notes live in the same container and must not inherit this. */
 p[data-block] {
   margin-bottom: 1.15em;
@@ -1103,6 +1178,18 @@ h5[data-block] {
     width: var(--margin-note);
     margin-right: calc(-1 * (var(--gutter) + var(--margin-note)));
     margin-bottom: 1rem;
+  }
+
+  /* In the margin, level with the first paragraph (which starts 2.5rem below what comes before it). */
+  .tip {
+    float: right;
+    clear: right;
+    width: var(--margin-note);
+    margin: 2.5rem calc(-1 * (var(--gutter) + var(--margin-note))) 0 0;
+  }
+
+  .tip + .chapter-text {
+    margin-top: 2.5rem;
   }
 }
 
@@ -1509,7 +1596,8 @@ h5[data-block] {
    so reading one-handed does not hit Stop instead of Next. A mouse keeps the compact sizes. */
 @media (pointer: coarse) {
   .icon-button,
-  .note-head .icon-button {
+  .note-head .icon-button,
+  .tip .icon-button {
     width: 2.75rem;
     height: 2.75rem;
   }

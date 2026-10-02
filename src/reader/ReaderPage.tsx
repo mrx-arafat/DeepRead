@@ -11,6 +11,7 @@ import { ChapterSection } from "./ChapterSection.tsx";
 import type { TextActions } from "./ChapterText.tsx";
 import { ListenBar } from "./ListenBar.tsx";
 import { listenBlocks } from "./listenBlocks.ts";
+import { lookupTipDone, markLookupTipDone } from "./lookupTip.ts";
 import { ReadingSettings } from "./ReadingSettings.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
 import { canSpeak } from "./speech.ts";
@@ -32,6 +33,8 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const [tocOpen, setTocOpen] = useState(false);
   const [word, setWord] = useState<Lookup | null>(null);
   const [selection, setSelection] = useState<Lookup | null>(null);
+  // Until the reader has looked something up, a tip beside the first chapter shows how.
+  const [tipOpen, setTipOpen] = useState(() => !lookupTipDone());
   const { notes, addNote, removeNote, removed, restoreNote, forgetRemoved } = useNotes(bookId, prefs.lang);
   const [undoFocus, setUndoFocus] = useState(false);
   const focusNote = useRef<string | null>(null);
@@ -63,9 +66,11 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const focusPlayer = useRef(false);
 
   // The book restarted at another chapter: open popovers would point into text that is gone.
+  // A tip the reader has already used (and that was only fading) goes now, rather than reappearing here.
   useEffect(() => {
     setWord(null);
     setSelection(null);
+    if (lookupTipDone()) setTipOpen(false);
   }, [first]);
 
   useEffect(() => {
@@ -121,7 +126,15 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     playButton.current.focus();
   });
 
+  const closeTip = useCallback(() => {
+    markLookupTipDone();
+    setTipOpen(false);
+  }, []);
+
+  // A word looked up or an explanation asked for means the tip has done its job. A mere selection does not:
+  // the reader may still be adjusting it with the handles.
   const handleWord = useCallback((lookup: Lookup) => {
+    markLookupTipDone();
     setSelection(null);
     setWord(lookup);
   }, []);
@@ -159,6 +172,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
 
   function explain(mode: ExplainMode) {
     if (!selection) return;
+    markLookupTipDone();
     addNote({ chapterId: selection.chapterId, blockId: selection.blockId, quote: selection.text, mode });
     window.getSelection()?.removeAllRanges();
     setSelection(null);
@@ -270,8 +284,16 @@ export function ReaderPage({ bookId, chapterId }: Props) {
                 </Link>
               </p>
             )}
-            {flow.chapters.map((chapter) => (
-              <ChapterSection key={chapter.id} chapter={chapter} book={book} notes={notes} lang={prefs.lang} actions={actions} />
+            {flow.chapters.map((chapter, index) => (
+              <ChapterSection
+                key={chapter.id}
+                chapter={chapter}
+                book={book}
+                notes={notes}
+                lang={prefs.lang}
+                actions={actions}
+                onDismissTip={index === 0 && tipOpen ? closeTip : undefined}
+              />
             ))}
             {flow.nextError ? (
               <p className="flow-end">

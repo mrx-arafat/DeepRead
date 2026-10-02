@@ -1,0 +1,62 @@
+fileType: momentic/test/v2
+id: dr-und-lookup-tip-desktop
+description: Journey 9 at desktop 1440. A first-time reader opens Chapter I and finds a quiet tip in the empty right margin saying how to ask about a word or a passage. Looking a word up fades it, and it stays gone after a reload.
+viewport: "1440, 900"
+steps:
+  # Straight to the chapter, so it is the first on the page whatever place the book was left at.
+  - navigate: /book/the-problems-of-philosophy-8c4e7684/c3
+  - checkElementVisible:
+      css: article[data-chapter="c3"] h2
+      timeout: 20000
+  - javascript:
+      environment: browser
+      code: |-
+        // The reader reopens a saved place after the chapter loads; start from the top of the chapter.
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        window.scrollTo(0, 0);
+  - checkElementVisible:
+      css: .tip
+      timeout: 5000
+  # The tip names a mouse's actions, sits in the margin level with the first paragraph, and covers none of the text.
+  - javascript:
+      environment: browser
+      code: |-
+        const tip = document.querySelector(".tip");
+        const first = document.querySelector('article[data-chapter="c3"] [data-block]');
+        const text = tip.innerText;
+        if (!/Click any word/.test(text) || !/Select a passage/.test(text)) throw new Error(`the tip does not say how to look things up with a mouse: "${text}"`);
+        const t = tip.getBoundingClientRect();
+        const p = first.getBoundingClientRect();
+        if (t.left < p.right) throw new Error(`the tip (left ${Math.round(t.left)}) overlaps the text column (right edge ${Math.round(p.right)})`);
+        if (Math.abs(t.top - p.top) > 24) throw new Error(`the tip (top ${Math.round(t.top)}) is not level with the first paragraph (top ${Math.round(p.top)})`);
+        if (!tip.querySelector('button[aria-label="Dismiss tip"]')) throw new Error("the tip has no way to be dismissed");
+  - assertVisually:
+      that: A short, quiet tip in the empty margin to the right of the first paragraph says to click any word for its meaning and to select a passage to get it explained, with the words "any word" highlighted and a small close button. It does not overlap the book text
+      timeout: 10000
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+        PHRASE:
+          string: scrutiny
+  - click:
+      x: "{{ env.TEXT_AT.cx }}"
+      y: "{{ env.TEXT_AT.cy }}"
+  - checkElementVisible:
+      css: .word-popover
+      timeout: 5000
+  # Used: the tip fades out (and so cannot be tabbed to), keeping its place so the text does not move.
+  - javascript:
+      environment: browser
+      code: |-
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        const tip = document.querySelector(".tip");
+        if (tip && getComputedStyle(tip).visibility !== "hidden") throw new Error("the tip is still showing after the reader looked a word up");
+  # A reload starts a new visit: the reader already knows, so the tip is not there at all.
+  - refresh
+  - checkElementVisible:
+      css: article[data-chapter="c3"] h2
+      timeout: 20000
+  - checkElementDoesNotExist:
+      css: .tip
