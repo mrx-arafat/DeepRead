@@ -11,10 +11,14 @@ steps:
       environment: browser
       code: window.__stub.wordMs = 800; return 'slow';
   - click:
-      coords: 1119, 25
+      css: '.topbar-tools button[aria-pressed]'
   - wait: 600
   - module: ../modules/axe-scan.module.yaml
+  # The dark page is chosen in the Aa menu.
   - click:
-      coords: 1408, 25
+      css: 'button[popovertarget="reading-settings"]'
+  - click:
+      css: '#reading-settings input[value="dark"]'
+  - press: Escape
   - wait: 500
   - module: ../modules/axe-scan.module.yaml

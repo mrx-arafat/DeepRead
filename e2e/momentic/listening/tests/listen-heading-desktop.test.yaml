@@ -33,8 +33,20 @@ steps:
         }, 60);
         return 'trap set';
   - click:
-      coords: 1119, 25
-  - wait: 9000
+      css: '.topbar-tools button[aria-pressed]'
+  # Reading leaves a reader's pause after every sentence and around headings, so wait until the heading itself is
+  # being spoken (its sentence and its spoken word are both marked).
+  - javascript:
+      environment: browser
+      timeout: 70000
+      code: |-
+        const speaking = () => {
+          const sentence = CSS.highlights.get('dr-sentence');
+          const el = sentence && [...sentence][0].startContainer.parentElement;
+          return el && el.tagName === 'H2' && CSS.highlights.get('dr-spoken');
+        };
+        for (let waited = 0; waited < 60000 && !speaking(); waited += 50) await new Promise((resolve) => setTimeout(resolve, 50));
+        return window.__seen.length;
   - javascript:
       environment: browser
       saveAs: SEEN

@@ -28,7 +28,15 @@ steps:
       css: '.word-popover .quiet-button'
   - wait: 2500
   - module: ../modules/read-listen-state.module.yaml
-  - wait: 6000
+  # Reading leaves a reader's pause after the last paragraph and after the title, so wait until the next chapter's first sentence is read.
+  - javascript:
+      environment: browser
+      timeout: 40000
+      code: |-
+        const reached = () => window.__stub.spoken.some((s) => s.text.startsWith('Is there any knowledge'));
+        for (let waited = 0; waited < 30000 && !reached(); waited += 200) await new Promise((resolve) => setTimeout(resolve, 200));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        return location.pathname;
   - javascript:
       environment: browser
       saveAs: CROSSING

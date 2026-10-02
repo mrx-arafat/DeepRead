@@ -11,7 +11,7 @@ steps:
       environment: browser
       code: window.__stub.wordMs = 800; return 'slow';
   - click:
-      coords: 1119, 25
+      css: '.topbar-tools button[aria-pressed]'
   - wait: 600
   - javascript:
       environment: browser

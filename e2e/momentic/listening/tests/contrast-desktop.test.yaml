@@ -11,7 +11,7 @@ steps:
       environment: browser
       code: window.__stub.wordMs = 900; return 'slow';
   - click:
-      coords: 1119, 25
+      css: '.topbar-tools button[aria-pressed]'
   - wait: 700
   - module: ../modules/contrast-scan.module.yaml
   - click:
@@ -23,8 +23,12 @@ steps:
       timeout: 5000
   - wait: 1500
   - module: ../modules/contrast-scan.module.yaml
+  # The dark page is chosen in the Aa menu.
   - click:
-      coords: 1408, 25
+      css: 'button[popovertarget="reading-settings"]'
+  - click:
+      css: '#reading-settings input[value="dark"]'
+  - press: Escape
   - wait: 500
   - module: ../modules/contrast-scan.module.yaml
   - mouseDrag:
