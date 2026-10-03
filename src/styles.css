@@ -617,6 +617,12 @@ select {
   background: var(--paper);
 }
 
+/* The bar is always on screen, but it sits inside the page's scroll-padding-top, so focusing one of its controls
+   (by Tab, or when the player closes) scrolled the book up about 460px to clear the bar from itself. */
+.topbar * {
+  scroll-margin-top: calc(-1 * (var(--topbar) + 1.5rem));
+}
+
 .topbar-title {
   flex: 1;
   min-width: 0;
