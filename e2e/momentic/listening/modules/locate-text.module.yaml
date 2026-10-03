@@ -23,7 +23,9 @@ steps:
         };
         await settle();
         const word = new RegExp(`(^|[^\\p{L}])(${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})(?![\\p{L}])`, "u");
-        for (const block of document.querySelectorAll("main.page [data-block]")) {
+        // The chapter in the address first: the one before it is on the page too, above it.
+        const here = `main.page [data-chapter="${location.pathname.split("/").pop()}"] [data-block]`;
+        for (const block of [...document.querySelectorAll(here), ...document.querySelectorAll("main.page [data-block]")]) {
           const node = block.firstChild;
           const match = node && node.data ? word.exec(node.data) : null;
           if (!match) continue;

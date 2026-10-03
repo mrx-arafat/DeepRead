@@ -17,11 +17,15 @@ type Spot = { chapter: HTMLElement; block: HTMLElement | null; blocks: NodeListO
 /** Where the reader's eyes are: just under the top bar. */
 export const EYE_LINE = 96;
 
-const bottomOf = (elements: NodeListOf<HTMLElement>, row: boolean) => (index: number) => {
+const bottomOf = (elements: NodeListOf<HTMLElement>, part: (element: HTMLElement) => Element | null) => (index: number) => {
   const element = elements[index];
-  // A note under its paragraph (small screens) counts as part of that paragraph.
-  return (row ? (element?.closest(".row") ?? element) : element)?.getBoundingClientRect().bottom ?? 0;
+  return element ? (part(element) ?? element).getBoundingClientRect().bottom : 0;
 };
+
+// The empty space after a chapter's last box leads into the next chapter, so it counts as that one's start.
+const chapterContent = (chapter: HTMLElement) => chapter.lastElementChild;
+// A note under its paragraph (small screens) counts as part of that paragraph.
+const blockRow = (block: HTMLElement) => block.closest(".row");
 
 /**
  * The chapter and block at the eye line, found by their positions so that anything over the text (the way back
@@ -31,10 +35,11 @@ function spotAtEyeLine(): Spot | null {
   const chapters = document.querySelectorAll<HTMLElement>("[data-chapter]");
   if (chapters.length === 0) return null;
   // Above the first chapter on the page counts as its start, below the last as its end.
-  const chapter = chapters[Math.min(indexAtLine(chapters.length, bottomOf(chapters, false), EYE_LINE), chapters.length - 1)];
+  const at = indexAtLine(chapters.length, bottomOf(chapters, chapterContent), EYE_LINE);
+  const chapter = chapters[Math.min(at, chapters.length - 1)];
   if (!chapter) return null;
   const blocks = chapter.querySelectorAll<HTMLElement>("[data-block]");
-  return { chapter, block: blocks[indexAtLine(blocks.length, bottomOf(blocks, true), EYE_LINE)] ?? null, blocks };
+  return { chapter, block: blocks[indexAtLine(blocks.length, bottomOf(blocks, blockRow), EYE_LINE)] ?? null, blocks };
 }
 
 /** The book block at the top of the window, if any. */
@@ -99,21 +104,54 @@ function atBookEnd(book: BookDetail): boolean {
   );
 }
 
+type Place = Required<Pick<ReadingProgress, "chapterId" | "blockId" | "offset">>;
+
+/** The block at the eye line and how far into it the line there starts. */
+function placeAtEyeLine(): Place | null {
+  const spot = spotAtEyeLine();
+  const blockId = spot?.block?.dataset.block;
+  const chapterId = spot?.chapter.dataset.chapter;
+  if (!spot?.block || !blockId || !chapterId) return null;
+  return { chapterId, blockId, offset: offsetAtLine(spot.block, EYE_LINE) };
+}
+
+/**
+ * The place kept with a page of the browser's history (its `history.state`), so that Back and Forward return to it.
+ * The state may have been written by anything, so it is checked, not trusted.
+ */
+export function placeIn(state: unknown): Place | null {
+  const place: unknown = typeof state === "object" && state !== null ? (state as { place?: unknown }).place : null;
+  if (typeof place !== "object" || place === null) return null;
+  const { chapterId, blockId, offset } = place as Record<string, unknown>;
+  return typeof chapterId === "string" && typeof blockId === "string" && typeof offset === "number"
+    ? { chapterId, blockId, offset }
+    : null;
+}
+
+/** Safari refuses more than 100 history changes in 30 s; a refused one only costs what it would have kept. */
+function changingHistory(change: () => void): void {
+  try {
+    change();
+  } catch {
+    // The place saved to the server still holds.
+  }
+}
+
 /**
  * Follows the reader through the book: the chapter and whole-book percentage at the top of the window, reading
  * progress saved to the server, and the URL kept on the current chapter so a reload reopens it.
- * Each time the book (re)starts at `first`, it also sets the opening scroll position.
+ * Each time the book (re)starts at `start`, it also sets the opening scroll position.
  */
 export function useReadingPosition(
   bookId: string,
   chapterId: string | null,
   book: BookDetail | null,
-  first: Chapter | undefined,
+  start: Chapter | undefined,
 ): ReadingPosition {
   const [, navigate] = useLocation();
   const [position, setPosition] = useState<ReadingPosition>({ chapterId: null, percent: 0 });
   // The newest progress saved from this page; the copy in `book` is only as fresh as the page load.
-  const saved = useRef<Pick<ReadingProgress, "chapterId" | "blockId" | "offset"> | null>(null);
+  const saved = useRef<Place | null>(null);
   const opened = useRef<Chapter | null>(null);
   const inUrl = useRef(chapterId);
 
@@ -122,14 +160,25 @@ export function useReadingPosition(
     inUrl.current = chapterId;
   }, [chapterId]);
 
-  // Open where the reader left off if that is in the chapter the book starts at; otherwise at the top.
-  // Once per start: appended chapters leave `first` as it is.
+  // The opening position below is the reader's place. Left to itself, the browser would scroll whatever chapter is
+  // still on the page to the old offset on Back, before the chapter for that page of history has opened.
   useEffect(() => {
-    if (!book || !first || opened.current === first) return;
-    opened.current = first;
-    const progress = saved.current ?? book.progress;
+    history.scrollRestoration = "manual";
+    return () => {
+      history.scrollRestoration = "auto";
+    };
+  }, []);
+
+  // Open where the reader left off if that is in the chapter the book starts at; otherwise at the top. Back or
+  // Forward to a page of history returns to the place kept with it, not to where the reader went after it.
+  // Once per start: chapters added above and below leave `start` as it is.
+  useEffect(() => {
+    if (!book || !start || opened.current === start) return;
+    opened.current = start;
+    const kept = placeIn(history.state);
+    const progress = (kept?.chapterId === start.id ? kept : null) ?? saved.current ?? book.progress;
     const element =
-      progress?.chapterId === first.id && document.querySelector<HTMLElement>(`[data-block="${CSS.escape(progress.blockId)}"]`);
+      progress?.chapterId === start.id && document.querySelector<HTMLElement>(`[data-block="${CSS.escape(progress.blockId)}"]`);
     // A reader who stayed at the chapter's heading is saved at the very start of its text: that reopens at the heading.
     const atStart = element && !progress.offset && element.closest("[data-chapter]")?.querySelector("[data-block]") === element;
     if (element && !atStart) {
@@ -138,10 +187,10 @@ export function useReadingPosition(
       // lines were kept has no offset and opens at the paragraph.
       window.scrollBy(0, lineTop(element, progress.offset ?? 0) - lineTop(element, 0));
     } else window.scrollTo({ top: 0 });
-  }, [book, first]);
+  }, [book, start]);
 
   useEffect(() => {
-    if (!book || !first) {
+    if (!book || !start) {
       // While a chapter opens, the top bar already names it and where it starts in the book.
       const id = book && inUrl.current;
       const opening = id ? { chapterId: id, percent: bookPercent(book.chapters, id, 0) } : { chapterId: null, percent: 0 };
@@ -149,6 +198,7 @@ export function useReadingPosition(
       return;
     }
     let measuring: number | undefined;
+    let keeping: number | undefined;
     let saving: number | undefined;
 
     const measure = () => {
@@ -162,40 +212,45 @@ export function useReadingPosition(
       // A URL chapter that is not on the page is still being opened: leave the URL to it.
       const current = inUrl.current;
       if (current && id !== current && document.querySelector(`[data-chapter="${CSS.escape(current)}"]`)) {
-        navigate(`/book/${bookId}/${id}`, { replace: true });
+        changingHistory(() => navigate(`/book/${bookId}/${id}`, { replace: true, state: history.state }));
       }
     };
 
+    // Soon after the reader stops, well before they could open the chapter list and jump elsewhere.
+    const keep = () => {
+      const place = placeAtEyeLine();
+      if (place) changingHistory(() => history.replaceState({ ...history.state, place }, ""));
+    };
+
     const save = () => {
-      const spot = spotAtEyeLine();
-      const block = spot?.block;
-      const blockId = block?.dataset.block;
-      const id = spot?.chapter.dataset.chapter;
-      if (!block || !blockId || !id) return;
-      const offset = offsetAtLine(block, EYE_LINE);
-      if (saved.current?.blockId === blockId && saved.current.offset === offset) return;
-      saved.current = { chapterId: id, blockId, offset };
-      api.saveProgress(bookId, id, blockId, offset).catch(() => {
+      const place = placeAtEyeLine();
+      if (!place || (saved.current?.blockId === place.blockId && saved.current.offset === place.offset)) return;
+      saved.current = place;
+      api.saveProgress(bookId, place.chapterId, place.blockId, place.offset).catch(() => {
         // Progress is a convenience; reading must not be interrupted if saving fails.
       });
     };
 
     const onScroll = () => {
       measuring ??= window.setTimeout(measure, 150);
+      window.clearTimeout(keeping);
+      keeping = window.setTimeout(keep, 300);
       window.clearTimeout(saving);
       saving = window.setTimeout(save, 1200);
     };
 
     measure();
     // Opening a chapter is being there, even for a reader who leaves without scrolling.
+    keeping = window.setTimeout(keep, 300);
     saving = window.setTimeout(save, 1200);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       window.removeEventListener("scroll", onScroll);
       window.clearTimeout(measuring);
+      window.clearTimeout(keeping);
       window.clearTimeout(saving);
     };
-  }, [book, first, bookId, navigate]);
+  }, [book, start, bookId, navigate]);
 
   return position;
 }

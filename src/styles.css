@@ -932,26 +932,14 @@ li:not(.toc-matter) + .toc-matter {
   border-top: 1px solid var(--ink);
 }
 
+/* Before the first chapter on the page: where the chapter before it is loading. A fixed height, so the text below
+   stays put while the loading line comes and goes. */
 .flow-back {
+  min-height: 4.75rem;
   padding-top: 2rem;
-}
-
-.flow-back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 2.75rem;
-  color: var(--ink-soft);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.flow-back-link svg {
-  flex: none;
-}
-
-.flow-back-link:hover {
-  color: var(--pen);
+  color: var(--ink-faint);
+  font-size: 0.9375rem;
+  text-align: center;
 }
 
 /* After the last chapter on the page: where the next one is loading, or the end of the book. */

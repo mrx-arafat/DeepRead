@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowUp, Headphones, List } from "lucide-react";
+import { ArrowLeft, Headphones, List } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import type { BookDetail, ExplainMode } from "../../shared/types.ts";
@@ -43,8 +43,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   // The chapters are on the page only once the book's details are in as well.
   const shown = useMemo(() => (book ? flow.chapters : []), [book, flow.chapters]);
   useNoteMarks(notes, shown);
-  const first = flow.chapters[0];
-  const position = useReadingPosition(bookId, chapterId, book, first);
+  const position = useReadingPosition(bookId, chapterId, book, flow.start);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +74,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     setWord(null);
     setSelection(null);
     if (lookupTipDone()) setTipOpen(false);
-  }, [first]);
+  }, [flow.start]);
 
   useEffect(() => {
     setHighlight("dr-word", word?.range ?? null);
@@ -278,19 +277,27 @@ export function ReaderPage({ bookId, chapterId }: Props) {
       {tocOpen && book && <ChapterList book={book} currentId={position.chapterId ?? chapterId} onClose={() => setTocOpen(false)} />}
 
       <main className="page" style={{ paddingBottom: listen.active ? "9rem" : undefined }}>
-        {!book || !first ? (
+        {!book || !flow.start ? (
           <p className="page-wait">Opening the chapter...</p>
         ) : (
           <>
-            {flow.previous && (
+            {flow.previousError ? (
               <p className="flow-back">
-                <Link href={`/book/${bookId}/${flow.previous.id}`} className="flow-back-link">
-                  <ArrowUp size={18} aria-hidden />
-                  <span>Previous: {flow.previous.title}</span>
-                </Link>
+                <span className="inline-error">
+                  {flow.previousError}{" "}
+                  <button type="button" className="link-button" onClick={flow.loadPrevious}>
+                    Try again
+                  </button>
+                </span>
               </p>
+            ) : (
+              flow.hasEarlier && (
+                <p ref={flow.topSentinel} className="flow-back">
+                  {flow.loadingPrevious ? "Opening the previous chapter..." : ""}
+                </p>
+              )
             )}
-            {flow.chapters.map((chapter, index) => (
+            {flow.chapters.map((chapter) => (
               <ChapterSection
                 key={chapter.id}
                 chapter={chapter}
@@ -298,7 +305,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
                 notes={notes}
                 lang={prefs.lang}
                 actions={actions}
-                onDismissTip={index === 0 && tipOpen ? closeTip : undefined}
+                onDismissTip={chapter === flow.start && tipOpen ? closeTip : undefined}
               />
             ))}
             {flow.nextError ? (

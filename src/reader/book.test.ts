@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Block, ChapterSummary } from "../../shared/types.ts";
-import { bookPercent, chapterPosition, indexAtLine, nextInFlow, openingChapter } from "./book.ts";
+import { bookPercent, chapterPosition, indexAtLine, nextInFlow, openingChapter, previousInFlow } from "./book.ts";
 import { sentenceIndex, sentencesOf } from "./textRanges.ts";
 
 const section = (id: string, wordCount: number, kind?: ChapterSummary["kind"]): ChapterSummary => ({
@@ -69,6 +69,13 @@ describe("the flow through a book with front and back matter", () => {
   it("should carry on through the back matter when the reader opened it on purpose", () => {
     expect(nextInFlow(chapters, "c4")?.id).toBe("c5");
     expect(nextInFlow(chapters, "c5")).toBeUndefined();
+  });
+
+  it("should open the chapter before as the reader scrolls up, but not run back into the front matter", () => {
+    expect(previousInFlow(chapters, "c3")?.id).toBe("c2");
+    expect(previousInFlow(chapters, "c4")?.id).toBe("c3");
+    expect(previousInFlow(chapters, "c2")).toBeUndefined();
+    expect(previousInFlow(chapters, "c1")).toBeUndefined();
   });
 });
 

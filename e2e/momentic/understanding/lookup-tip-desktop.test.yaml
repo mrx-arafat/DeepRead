@@ -3,7 +3,7 @@ id: dr-und-lookup-tip-desktop
 description: Journey 9 at desktop 1440. A first-time reader opens Chapter I and finds a quiet tip in the empty right margin saying how to ask about a word or a passage. Looking a word up fades it, and it stays gone after a reload.
 viewport: "1440, 900"
 steps:
-  # Straight to the chapter, so it is the first on the page whatever place the book was left at.
+  # Straight to the chapter, so the book opens there whatever place it was left at.
   - navigate: /book/the-problems-of-philosophy-8c4e7684/c3
   - checkElementVisible:
       css: article[data-chapter="c3"] h2
@@ -11,9 +11,10 @@ steps:
   - javascript:
       environment: browser
       code: |-
-        // The reader reopens a saved place after the chapter loads; start from the top of the chapter.
+        // The reader reopens a saved place after the chapter loads; start from the top of the chapter, which is not
+        // the top of the page: the preface is put above it.
         await new Promise((resolve) => setTimeout(resolve, 1200));
-        window.scrollTo(0, 0);
+        document.querySelector('article[data-chapter="c3"]').scrollIntoView({ block: "start", behavior: "instant" });
   - checkElementVisible:
       css: .tip
       timeout: 5000

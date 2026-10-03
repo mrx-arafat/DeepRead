@@ -47,6 +47,18 @@ export function nextInFlow(chapters: ChapterSummary[], chapterId: string): Chapt
   return kindOf(next) === "back" && kindOf(current) !== "back" ? undefined : next;
 }
 
+/**
+ * The section put above `chapterId` as the reader scrolls up. The book starts with its own text, so front matter
+ * (title page, contents) is only read when the reader opens it, just as back matter is at the end.
+ */
+export function previousInFlow(chapters: ChapterSummary[], chapterId: string): ChapterSummary | undefined {
+  const at = chapters.findIndex((chapter) => chapter.id === chapterId);
+  const current = chapters[at];
+  const previous = chapters[at - 1];
+  if (!current || !previous) return undefined;
+  return kindOf(previous) === "front" && kindOf(current) !== "front" ? undefined : previous;
+}
+
 /** The blocks a chapter shows. Its title is already the section heading, so a first block repeating it is dropped. */
 export function readableBlocks(chapter: Chapter): Block[] {
   const [first, ...rest] = chapter.blocks;

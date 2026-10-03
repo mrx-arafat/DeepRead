@@ -8,11 +8,12 @@ parameters:
 steps:
   - navigate: /book/the-problems-of-philosophy-8c4e7684/{{ env.CHAPTER }}
   - checkElementVisible:
-      css: "main.page > article.chapter:nth-of-type(1) h2"
+      css: "article[data-chapter='{{ env.CHAPTER }}'] h2"
       timeout: 15000
+  # The start of the chapter, not the top of the page: the chapter before it is put above.
   - javascript:
       environment: browser
       code: |-
-        window.scrollTo({ top: 0, behavior: 'instant' });
-        return 'at top';
+        document.querySelector(`article[data-chapter="${location.pathname.split('/').pop()}"]`).scrollIntoView({ block: 'start', behavior: 'instant' });
+        return 'at the chapter start';
   - wait: 500

@@ -141,6 +141,7 @@ The pencil renames a book or adds its author, and the bin removes it.
 
 The book reads as one long page.
 It opens at the book itself, past the title page and contents, and the next chapter follows as you scroll.
+Scroll up from the start of a chapter and the one before it comes in above, without moving the text you are on, so you can re-read how the last chapter ended.
 Your place is saved as you go.
 
 <table><tr><td><img src="docs/images/reader.webp" alt="The reading view at the start of a chapter" width="900"></td></tr></table>
@@ -195,6 +196,7 @@ Listening uses the voices built into your browser and computer, so it works with
 
 The list button at the top left shows every chapter with its reading time.
 Front and back matter (contents, notes, index, licences) are listed but do not count toward your progress.
+After a jump, the browser's Back button returns you to the paragraph you were reading, and Forward to where you jumped.
 
 <table><tr><td><img src="docs/images/chapters.webp" alt="The chapter list" width="900"></td></tr></table>
 

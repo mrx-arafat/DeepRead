@@ -95,7 +95,8 @@ steps:
       environment: browser
       saveAs: REOPEN_C10
       code: |-
-        const h = document.querySelector('.chapter-head h2');
+        // The chapter the book reopened at, not the one put above it.
+        const h = document.querySelector(`[data-chapter="${location.pathname.split('/').pop()}"] .chapter-head h2`);
         return JSON.stringify({ heading: h && h.textContent, headingTop: h && Math.round(h.getBoundingClientRect().top), scrollY: Math.round(scrollY) });
   - javascript: |-
       const r = JSON.parse(env.REOPEN_C10);

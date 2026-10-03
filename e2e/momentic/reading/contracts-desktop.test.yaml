@@ -9,7 +9,7 @@ steps:
       environment: browser
       saveAs: C_OPEN
       code: |-
-        return JSON.stringify({ visibleText: document.body.innerText.slice(0, 1500), docTitle: document.title, h1: (document.querySelector('.chapter-head h2') || {}).textContent });
+        return JSON.stringify({ visibleText: document.body.innerText.slice(0, 1500), docTitle: document.title, h1: (document.querySelector('[data-chapter="' + location.pathname.split('/').pop() + '"] .chapter-head h2') || {}).textContent });
   - navigate: /book/{{ env.BOOK_ID }}/c3
   - checkPageContains:
       text: Before you read
@@ -19,7 +19,7 @@ steps:
       environment: browser
       saveAs: C_C3
       code: |-
-        return JSON.stringify({ meta: (document.querySelector('.chapter-meta') || {}).textContent, h1: (document.querySelector('.chapter-head h2') || {}).textContent, title: (document.querySelector('.topbar-title') || {}).textContent, percent: (document.querySelector('.topbar-percent') || {}).textContent, docTitle: document.title });
+        return JSON.stringify({ meta: (document.querySelector('[data-chapter="' + location.pathname.split('/').pop() + '"] .chapter-meta') || {}).textContent, h1: (document.querySelector('[data-chapter="' + location.pathname.split('/').pop() + '"] .chapter-head h2') || {}).textContent, title: (document.querySelector('.topbar-title') || {}).textContent, percent: (document.querySelector('.topbar-percent') || {}).textContent, docTitle: document.title });
   - navigate: /book/{{ env.BOOK_ID }}/c7
   - checkPageContains:
       text: Before you read
@@ -29,7 +29,7 @@ steps:
       environment: browser
       saveAs: C_C7
       code: |-
-        return JSON.stringify({ title: (document.querySelector('.topbar-title') || {}).textContent, percent: (document.querySelector('.topbar-percent') || {}).textContent, bar: (document.querySelector('.reading-progress') || {}).getAttribute('aria-valuenow'), h1: (document.querySelector('.chapter-head h2') || {}).textContent });
+        return JSON.stringify({ title: (document.querySelector('.topbar-title') || {}).textContent, percent: (document.querySelector('.topbar-percent') || {}).textContent, bar: (document.querySelector('.reading-progress') || {}).getAttribute('aria-valuenow'), h1: (document.querySelector('[data-chapter="' + location.pathname.split('/').pop() + '"] .chapter-head h2') || {}).textContent });
   - navigate: /book/{{ env.BOOK_ID }}/c19
   - checkPageContains:
       text: After the main text

@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
 id: dr-read-previous-desktop
-description: "Journey 2/3 at desktop 1440: after jumping into a later chapter, the reader scrolls up to re-read the end of the chapter before; check the Previous link and where it lands."
+description: "Journey 2/3 at desktop 1440: after jumping into a later chapter, the reader scrolls up to re-read the end of the chapter before; it comes in above without moving the text, and the page carries on up into it."
 viewport: "1440, 900"
 steps:
   - module: ./modules/open-book.module.yaml
@@ -10,14 +10,21 @@ steps:
       timeout: 15000
   - wait: 1200
   - module: ./modules/nav-state.module.yaml
-  - scrollUp: 600
+  # The chapter before is put above at once, and the reader still sees where they opened the book.
+  - javascript: |-
+      const nav = JSON.parse(env.NAV);
+      assert(nav.sections[0] === "c6" && nav.sections.includes("c7"), `CHAPTER IV should be on the page above CHAPTER V, but the page has ${nav.sections.join(", ")}`);
+      assert(nav.path.endsWith("/c7"), `the reader opened CHAPTER V and has not scrolled, but the address is ${nav.path}`);
   - assertVisually:
-      that: At the very top of the chapter the page offers a link to the previous chapter, labelled with its title
+      that: The title of CHAPTER V is on screen near the top, below the top bar, with nothing covering it
       timeout: 20000
-  - click:
-      css: a.flow-back-link
+  - scrollUp: 600
   - wait: 1500
   - module: ./modules/nav-state.module.yaml
+  - javascript: |-
+      const nav = JSON.parse(env.NAV);
+      assert(nav.path.endsWith("/c6"), `after scrolling up into CHAPTER IV the address should name it, but it is ${nav.path}`);
+      assert(nav.block && nav.block.startsWith("c6-"), `after scrolling up the reader should be in the last paragraphs of CHAPTER IV, but is at ${nav.block}`);
   - assertVisually:
-      that: The reader is now at the END of the previous chapter, where the previous chapter's last paragraphs are on screen
+      that: The last paragraphs of CHAPTER IV are on screen, and below them the page carries straight on into CHAPTER V
       timeout: 20000

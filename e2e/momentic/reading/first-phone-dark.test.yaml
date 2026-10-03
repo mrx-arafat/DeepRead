@@ -26,8 +26,8 @@ steps:
   - javascript:
       environment: browser
       code: |-
-        window.scrollTo({ top: 0, behavior: 'instant' });
-        return 'at top';
+        document.querySelector(`article[data-chapter="${location.pathname.split('/').pop()}"]`).scrollIntoView({ block: 'start', behavior: 'instant' });
+        return 'at the chapter start';
   - assertVisually:
       that: A chapter opens with a clear heading, a small line above it, a "Before you read" box and then paragraphs of book text
       timeout: 20000
