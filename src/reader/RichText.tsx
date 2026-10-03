@@ -83,7 +83,8 @@ function kindOf(label: string | null): SectionKind {
 // ("you *belie") never shows its asterisks. A star with a space after it ("2 * 3") is just a star.
 const EMPHASIS = /\*\*(.*?)(?:\*\*|$)|(?<![\w*])\*(?=[^\s*]|$)(.*?)(?:\*|$)|(?<!\w)_(?=[^\s_]|$)(.*?)(?:_(?!\w)|$)/g;
 
-function inline(text: string): ReactNode {
+/** One line of the AI's text with its emphasis shown as bold or italic instead of the marks it typed. */
+export function inline(text: string): ReactNode {
   const parts: ReactNode[] = [];
   let from = 0;
   for (const match of text.matchAll(EMPHASIS)) {

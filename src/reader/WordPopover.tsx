@@ -3,10 +3,11 @@ import { Headphones, Volume2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { LANGUAGES, type ExplainRequest, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
+import { inline } from "./RichText.tsx";
 import { BOTTOM_EDGE, clearSpan, TOP_EDGE } from "./sentenceView.ts";
 import { canSpeak, speak } from "./speech.ts";
 import { blockOf, highlighted, rangeInBlock, sentenceSpans } from "./textRanges.ts";
-import { useAiStream } from "./useAiStream.ts";
+import { type AiStream, useAiStream } from "./useAiStream.ts";
 
 export type Lookup = {
   range: Range;
@@ -33,6 +34,45 @@ function labelled(text: string): Map<string, string> {
     if (match?.[1] && match[2]) lines.set(match[1].trim().toLowerCase(), match[2].trim());
   }
   return lines;
+}
+
+type AnswerProps = {
+  text: string;
+  status: AiStream["status"];
+  lang: LangCode;
+  /** The dictionary translation, shown in the reader's language when the tutor's answer failed. */
+  fallback: string | null;
+};
+
+/** The word in the reader's language, then what it means here and an example, filling in as the answer streams. */
+export function WordAnswer({ text, status, lang, fallback }: AnswerProps) {
+  const lines = labelled(text);
+  const said = lines.get(LANGUAGES[lang].toLowerCase());
+  // The tutor marks emphasis the markdown way; the dictionary's translation is plain text and stays as it is.
+  const native = said == null ? (status === "error" ? fallback : null) : inline(said);
+  const meaning = lines.get("meaning");
+  const example = lines.get("example");
+  return (
+    <>
+      <p className="word-native" lang={lang} aria-live="polite">
+        {native ?? <span className="skeleton" style={{ width: "7rem" }} />}
+      </p>
+
+      {/* Without an answer (no AI helper, or it failed) there is nothing to label: the error below says why. */}
+      {(meaning || status !== "error") && (
+        <dl className="word-lines" aria-live="polite">
+          <dt>Meaning</dt>
+          <dd>{meaning == null ? <span className="skeleton" /> : inline(meaning)}</dd>
+          {(example || status === "loading") && (
+            <>
+              <dt>Example</dt>
+              <dd>{example == null ? <span className="skeleton" /> : inline(example)}</dd>
+            </>
+          )}
+        </dl>
+      )}
+    </>
+  );
 }
 
 // Wide enough for the margin beside the text: the width at which notes move there too (styles.css).
@@ -131,11 +171,6 @@ export function WordPopover({ lookup, bookId, lang, onListenFromHere, onClose }:
     lang,
   };
   const answer = useAiStream("/api/ai/explain", request);
-  const lines = labelled(answer.text);
-  const language = LANGUAGES[lang];
-  const native = lines.get(language.toLowerCase()) ?? (answer.status === "error" ? quick : null);
-  const meaning = lines.get("meaning");
-  const example = lines.get("example");
 
   return (
     <div
@@ -163,23 +198,7 @@ export function WordPopover({ lookup, bookId, lang, onListenFromHere, onClose }:
         </button>
       </header>
 
-      <p className="word-native" lang={lang} aria-live="polite">
-        {native ?? <span className="skeleton" style={{ width: "7rem" }} />}
-      </p>
-
-      {/* Without an answer (no AI helper, or it failed) there is nothing to label: the error below says why. */}
-      {(meaning || answer.status !== "error") && (
-        <dl className="word-lines" aria-live="polite">
-          <dt>Meaning</dt>
-          <dd>{meaning ?? <span className="skeleton" />}</dd>
-          {(example || answer.status === "loading") && (
-            <>
-              <dt>Example</dt>
-              <dd>{example ?? <span className="skeleton" />}</dd>
-            </>
-          )}
-        </dl>
-      )}
+      <WordAnswer text={answer.text} status={answer.status} lang={lang} fallback={quick} />
 
       {answer.status === "error" && (
         <p className="inline-error">
