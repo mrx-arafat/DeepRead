@@ -178,14 +178,14 @@ The answer is pinned beside the paragraph like a teacher's note, and it stays th
 
 ### 6. Before and after a chapter
 
-Each chapter starts with **Preview this chapter**, a short preview with the words to watch.
-It ends with **Summarize this chapter**, the key ideas in simple words.
+Each chapter starts with a **Before you read** box: **Get a preview** gives a short preview with the words to watch.
+It ends with a **What you just read** box: **Get a summary** gives the key ideas in simple words.
 
 ### 7. Listen
 
 Press **Listen** in the top bar.
 DeepRead reads from the line you are looking at, chapter titles included, and marks the sentence in green and the word being spoken in a stronger green.
-The player has previous and next sentence, pause, speed (0.8x to 1.5x) and stop.
+The player has previous and next sentence, pause, speed (0.6x to 1.5x) and stop.
 If you scroll away, the page stays where you put it, and the player offers a way back to the voice.
 
 <table><tr><td><img src="docs/images/listen.webp" alt="Reading aloud with the sentence and spoken word highlighted, and the player at the bottom" width="900"></td></tr></table>
