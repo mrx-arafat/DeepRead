@@ -19,18 +19,27 @@ export type LlmTask = "word" | "explain" | "preview" | "recap" | "quiz" | "ask";
  * broken Bangla, and on words it gave the term of the wrong field ("induction" as the physics আবেশ instead of
  * the logic আরোহ, in every run) and unnatural examples. The reader trusts the Bangla line most.
  *
- * `effort` is Claude Code's effort level, which decides how long Sonnet thinks before it writes. Left unset,
- * the CLI takes the reader's own Claude Code setting from the environment. At xhigh Sonnet thought before
- * every word, 3-10 s before the Bangla line; at high it answers an everyday word at once (about 1.2 s) and
- * still thinks over a term of the book's subject, which the word prompt asks it to.
+ * `effort` is Claude Code's effort level, which decides how long Sonnet thinks before it writes. Every task sets
+ * its own: left unset, the CLI takes the reader's own Claude Code setting from the environment, and at xhigh
+ * Sonnet thought for 4-8 s before the first word of a note and 3-10 s before the Bangla line of a word.
+ * Measured on Chapter I of The Problems of Philosophy, as time to the first word:
+ * - word: at high it answers an everyday word at once (about 1.2 s) and still thinks over a term of the book's
+ *   subject, which the word prompt asks it to.
+ * - explain, ask, preview, recap: at medium the first word came in 1.0-1.8 s every time (high 1.5-7.8 s, xhigh
+ *   3.9-8.5 s), and the notes, their Bangla and their "Deeper meaning" were as correct as at xhigh.
+ * - quiz: it arrives whole, in 9-11 s at medium or at high (19 s at xhigh), so it keeps high's extra thought
+ *   for its answer key.
  */
-export const TASK_PROFILES: Record<LlmTask, { model: "haiku" | "sonnet"; effort?: "high"; timeoutMs: number }> = {
+export const TASK_PROFILES: Record<
+  LlmTask,
+  { model: "haiku" | "sonnet"; effort: "medium" | "high"; timeoutMs: number }
+> = {
   word: { model: "sonnet", effort: "high", timeoutMs: 120_000 },
-  explain: { model: "sonnet", timeoutMs: 120_000 },
-  ask: { model: "sonnet", timeoutMs: 120_000 },
-  preview: { model: "sonnet", timeoutMs: 300_000 },
-  recap: { model: "sonnet", timeoutMs: 300_000 },
-  quiz: { model: "sonnet", timeoutMs: 300_000 },
+  explain: { model: "sonnet", effort: "medium", timeoutMs: 120_000 },
+  ask: { model: "sonnet", effort: "medium", timeoutMs: 120_000 },
+  preview: { model: "sonnet", effort: "medium", timeoutMs: 300_000 },
+  recap: { model: "sonnet", effort: "medium", timeoutMs: 300_000 },
+  quiz: { model: "sonnet", effort: "high", timeoutMs: 300_000 },
 };
 
 export type LlmRequest = {
@@ -121,8 +130,7 @@ const CLAUDE_FLAGS = [
 function claudeEnv(request: LlmRequest): NodeJS.ProcessEnv {
   const env = { ...process.env };
   // Set, not inherited: this variable overrides --effort and every settings file (see TASK_PROFILES).
-  const { effort } = TASK_PROFILES[request.task];
-  if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort;
+  env.CLAUDE_CODE_EFFORT_LEVEL = TASK_PROFILES[request.task].effort;
   // Nested-session guard: with these set the CLI refuses to start inside another Claude Code session.
   delete env.CLAUDECODE;
   delete env.CLAUDE_CODE_ENTRYPOINT;

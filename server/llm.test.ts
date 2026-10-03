@@ -151,6 +151,24 @@ describe("createClaudeLlm", () => {
     expectPrivateDirectoryGone(word.cwd);
   });
 
+  it("should run every other task at its own effort level too, whatever the reader's Claude Code setting is", async () => {
+    process.env.CLAUDE_CODE_EFFORT_LEVEL = "xhigh";
+    const llm = createClaudeLlm({ bin: fakeBin });
+    const tasks = ["explain", "ask", "preview", "recap", "quiz"] as const;
+    const efforts = await Promise.all(
+      tasks.map(async (task) => [task, JSON.parse(await completeText(llm, request("echo\n", { task }))).effort]),
+    );
+
+    // Measured: at xhigh a note's first word took 4-8 s; at medium 1-2 s, with notes as good (TASK_PROFILES).
+    expect(Object.fromEntries(efforts)).toEqual({
+      explain: "medium",
+      ask: "medium",
+      preview: "medium",
+      recap: "medium",
+      quiz: "high",
+    });
+  });
+
   it("should fail with a readable error when the CLI is missing, signed out, or crashes", async () => {
     const missing = createClaudeLlm({ bin: join(workDir, "does-not-exist") });
     await expect(completeText(missing, request("replay\n"))).rejects.toMatchObject({
