@@ -32,20 +32,29 @@ The explanation appears beside the paragraph you are reading, and you keep going
 
 ## Install in one line
 
-Open a terminal and paste this:
+You do not need to install anything first.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/mrx-arafat/DeepRead/main/scripts/install.sh | bash
-```
+1. Open the Terminal app.
+   On a Mac, press Command and Space together, type `Terminal`, and press Return.
+   On Windows, open **On Windows** just below and follow it instead.
+2. Copy this line, paste it into the Terminal window, and press Return:
 
-That is the whole installation.
-It takes about a minute and asks before it installs anything else.
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/mrx-arafat/DeepRead/main/scripts/install.sh | bash
+   ```
+
+3. If it asks you something, press Return to accept the suggested answer.
+4. When it says DeepRead is ready, press Return to start it.
+   DeepRead opens in your web browser.
+
+That is the whole installation, and it takes a minute or two.
+It asks before it installs anything optional, and your books stay on your computer.
 
 <table>
 <tr><td width="34%"><b>What it checks</b></td><td width="66%"><b>What it does about it</b></td></tr>
 <tr><td>git</td><td>Tells you the one command to install it if it is missing.</td></tr>
-<tr><td>Node.js 24 or newer</td><td>On a Mac with <a href="https://brew.sh">Homebrew</a> it offers to install it for you. Otherwise it points you to <a href="https://nodejs.org/en/download">nodejs.org</a>.</td></tr>
-<tr><td>An AI helper</td><td>Looks for Claude Code or Codex. If neither is there, it lets you pick one to install, or none (the default): reading and listening work without one (see <a href="#ai-helpers">AI helpers</a>). Nothing is installed unless you pick it.</td></tr>
+<tr><td>Node.js 24 or newer, the engine DeepRead runs on</td><td>Uses one already on your computer, even if your terminal normally runs an older one (from Homebrew, nvm, fnm, Volta, asdf or mise). If there is none, it downloads a private copy from <a href="https://nodejs.org">nodejs.org</a> just for DeepRead, checks that the download is genuine, and changes nothing else on your computer.</td></tr>
+<tr><td>An AI helper</td><td>Looks for Claude Code or Codex, including where their installers put them when your terminal cannot see them yet. If neither is there, it lets you pick one to install, or none (the default): reading and listening work without one (see <a href="#ai-helpers">AI helpers</a>). Nothing is installed unless you pick it.</td></tr>
 <tr><td>DeepRead itself</td><td>Downloads it to <code>~/DeepRead</code> (or updates it), installs its packages, builds it, and adds the <code>deepread</code> command.</td></tr>
 </table>
 
@@ -53,12 +62,13 @@ It takes about a minute and asks before it installs anything else.
 
 | To | Do this |
 | --- | --- |
-| Start DeepRead | Run `deepread`. It opens http://127.0.0.1:8787 in your browser. |
-| Stop it | Press `Ctrl+C` in the terminal where it runs. |
-| Get the latest version | Run `deepread update`, or paste the install command again. |
-| See every option | Run `deepread help`. |
+| Start DeepRead | Open Terminal, type `deepread`, and press Return. It opens http://127.0.0.1:8787 in your browser. |
+| Stop it | Press `Control` and `C` together in the Terminal window where it runs. |
+| Get the latest version | Type `deepread update` and press Return, or paste the install line again. |
+| See every option | Type `deepread help` and press Return. |
 
-The first time, open a new terminal window before you type `deepread`, so your terminal knows the new command.
+If Terminal says `deepread: command not found` right after installing, close the Terminal window, open a new one, and try again.
+Or type the full path instead, which always works: `~/.local/bin/deepread`
 
 <details>
 <summary><b>On Windows</b></summary>
@@ -68,9 +78,8 @@ DeepRead runs on Windows inside WSL, Microsoft's built-in Linux.
 1. Open PowerShell as administrator and run `wsl --install`.
    Restart your computer when it asks.
 2. Open **Ubuntu** from the Start menu and choose a user name and password.
-3. In Ubuntu, install Node.js 24 by following the Linux steps on [nodejs.org/en/download](https://nodejs.org/en/download).
-4. Still in Ubuntu, paste the install command above.
-5. Run `deepread`.
+3. In Ubuntu, paste the install line above and press Return.
+4. Type `deepread` and press Return.
    It opens DeepRead in your normal Windows browser.
 
 </details>
@@ -84,10 +93,10 @@ To install into another folder, put `DEEPREAD_DIR` in front of the command:
 curl -fsSL https://raw.githubusercontent.com/mrx-arafat/DeepRead/main/scripts/install.sh | DEEPREAD_DIR=~/Apps/DeepRead bash
 ```
 
-To uninstall, delete the folder and the command:
+To uninstall, delete the folder, the command, and the private Node.js copy if the installer made one:
 
 ```bash
-rm -rf ~/DeepRead ~/.local/bin/deepread
+rm -rf ~/DeepRead ~/.local/bin/deepread ~/.local/share/deepread
 ```
 
 This also deletes your books and notes, which live in `~/DeepRead/data`.
