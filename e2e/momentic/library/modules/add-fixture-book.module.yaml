@@ -6,4 +6,7 @@ steps:
   - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
   - click: Add a book (PDF) button
   - waitForUrl: /book/
-  - checkPageContains: Front Matter
+  # The book opens at its own text (the preface), past the title page and contents.
+  - checkElementVisible:
+      css: "main.page > article.chapter:nth-of-type(1) .chapter-text"
+      timeout: 30000

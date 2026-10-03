@@ -53,7 +53,10 @@ steps:
       on: Add a book (PDF) button
       retries: 2
   - waitForUrl: /book/
-  - checkPageContains: Front Matter
+  # The book opens at its own text (the preface), past the title page and contents.
+  - checkElementVisible:
+      css: "main.page > article.chapter:nth-of-type(1) .chapter-text"
+      timeout: 30000
   - click: Back to your books
   - checkPageContains: Your books
   - assertVisually: Under the Your books heading there is one book row. The title is in a serif face, the meta line is smaller grey text, and the pencil and bin icons are aligned at the right. Contrast is comfortable and nothing overlaps
