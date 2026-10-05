@@ -3,9 +3,10 @@
 // make it touch the computer, and in an empty directory, so no project instructions are picked up.
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, readlink, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { parseStreamLine } from "./claude-stream.ts";
 import type { StreamEvent } from "./claude-stream.ts";
@@ -99,6 +100,8 @@ type CliSpec = {
   args(request: LlmRequest, scratch: string): string[];
   /** Files to write into `scratch` before the tool starts. */
   files?(request: LlmRequest): Record<string, string>;
+  /** Runs before every answer, before the tool starts. */
+  prepare?(): Promise<void>;
   env(request: LlmRequest): NodeJS.ProcessEnv;
   /** What goes in on stdin: prompts can be far too big for argv. */
   input(request: LlmRequest): string;
@@ -210,6 +213,7 @@ function createCliLlm(spec: CliSpec, options: CliLlmOptions): CliLlm {
 
   async function* execute(request: LlmRequest): AsyncGenerator<string, void, undefined> {
     const profile = TASK_PROFILES[request.task];
+    await spec.prepare?.();
     const scratch = await mkdtemp(join(tmpdir(), "deepread-"));
     try {
       for (const [name, content] of Object.entries(spec.files?.(request) ?? {})) {
@@ -368,16 +372,39 @@ const CODEX_TOOLS_OFF = [
 
 const CODEX_INSTRUCTIONS = "instructions.md";
 
+export type CodexLlmOptions = CliLlmOptions & {
+  /** The Codex home DeepRead gives Codex, in place of the reader's own (~/.codex). */
+  home: string;
+};
+
+/**
+ * Points `home`'s sign-in at the reader's own. Codex saves a refreshed sign-in by writing into auth.json, not by
+ * replacing it, so the refresh goes through the link and the reader's own Codex stays signed in.
+ */
+async function linkCodexSignIn(home: string): Promise<void> {
+  const link = join(home, "auth.json");
+  const target = join(resolve(process.env.CODEX_HOME || join(homedir(), ".codex")), "auth.json");
+  if ((await readlink(link).catch(() => null)) === target) return;
+  await mkdir(home, { recursive: true, mode: 0o700 });
+  // Answers run side by side: each makes its own link and renames it over, which replaces the old one in one step.
+  const fresh = `${link}.${randomUUID()}`;
+  await symlink(target, fresh);
+  await rename(fresh, link);
+}
+
 /**
  * Codex (`codex`), signed in with the reader's ChatGPT account. DeepRead's instructions replace Codex's own coding
- * instructions. Codex still reads the reader's personal ~/.codex/AGENTS.md; it has no switch to leave that out.
+ * instructions. Codex reads AGENTS.md and skills from its home whatever it is told, and the reader's are written
+ * for their own coding work: with one reader's 89 KB AGENTS.md, a request answered "OK" read 32,400 tokens in their
+ * home and 9,400 in a home of its own. So Codex runs in a home of DeepRead's own, signed in through a link.
  */
-export function createCodexLlm(options: CliLlmOptions = {}): CliLlm {
+export function createCodexLlm({ home, ...options }: CodexLlmOptions): CliLlm {
   return createCliLlm(
     {
       name: "Codex",
       bin: "codex",
       files: (request) => ({ [CODEX_INSTRUCTIONS]: request.system }),
+      prepare: () => linkCodexSignIn(home),
       args: (_request, scratch) => [
         "exec",
         "--json",
@@ -397,7 +424,7 @@ export function createCodexLlm(options: CliLlmOptions = {}): CliLlm {
         ...CODEX_TOOLS_OFF,
         "-",
       ],
-      env: () => ({ ...process.env }),
+      env: () => ({ ...process.env, CODEX_HOME: home }),
       input: (request) => request.user,
       parse: parseCodexLine,
       model: () => "codex",

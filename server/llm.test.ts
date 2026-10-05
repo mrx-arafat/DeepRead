@@ -1,6 +1,6 @@
 // Drives the real process handling in llm.ts against a fake `claude` / `codex` executable written to a temp dir,
 // so spawning, stdin, abort, timeout and the concurrency limit are exercised without the real CLIs or network.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,6 +37,7 @@ if (process.argv[2] === "exec") {
       lastArg: args.at(-1),
       prompt: input.slice(directive.length + 1),
       cwd: process.cwd(),
+      codexHome: process.env.CODEX_HOME,
     };
     console.log(JSON.stringify({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: JSON.stringify(info) } }));
     console.log(JSON.stringify({ type: "turn.completed", usage: {} }));
@@ -233,6 +234,8 @@ describe("createClaudeLlm", () => {
 describe("createCodexLlm", () => {
   let workDir: string;
   let fakeBin: string;
+  // The Codex home DeepRead gives Codex, as data/codex-home is in the app.
+  let home: string;
 
   const request = (user: string): LlmRequest => ({ task: "word", system: "You are a tutor.", user });
   const alive = (pid: number) => {
@@ -247,6 +250,7 @@ describe("createCodexLlm", () => {
   beforeAll(async () => {
     workDir = await mkdtemp(join(tmpdir(), "deepread-llm-codex-"));
     fakeBin = join(workDir, "fake-codex");
+    home = join(workDir, "codex-home");
     writeFileSync(fakeBin, FAKE_CLAUDE);
     await chmod(fakeBin, 0o755);
     process.env.FAKE_FIXTURES = join(import.meta.dirname, "fixtures");
@@ -257,7 +261,7 @@ describe("createCodexLlm", () => {
   });
 
   it("should read the answer from a captured real run", async () => {
-    const llm = createCodexLlm({ bin: fakeBin });
+    const llm = createCodexLlm({ bin: fakeBin, home });
     expect(await completeText(llm, request("replay\nWhat does ubiquitous mean?"))).toBe(
       "\u201cUbiquitous\u201d means present or found everywhere, like smartphones today.",
     );
@@ -265,17 +269,34 @@ describe("createCodexLlm", () => {
 
   it("should run with DeepRead's instructions, a read-only sandbox and no tools, and send the prompt on stdin", async () => {
     const hugePrompt = "x".repeat(300_000);
-    const info = JSON.parse(await completeText(createCodexLlm({ bin: fakeBin }), request(`echo\n${hugePrompt}`)));
+    const info = JSON.parse(await completeText(createCodexLlm({ bin: fakeBin, home }), request(`echo\n${hugePrompt}`)));
     expect(info).toMatchObject({ sandbox: "read-only", ignoresUserConfig: true, instructions: "You are a tutor.", lastArg: "-" });
     expect(info.toolsOff).toEqual(expect.arrayContaining(["shell_tool", "unified_exec", "computer_use", "browser_use"]));
     expect(info.prompt).toBe(hugePrompt);
     expectPrivateDirectoryGone(info.cwd);
   });
 
+  it("should run in a Codex home of DeepRead's own, signed in through the reader's, so their AGENTS.md stays out", async () => {
+    const llm = createCodexLlm({ bin: fakeBin, home });
+    try {
+      // Neither reader home exists, as for a reader not signed in yet: the link still goes in, and the real Codex
+      // reads it as signed out.
+      for (const readerHome of [join(workDir, "reader-codex"), join(workDir, "reader-codex-moved")]) {
+        vi.stubEnv("CODEX_HOME", readerHome);
+        // Answers run side by side, so all three set up the link at once.
+        const answers = await Promise.all(Array.from({ length: 3 }, () => completeText(llm, request("echo\n"))));
+        for (const answer of answers) expect(JSON.parse(answer).codexHome).toBe(home);
+        expect(readlinkSync(join(home, "auth.json"))).toBe(join(readerHome, "auth.json"));
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("should stop at a refused sign-in and say how to sign in, instead of waiting out the retries", async () => {
     const pidFile = join(workDir, "signedout.pid");
     const started = Date.now();
-    await expect(completeText(createCodexLlm({ bin: fakeBin }), request(`signedout pidfile=${pidFile}\n`))).rejects.toMatchObject({
+    await expect(completeText(createCodexLlm({ bin: fakeBin, home }), request(`signedout pidfile=${pidFile}\n`))).rejects.toMatchObject({
       kind: "not_logged_in",
       message: expect.stringContaining("codex login"),
     });

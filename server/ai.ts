@@ -36,7 +36,10 @@ function onPath(bin: string): Promise<boolean> {
   });
 }
 
-const CREATE: Record<AiProviderId, () => CliLlm> = { claude: createClaudeLlm, codex: createCodexLlm };
+const CREATE: Record<AiProviderId, (dataDir: string) => CliLlm> = {
+  claude: () => createClaudeLlm(),
+  codex: (dataDir) => createCodexLlm({ home: join(dataDir, "codex-home") }),
+};
 
 export function isAiProviderId(value: unknown): value is AiProviderId {
   return typeof value === "string" && value in AI_PROVIDERS;
@@ -44,7 +47,7 @@ export function isAiProviderId(value: unknown): value is AiProviderId {
 
 export function createAi(options: AiOptions): Ai {
   const installed = options.installed ?? onPath;
-  const create = options.create ?? ((id: AiProviderId) => CREATE[id]());
+  const create = options.create ?? ((id: AiProviderId) => CREATE[id](options.dataDir));
   const settingsFile = join(options.dataDir, "settings.json");
   const llms = new Map<AiProviderId, CliLlm>();
   let active: AiProviderId | null = null;

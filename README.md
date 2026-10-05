@@ -335,7 +335,7 @@ A tapped word runs at "high", so an everyday word shows its Bangla line in about
 The quiz runs at "high" too: it arrives whole, in about 10 seconds either way, so it keeps the extra thought for its answers.
 Notes, your own questions, previews and summaries run at "medium", so their first words come in about a second and a half instead of the 4 to 8 seconds they took at "xhigh".
 With Codex, answers come from Codex's default model at low reasoning effort; its own coding instructions are replaced by DeepRead's.
-Codex still reads your personal `~/.codex/AGENTS.md`, because it has no switch to leave that out.
+Codex runs in a Codex home of DeepRead's own, `data/codex-home`, signed in through a link to your own sign-in, so your personal `~/.codex/AGENTS.md`, skills and settings stay out of its answers.
 
 Answers stream as they are written and are cached on disk, keyed by the prompt and the model, so asking again is instant and editing a prompt never serves a stale answer.
 
