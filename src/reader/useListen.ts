@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Block } from "../../shared/types.ts";
+import { inPages, showOnPage } from "./paging.ts";
 import { speak, whenVoiceFree } from "./speech.ts";
 import { placeInView, scrollTopFor, type Place } from "./sentenceView.ts";
 import { rangeInBlock, sentenceIndex, sentencesOf, setHighlight, wordAt, type SentenceAt } from "./textRanges.ts";
@@ -109,6 +110,12 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   }, [at, index]);
 
   const scrollTo = useCallback((range: Range) => {
+    // Turning pages, the voice turns to the page the sentence is on, rather than sliding the text up mid-page.
+    if (inPages()) {
+      scrolledAt.current = performance.now();
+      showOnPage(range.getBoundingClientRect());
+      return;
+    }
     const top = scrollTopFor(range.getBoundingClientRect(), window.innerHeight, window.scrollY);
     if (top === null) return;
     scrolledAt.current = performance.now();

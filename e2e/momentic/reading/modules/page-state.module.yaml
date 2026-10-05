@@ -1,0 +1,37 @@
+fileType: momentic/module/v2
+id: dr-read-m-page-state
+name: Measure the page in Pages
+steps:
+  # Where the page starts (scrollY), where the paper strip over its bottom begins, and how many lines of the text
+  # column the top margin or the strip cuts through: a page must show only whole lines.
+  - javascript:
+      environment: browser
+      saveAs: PAGE
+      code: |-
+        const top = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
+        const mask = document.querySelector('.page-mask-bottom');
+        const end = mask ? parseFloat(mask.style.top) : null;
+        const main = document.querySelector('main.page');
+        const col = main.querySelector('.chapter').getBoundingClientRect();
+        const r = document.createRange();
+        let cut = 0;
+        let whole = 0;
+        const w = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
+        for (let n = w.nextNode(); n; n = w.nextNode()) {
+          if (!n.textContent.trim()) continue;
+          r.selectNodeContents(n);
+          for (const b of r.getClientRects()) {
+            if (b.height < 4 || b.right <= col.left || b.left >= col.right) continue;
+            if ((b.top < top - 0.5 && b.bottom > top + 0.5) || (end !== null && b.top < end - 0.5 && b.bottom > end + 0.5)) cut++;
+            if (end !== null && b.top >= top - 0.5 && b.bottom <= end + 0.5) whole++;
+          }
+        }
+        return JSON.stringify({
+          layout: document.documentElement.dataset.layout,
+          y: Math.round(scrollY),
+          end,
+          cut,
+          whole,
+          overflow: getComputedStyle(document.documentElement).overflow,
+          footer: (document.querySelector('.reading-footer') || {}).innerText || '',
+        });

@@ -1,4 +1,4 @@
-import { AlignJustify, AlignLeft } from "lucide-react";
+import { AlignJustify, AlignLeft, BookOpen, ScrollText } from "lucide-react";
 import { useEffect, useState, type FocusEvent, type ReactNode, type ToggleEvent } from "react";
 import { LANGUAGES, type AiProviderId, type AiStatus, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
@@ -104,6 +104,27 @@ const ALIGN_OPTIONS: Option<Prefs["align"]>[] = [
   { value: "justify", label: "Justify", content: <AlignJustify size={20} aria-hidden /> },
 ];
 
+const LAYOUT_OPTIONS: Option<Prefs["layout"]>[] = [
+  {
+    value: "scroll",
+    label: "Scroll",
+    content: (
+      <>
+        <ScrollText size={18} aria-hidden /> Scroll
+      </>
+    ),
+  },
+  {
+    value: "pages",
+    label: "Pages",
+    content: (
+      <>
+        <BookOpen size={18} aria-hidden /> Pages
+      </>
+    ),
+  },
+];
+
 /** A change that reflows the book, made so the line being read stays where it is on screen. */
 const reflow = (patch: Partial<Prefs>) => keepingLine(() => setPrefs(patch));
 
@@ -193,7 +214,8 @@ function AiHelper({ open }: { open: boolean }) {
 
 /**
  * The "Aa" menu at the end of the top bar, laid out like an e-reader's: the page colour, the book's font, text size,
- * line spacing, margins and alignment, then the language explanations come in and the AI tool that writes them.
+ * line spacing, margins, alignment and whether the book scrolls or turns pages, then the language explanations
+ * come in and the AI tool that writes them.
  * A native popover, so a tap outside or Escape closes it and focus goes back to the button, on every screen size.
  */
 export function ReadingSettings({ prefs }: { prefs: Prefs }) {
@@ -284,6 +306,8 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
           onChange={(align) => reflow({ align })}
           iconOnly
         />
+
+        <Choice name="layout" legend="Layout" value={prefs.layout} options={LAYOUT_OPTIONS} onChange={(layout) => reflow({ layout })} />
 
         <hr className="settings-divider" />
 

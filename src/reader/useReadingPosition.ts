@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import type { BookDetail, Chapter, ReadingProgress } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { bookPercent, chapterMinutesLeft, indexAtLine, lastOfText } from "./book.ts";
+import { inPages, pageFrame } from "./paging.ts";
 
 export type ReadingPosition = {
   /** The chapter at the top of the window. */
@@ -18,6 +19,9 @@ type Spot = { chapter: HTMLElement; block: HTMLElement | null; blocks: NodeListO
 
 /** Where the reader's eyes are: just under the top bar. */
 export const EYE_LINE = 96;
+
+/** The eye line now: in pages, the first line of the page, so the place kept is the line a reopened page starts on. */
+export const eyeLine = (): number => (inPages() ? pageFrame().top + 2 : EYE_LINE);
 
 const bottomOf = (elements: NodeListOf<HTMLElement>, part: (element: HTMLElement) => Element | null) => (index: number) => {
   const element = elements[index];
@@ -37,11 +41,11 @@ function spotAtEyeLine(): Spot | null {
   const chapters = document.querySelectorAll<HTMLElement>("[data-chapter]");
   if (chapters.length === 0) return null;
   // Above the first chapter on the page counts as its start, below the last as its end.
-  const at = indexAtLine(chapters.length, bottomOf(chapters, chapterContent), EYE_LINE);
+  const at = indexAtLine(chapters.length, bottomOf(chapters, chapterContent), eyeLine());
   const chapter = chapters[Math.min(at, chapters.length - 1)];
   if (!chapter) return null;
   const blocks = chapter.querySelectorAll<HTMLElement>("[data-block]");
-  return { chapter, block: blocks[indexAtLine(blocks.length, bottomOf(blocks, blockRow), EYE_LINE)] ?? null, blocks };
+  return { chapter, block: blocks[indexAtLine(blocks.length, bottomOf(blocks, blockRow), eyeLine())] ?? null, blocks };
 }
 
 /** The book block at the top of the window, if any. */
@@ -84,7 +88,7 @@ export function keepingLine(change: () => void): void {
   const again = kept?.block.isConnected && kept.scrollY === window.scrollY ? kept : null;
   const block = again?.block ?? blockAtTop();
   if (!block) return change();
-  const offset = again?.offset ?? offsetAtLine(block, EYE_LINE);
+  const offset = again?.offset ?? offsetAtLine(block, eyeLine());
   const top = lineTop(block, offset);
   change();
   window.scrollBy(0, lineTop(block, offset) - top);
@@ -117,7 +121,7 @@ function placeAtEyeLine(): Place | null {
   const blockId = spot?.block?.dataset.block;
   const chapterId = spot?.chapter.dataset.chapter;
   if (!spot?.block || !blockId || !chapterId) return null;
-  return { chapterId, blockId, offset: offsetAtLine(spot.block, EYE_LINE) };
+  return { chapterId, blockId, offset: offsetAtLine(spot.block, eyeLine()) };
 }
 
 /**

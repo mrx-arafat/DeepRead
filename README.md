@@ -214,6 +214,13 @@ After a jump, the browser's Back button returns you to the paragraph you were re
 Open **Aa** at the top right to set the page the way an e-reader does: a light, sepia or dark theme, the book's font (Literata or Atkinson), text size, line spacing, margins and justified text.
 Below those are the language explanations come in and your AI helper (pictured in [AI helpers](#ai-helpers)).
 The footer under the text tells you how many minutes of the chapter are left.
+
+**Layout** chooses how you move through the book: **Scroll** (the default) reads it as one long page, and **Pages** turns it a page at a time like an e-reader.
+In Pages, turn with the arrow keys, Page Up and Page Down, Space, a flick of the mouse wheel or trackpad, a swipe, or a click in the margin beside the text.
+Every page starts on a whole line and no line is ever cut at the bottom, and each chapter opens on a page of its own.
+The top bar slides away while you read: move the pointer to the top of the window or tap the top margin to bring it back.
+The footer then counts the pages left in the chapter and shows how far through the book you are.
+Tapping a word still looks it up, and read-aloud turns the page as the voice reaches the next one.
 Explanation languages: Bangla (the default), Hindi, Urdu, Arabic, Spanish, French, Indonesian and Turkish.
 
 DeepRead also fits a phone screen, here in the dark theme:

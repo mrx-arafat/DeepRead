@@ -1,0 +1,70 @@
+fileType: momentic/test/v2
+id: dr-read-pages-mode-desktop
+description: "Pages at desktop 1440: Pages chosen in the Aa menu turns the book a page at a time by key and by a click beside the text, every page shows only whole lines, turning back returns to the same page, and the choice is kept after a reload."
+viewport: "1440, 900"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - navigate: /book/{{ env.BOOK_ID }}/c4
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  # The first-visit tip sits in the right margin, where a click turns the page: put it away first.
+  - javascript:
+      environment: browser
+      code: |-
+        document.querySelector('button[aria-label="Dismiss tip"]')?.click();
+        return 'tip away';
+  - click:
+      css: button[aria-label="Reading settings"]
+  - click:
+      css: '#reading-settings input[value="pages"]'
+  - press: Escape
+  # The bar shows for a moment when pages begin, then slides away.
+  - wait: 3200
+  - module: ./modules/page-state.module.yaml
+  - javascript: setVariable('P1', env.PAGE)
+  - javascript: |-
+      const p = JSON.parse(env.P1);
+      assert(p.layout === 'pages', `layout is ${p.layout}, not pages`)
+      assert(p.overflow === 'hidden', `the window still scrolls by hand (overflow ${p.overflow})`)
+      assert(p.cut === 0, `${p.cut} lines are cut by the page edges on the first page`)
+      assert(/pages? left in chapter|Last page in chapter/.test(p.footer), `the footer says "${p.footer}", not the pages left`)
+  - assertVisually:
+      that: The book shows one clean page like an e-reader, with no top bar over the text, no line cut in half at the bottom, and a footer counting the pages left in the chapter
+      timeout: 20000
+  - press: ArrowRight
+  - wait: 700
+  - module: ./modules/page-state.module.yaml
+  - javascript: setVariable('P2', env.PAGE)
+  - javascript: |-
+      const a = JSON.parse(env.P1), b = JSON.parse(env.P2);
+      assert(b.y > a.y, `ArrowRight did not turn the page (scrollY ${a.y} then ${b.y})`)
+      assert(b.cut === 0, `${b.cut} lines are cut by the page edges after turning`)
+      assert(b.y - a.y <= 900, `the turn skipped text: it moved ${b.y - a.y}px in a 900px window`)
+  # A click in the left margin, beside the text, turns back to the very same page.
+  - click:
+      coords: "150, 600"
+  - wait: 700
+  - module: ./modules/page-state.module.yaml
+  - javascript: |-
+      const a = JSON.parse(env.P1), c = JSON.parse(env.PAGE);
+      assert(c.y === a.y, `turning back landed at ${c.y}, not on the page before at ${a.y}`)
+  # And one in the right margin turns on again.
+  - click:
+      coords: "1300, 760"
+  - wait: 700
+  - module: ./modules/page-state.module.yaml
+  - javascript: |-
+      const b = JSON.parse(env.P2), d = JSON.parse(env.PAGE);
+      assert(d.y === b.y, `a click in the right margin landed at ${d.y}, not on the next page at ${b.y}`)
+      assert(d.cut === 0, `${d.cut} lines are cut by the page edges`)
+  - refresh
+  - checkPageContains:
+      text: left in chapter
+      timeout: 15000
+  - wait: 1500
+  - module: ./modules/page-state.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE);
+      assert(p.layout === 'pages', `after a reload the layout is ${p.layout}, not pages`)
+      assert(p.cut === 0, `${p.cut} lines are cut by the page edges after a reload`)

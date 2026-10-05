@@ -21,7 +21,8 @@ import { useChapterFlow } from "./useChapterFlow.ts";
 import { useListen } from "./useListen.ts";
 import { useNoteMarks } from "./useNoteMarks.ts";
 import { useNotes } from "./useNotes.ts";
-import { blockAtTop, EYE_LINE, useReadingPosition } from "./useReadingPosition.ts";
+import { usePages } from "./usePages.ts";
+import { blockAtTop, eyeLine, useReadingPosition } from "./useReadingPosition.ts";
 import { WordPopover, type Lookup } from "./WordPopover.tsx";
 
 type Props = { bookId: string; chapterId: string | null };
@@ -30,6 +31,12 @@ type Props = { bookId: string; chapterId: string | null };
 function timeLeft(minutes: number | null): string {
   if (minutes === null) return "";
   return minutes === 0 ? "Less than a minute left in chapter" : `${minutes} min left in chapter`;
+}
+
+/** The same, counted in pages, for a reader turning them. */
+function pagesLeftText(pages: number): string {
+  if (pages === 0) return "Last page in chapter";
+  return pages === 1 ? "1 page left in chapter" : `About ${pages} pages left in chapter`;
 }
 
 /** The book read start to finish as one flow: chapters follow each other as the reader scrolls. */
@@ -50,6 +57,8 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const shown = useMemo(() => (book ? flow.chapters : []), [book, flow.chapters]);
   useNoteMarks(notes, shown);
   const position = useReadingPosition(bookId, chapterId, book, flow.start);
+  const turning = prefs.layout === "pages";
+  const pages = usePages(turning, Boolean(book && flow.start), Boolean(word || selection));
 
   useEffect(() => {
     let cancelled = false;
@@ -204,7 +213,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     const start = blockAtTop()?.dataset.block ?? (current && readableBlocks(current)[0]?.id) ?? blocks[0]?.id;
     if (!start) return;
     rememberKeyboardStart();
-    listen.startAtLine(start, EYE_LINE);
+    listen.startAtLine(start, eyeLine());
   }
 
   const pageError = error ?? flow.error;
@@ -225,7 +234,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
 
   return (
     <div className="reader">
-      <header className="topbar">
+      <header className={pages.barAway && !tocOpen ? "topbar topbar-away" : "topbar"}>
         <Link href="/" className="icon-button" aria-label="Back to your books">
           <ArrowLeft size={20} aria-hidden />
         </Link>
@@ -346,8 +355,21 @@ export function ReaderPage({ bookId, chapterId }: Props) {
           The player takes its place while listening. */}
       {book && !listen.active && (
         <footer className="reading-footer" aria-hidden>
-          <p className="reading-footer-line">{timeLeft(position.minutesLeft)}</p>
+          <p className="reading-footer-line">
+            <span>{turning && pages.left !== null ? pagesLeftText(pages.left) : timeLeft(position.minutesLeft)}</span>
+            {/* Turning pages, the top bar is mostly away, so the footer carries the book's percentage too. */}
+            {turning && <span>{position.percent}%</span>}
+          </p>
         </footer>
+      )}
+
+      {/* Paper over the top margin and over the bottom of the page from the first line that does not fit whole,
+          so a page never shows a line cut in half. */}
+      {pages.end !== null && (
+        <>
+          <div className="page-mask page-mask-top" aria-hidden />
+          <div className="page-mask page-mask-bottom" style={{ top: pages.end }} aria-hidden />
+        </>
       )}
 
       {/* Always on the page, so a screen reader hears "Note removed" the moment it appears. */}

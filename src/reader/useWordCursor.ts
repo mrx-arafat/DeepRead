@@ -1,4 +1,5 @@
 import { useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { inPages, showOnPage } from "./paging.ts";
 import { setHighlight, stepWord, type Span } from "./textRanges.ts";
 
 export type WordCursor = {
@@ -24,9 +25,10 @@ function rangeOf(text: Text, span: Span): Range {
   return range;
 }
 
-/** Scroll just enough to show `range` clear of the sticky top bar and the bottom edge. */
+/** Scroll just enough to show `range` clear of the sticky top bar and the bottom edge; in pages, turn to its page. */
 function reveal(range: Range) {
   const rect = range.getBoundingClientRect();
+  if (inPages()) return showOnPage(rect);
   const top = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
   if (rect.top < top) window.scrollBy(0, rect.top - top);
   else if (rect.bottom > window.innerHeight - 24) window.scrollBy(0, rect.bottom - window.innerHeight + 96);

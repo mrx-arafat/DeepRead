@@ -15,7 +15,7 @@ beforeAll(async () => {
 describe("readPrefs", () => {
   it("should keep known saved choices and replace unknown ones with the defaults", () => {
     const prefs = readPrefs(
-      { lang: "xx", fontSize: 23, theme: "neon", font: 3, margins: "wide", align: "justify", rate: 1.25 },
+      { lang: "xx", fontSize: 23, theme: "neon", font: 3, margins: "wide", align: "justify", layout: "pages", rate: 1.25 },
       false,
     );
     expect(prefs).toEqual({
@@ -26,8 +26,14 @@ describe("readPrefs", () => {
       spacing: "normal",
       margins: "wide",
       align: "justify",
+      layout: "pages",
       rate: 1.25,
     });
+  });
+
+  it("should read the book as one scroll unless pages were chosen", () => {
+    expect(readPrefs(null, false).layout).toBe("scroll");
+    expect(readPrefs({ layout: "columns" }, false).layout).toBe("scroll");
   });
 
   it("should start a first-time reader on the system's light or dark", () => {

@@ -1104,6 +1104,96 @@ li:not(.toc-matter) + .toc-matter {
   background: linear-gradient(to bottom, transparent, var(--paper));
 }
 
+.reading-footer-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* Pages (usePages): the book turned a page at a time. The window no longer scrolls by hand: keys, the wheel, a swipe
+   or a press beside the column turn the page. The page sits between a top margin and the footer, with paper laid
+   over both, the lower one from the first line that does not fit whole, so a line is never shown cut. */
+:root[data-layout="pages"]:has(.reader) {
+  --page-top: 2.75rem;
+
+  overflow: hidden;
+  /* A jump to a chapter or a reopened place lands on the page's first line, not under a margin. */
+  scroll-padding-top: var(--page-top);
+}
+
+/* A finger turns pages rather than moving the window; pinching to zoom still works. */
+:root[data-layout="pages"] .reader {
+  touch-action: pinch-zoom;
+}
+
+/* The bar floats over the page and slides away while the reader reads. It comes back on a press in the top margin,
+   with the pointer at the top of the window, and whenever a control in it has focus or the Aa menu is open. */
+:root[data-layout="pages"] .topbar {
+  position: fixed;
+  inset: 0 0 auto;
+  transition: transform 0.2s ease-out;
+}
+
+:root[data-layout="pages"] .topbar-away:not(:has(:focus-visible, .settings:popover-open)) {
+  transform: translateY(calc(-100% - 3px));
+}
+
+.page-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 12;
+  background: var(--paper);
+}
+
+.page-mask-top {
+  top: 0;
+  height: var(--page-top);
+}
+
+.page-mask-bottom {
+  bottom: 0;
+}
+
+/* The strip already hides the bottom of the page; a fade on top of it would dim the last whole line. */
+:root[data-layout="pages"] .reading-footer::before {
+  display: none;
+}
+
+/* A short slide in the direction of the turn. */
+@keyframes turn-next {
+  from {
+    opacity: 0.35;
+    transform: translateX(1rem);
+  }
+}
+
+@keyframes turn-previous {
+  from {
+    opacity: 0.35;
+    transform: translateX(-1rem);
+  }
+}
+
+.page.turn-next {
+  animation: turn-next 0.18s ease-out;
+}
+
+.page.turn-previous {
+  animation: turn-previous 0.18s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-layout="pages"] .topbar {
+    transition: none;
+  }
+
+  .page.turn-next,
+  .page.turn-previous {
+    animation: none;
+  }
+}
+
 .chapter {
   padding: 4.5rem 0 6rem;
 }

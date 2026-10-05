@@ -10,6 +10,8 @@ export const SPACINGS = ["tight", "normal", "loose"] as const;
 /** How much paper is left either side of the text: wide margins make a narrower column. */
 export const MARGINS = ["narrow", "normal", "wide"] as const;
 export const ALIGNS = ["left", "justify"] as const;
+/** The book as one long scroll, or turned a page at a time like an e-reader. */
+export const LAYOUTS = ["scroll", "pages"] as const;
 
 export type Prefs = {
   lang: LangCode;
@@ -20,6 +22,7 @@ export type Prefs = {
   spacing: (typeof SPACINGS)[number];
   margins: (typeof MARGINS)[number];
   align: (typeof ALIGNS)[number];
+  layout: (typeof LAYOUTS)[number];
   /** Read-aloud speed, 1 = normal. */
   rate: number;
 };
@@ -43,6 +46,7 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
     spacing: "normal",
     margins: "normal",
     align: "left",
+    layout: "scroll",
     rate: 1,
   };
   const merged = { ...defaults, ...(typeof saved === "object" && saved !== null ? saved : {}) } as Prefs;
@@ -52,6 +56,7 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
   merged.spacing = oneOf(SPACINGS, merged.spacing, defaults.spacing);
   merged.margins = oneOf(MARGINS, merged.margins, defaults.margins);
   merged.align = oneOf(ALIGNS, merged.align, defaults.align);
+  merged.layout = oneOf(LAYOUTS, merged.layout, defaults.layout);
   return merged;
 }
 
@@ -72,6 +77,7 @@ function apply(prefs: Prefs) {
   root.dataset.spacing = prefs.spacing;
   root.dataset.margins = prefs.margins;
   root.dataset.align = prefs.align;
+  root.dataset.layout = prefs.layout;
   root.style.setProperty("--book-size", `${prefs.fontSize}px`);
 }
 
