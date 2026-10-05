@@ -15,6 +15,19 @@ steps:
   - assertVisually:
       that: The very end of the book is on screen. Under the last section there is a closing "End of the book" heading, a short line naming the book, and a clear "Back to your books" button, with no spinner or error
       timeout: 20000
+  - javascript:
+      environment: browser
+      code: |-
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        return 'at book end';
+  - wait: 400
+  - javascript:
+      environment: browser
+      code: |-
+        if (!document.querySelector('.book-end')) throw new Error('the end of book panel is missing');
+        if (document.querySelector('.topbar-percent')?.textContent?.trim() !== '100%') throw new Error('book progress is not 100% at the end');
+        const footer = document.querySelector('.reading-footer-line')?.textContent?.trim();
+        if (footer !== 'End of the book') throw new Error(`the footer says "${footer}" instead of the completed state`);
   # The closing page is also the way back to the shelf.
   - click:
       css: .book-end a.button

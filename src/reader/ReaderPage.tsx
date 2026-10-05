@@ -356,7 +356,13 @@ export function ReaderPage({ bookId, chapterId }: Props) {
       {book && !listen.active && (
         <footer className="reading-footer" aria-hidden>
           <p className="reading-footer-line">
-            <span>{turning && pages.left !== null ? pagesLeftText(pages.left) : timeLeft(position.minutesLeft)}</span>
+            <span>
+              {turning && pages.left !== null
+                ? pagesLeftText(pages.left)
+                : position.completed
+                  ? "End of the book"
+                  : timeLeft(position.minutesLeft)}
+            </span>
             {/* Turning pages, the top bar is mostly away, so the footer carries the book's percentage too. */}
             {turning && <span>{position.percent}%</span>}
           </p>

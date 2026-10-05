@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import type { BookDetail, Chapter, ReadingProgress } from "../../shared/types.ts";
 import { api } from "../api.ts";
-import { bookPercent, chapterMinutesLeft, indexAtLine, lastOfText } from "./book.ts";
+import { bookPercent, chapterMinutesLeft, indexAtLine } from "./book.ts";
 import { inPages, pageFrame } from "./paging.ts";
 
 export type ReadingPosition = {
@@ -12,6 +12,8 @@ export type ReadingPosition = {
   percent: number;
   /** About how many minutes of that chapter are left to read; null until it is measured. */
   minutesLeft: number | null;
+  /** The closing panel has entered the visible reading area. */
+  completed: boolean;
 };
 
 /** The chapter at the eye line, and the block there or next below it; no block once its text is behind the reader. */
@@ -100,18 +102,16 @@ function fractionRead({ block, blocks }: Spot): number {
   return block ? Array.prototype.indexOf.call(blocks, block) / blocks.length : 1;
 }
 
-/** Scrolled to the very bottom with the book's last chapter on the page: the whole book has been read. */
-function atBookEnd(book: BookDetail): boolean {
-  const last = lastOfText(book.chapters);
-  return (
-    last !== undefined &&
-    window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2 &&
-    document.querySelector(`[data-chapter="${CSS.escape(last.id)}"]`) !== null
-  );
+/** The closing heading is wholly above the footer, so no chapter time remains to be read. */
+function atBookEnd(): boolean {
+  const heading = document.querySelector("#book-end-title");
+  if (!heading) return false;
+  const footerTop = document.querySelector(".reading-footer")?.getBoundingClientRect().top ?? window.innerHeight;
+  return heading.getBoundingClientRect().bottom <= footerTop;
 }
 
 const same = (a: ReadingPosition, b: ReadingPosition) =>
-  a.chapterId === b.chapterId && a.percent === b.percent && a.minutesLeft === b.minutesLeft;
+  a.chapterId === b.chapterId && a.percent === b.percent && a.minutesLeft === b.minutesLeft && a.completed === b.completed;
 
 type Place = Required<Pick<ReadingProgress, "chapterId" | "blockId" | "offset">>;
 
@@ -158,7 +158,7 @@ export function useReadingPosition(
   start: Chapter | undefined,
 ): ReadingPosition {
   const [, navigate] = useLocation();
-  const [position, setPosition] = useState<ReadingPosition>({ chapterId: null, percent: 0, minutesLeft: null });
+  const [position, setPosition] = useState<ReadingPosition>({ chapterId: null, percent: 0, minutesLeft: null, completed: false });
   // The newest progress saved from this page; the copy in `book` is only as fresh as the page load.
   const saved = useRef<Place | null>(null);
   const opened = useRef<Chapter | null>(null);
@@ -203,8 +203,8 @@ export function useReadingPosition(
       // While a chapter opens, the top bar already names it and where it starts in the book.
       const id = book && inUrl.current;
       const opening: ReadingPosition = id
-        ? { chapterId: id, percent: bookPercent(book.chapters, id, 0), minutesLeft: null }
-        : { chapterId: null, percent: 0, minutesLeft: null };
+        ? { chapterId: id, percent: bookPercent(book.chapters, id, 0), minutesLeft: null, completed: false }
+        : { chapterId: null, percent: 0, minutesLeft: null, completed: false };
       setPosition((prev) => (same(prev, opening) ? prev : opening));
       return;
     }
@@ -218,10 +218,12 @@ export function useReadingPosition(
       const id = spot?.chapter.dataset.chapter;
       if (!spot || !id) return;
       const fraction = fractionRead(spot);
+      const completed = atBookEnd();
       const next: ReadingPosition = {
         chapterId: id,
-        percent: atBookEnd(book) ? 100 : bookPercent(book.chapters, id, fraction),
-        minutesLeft: chapterMinutesLeft(book.chapters, id, fraction),
+        percent: completed ? 100 : bookPercent(book.chapters, id, fraction),
+        minutesLeft: completed ? 0 : chapterMinutesLeft(book.chapters, id, fraction),
+        completed,
       };
       // Unchanged rounded values keep the same state object, so scrolling does not re-render the book.
       setPosition((prev) => (same(prev, next) ? prev : next));

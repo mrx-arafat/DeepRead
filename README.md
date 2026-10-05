@@ -216,7 +216,7 @@ After a jump, the browser's Back button returns you to the paragraph you were re
 
 Open **Aa** at the top right to set the page the way an e-reader does: a light, sepia or dark theme, the book's font (Literata or Atkinson), text size, line spacing, margins and justified text.
 Below those are the language explanations come in and your AI helper (pictured in [AI helpers](#ai-helpers)).
-The footer under the text tells you how many minutes of the chapter are left.
+The footer under the text tells you how many minutes of the chapter are left, then marks the end of the book when you reach its closing panel.
 
 **Layout** chooses how you move through the book: **Scroll** (the default) reads it as one long page, and **Pages** turns it a page at a time like an e-reader.
 In Pages, turn with the arrow keys, Page Up and Page Down, Space, a flick of the mouse wheel or trackpad, a swipe, or a click in the margin beside the text.
