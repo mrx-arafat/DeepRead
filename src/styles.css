@@ -735,16 +735,16 @@ select {
   pointer-events: none;
 }
 
+/* Capped at six lines by height, not line-clamp: Chrome does not balance a -webkit-box, and an unbalanced title
+   leaves a lone "The" on its first line. The sizes below already shrink a long title to fit. */
 .cover-title {
-  display: -webkit-box;
+  max-height: calc(1.18em * 6);
   overflow: hidden;
   font-size: 14cqw;
   font-weight: 600;
   line-height: 1.18;
   overflow-wrap: anywhere;
   text-wrap: balance;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 6;
 }
 
 .cover[data-size="2"] .cover-title {
