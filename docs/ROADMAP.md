@@ -38,26 +38,21 @@ Journey tests find the UI by these selectors and labels; keep them or update the
 
 ## What to do next, in order
 
-### 1. Real book covers (started, on branch `wip/book-covers`)
+### 1. Real book covers (implemented on `fix/covers`)
 
-Goal: show each book's own cover, taken from page 1 of its PDF, and keep the generated cloth cover only when the PDF has no cover.
+Page 1 is rendered in a worker with a hard timeout. When it is a cover, a roughly 600px-wide WebP is stored beside the PDF and served by `GET /api/books/:id/cover` with an ETag. Books without a cover keep the generated cloth board. Older books are checked one at a time after startup. The cloth board remains visible while an image loads or if it fails. Long titles and the Continue card tooltip have also been corrected.
 
-Already on the branch (it is based on an older `main`, so merge or rebase it first):
-- `server/cover.ts` and `server/cover.test.ts`: renders page 1 and decides whether it is a cover.
-- A cover route and a cover flag on books (`server/routes-books.ts`, `server/library.ts`, `shared/types.ts`).
-- `src/library/Cover.tsx` showing the real image with the generated cover as fallback.
-- `@napi-rs/canvas` 1.0.9 as a direct dependency (pdf.js already used it as an optional one).
+First-page decisions checked against actual PDFs, after visually inspecting the Gutenberg, scanned and commercial pages:
 
-Left to do:
-1. Check the cover decision against real files and write the expected answer for each: `e2e/fixtures/problems-of-philosophy.pdf` has a plain text first page, so it must NOT get a cover; check `data/e2e-library/*.pdf` and a commercial book with a picture cover.
-   Render each page 1 to an image and look at it before trusting the heuristic.
-2. Render in a worker thread with a hard timeout, like `parsePdfIsolated` in `server/parser/parsePdf.mjs`, so a hostile PDF can never hang or break an import.
-3. Store `cover.webp` (about 600px wide) in the book's folder and record the outcome in `meta.json`; backfill books imported before this change in the background after the server starts, one at a time.
-4. Serve `GET /api/books/:id/cover` with caching and a 404 when there is none, behind the same local-only protection as the other book routes.
-5. Two review fixes that belong here: let long cover titles show their 7 to 10 lines again (`.cover-title` uses a fixed 6-line height; use `--title-lines` per title size) and put `title={book.title}` on the Continue card's link (its heading tooltip is covered by the link).
-6. Update the README library and Privacy sections (covers are rendered on this computer; nothing is sent anywhere) and re-shoot `docs/images/library.webp` and `library-empty.webp`.
+| PDF | Expected and observed |
+| --- | --- |
+| `e2e/fixtures/problems-of-philosophy.pdf` | No cover: Gutenberg license, title and contents |
+| `data/e2e-library/book-two.pdf`, `book-three.pdf`, `big.pdf` | No cover: each starts with the same Gutenberg page |
+| `data/e2e-library/scanned.pdf` | No cover: one line of text on white paper |
+| `data/e2e-library/broken.pdf`, `truncated.pdf` | No cover: unreadable PDF |
+| Local commercial PDF | Cover: a picture printed inside white margins |
 
-Done when: covered and uncovered books show correctly side by side in all three themes at 1440x900 and 390x844, a broken or slow image falls back to the generated cover, unit and journey tests pass.
+The `data/e2e-library` and commercial files are local verification inputs, not committed fixtures. The tracked Gutenberg file is also asserted in `server/cover.test.ts`. The library screenshot uses a locally drawn cover on a public-domain book, not the commercial PDF.
 
 ### 2. Remaining review findings
 

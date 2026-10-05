@@ -140,7 +140,7 @@ Scanned books, where each page is a photo, need OCR first.
 
 ### 2. Your library
 
-Your books stand on a shelf as covers, each bound in a cloth colour that DeepRead picks from the title.
+Your books stand on a shelf with their own covers when the PDF has a cover on its first page. Otherwise DeepRead makes a cloth cover from the title. A slow or broken cover image also shows the cloth cover.
 The book you read last waits at the top in a **Continue reading** card, with the chapter you stopped in and how much of the book is left.
 Click **Continue**, or the card, to open it right there.
 Under each cover a thin line shows how far you are, with the time left, or **New** and the time it takes to read for a book you have not opened.
@@ -359,7 +359,7 @@ Explanations sit in the margin beside their paragraph on wide screens and direct
 
 ## Privacy
 
-- Your PDFs, the parsed books and the answer cache stay in `data/` on your computer.
+- Your PDFs, locally rendered covers, the parsed books and the answer cache stay in `data/` on your computer. Cover rendering sends nothing to another service.
 - The server listens on `127.0.0.1` only and rejects requests from other websites.
   With `pnpm phone`, remote devices are refused until they open the link with the secret key.
 - The text you ask about goes to Anthropic (Claude Code) or OpenAI (Codex) through your own sign-in, the same as any session you start yourself.

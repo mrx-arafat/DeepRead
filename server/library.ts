@@ -1,8 +1,8 @@
-// Disk storage: <dataDir>/books/<id>/{source.pdf, book.json, meta.json, cache/}.
+// Disk storage: <dataDir>/books/<id>/{source.pdf, book.json, meta.json, cache/} and cover.webp when page 1 is a cover.
 // A book becomes visible only when its whole directory is renamed into place, so a crash can never
 // leave a half-written book; meta.json carries everything the list view needs so listing never opens book.json.
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type {
   BookDetail,
@@ -14,6 +14,8 @@ import type {
   ReadingProgress,
 } from "../shared/types.ts";
 import { writeFileAtomic } from "./atomic-write.ts";
+import type { CoverImage } from "./cover.ts";
+import type { RenderCover } from "./deps.ts";
 import { describePosition } from "./progress.ts";
 
 // Ids are a lowercase slug plus a hash. Anything else cannot be a book, so it never reaches the filesystem.
@@ -23,6 +25,8 @@ const MAX_SLUG = 48;
 const HASH_CHARS = 8;
 const LONG_HASH_CHARS = 16;
 const PARSED_BOOKS_KEPT = 4;
+// The cover is WebP; JPEG only where this computer's image library cannot write WebP.
+const COVER_FILES: Record<CoverImage["type"], string> = { "image/webp": "cover.webp", "image/jpeg": "cover.jpg" };
 
 export function isBookId(id: string): boolean {
   return id.length <= 96 && BOOK_ID.test(id);
@@ -51,9 +55,11 @@ function chapterWords(chapter: Chapter): number {
 }
 
 /** What meta.json holds: the list-view summary plus what dedupe and the detail view need. */
-type BookMeta = BookSummary & {
+type BookMeta = Omit<BookSummary, "hasCover"> & {
   sha256: string;
   chapterWordCounts: Record<string, number>;
+  /** Whether page 1 is the book's cover. Absent in books stored before covers were kept: not looked at yet. */
+  cover?: boolean;
 };
 
 /** Progress saved before it carried a chapter title and a percentage: those are filled in from the book. */
@@ -74,6 +80,8 @@ export type NewBook = {
   uploadPath: string;
   sha256: string;
   parsed: ParsedBook;
+  /** Page 1 of the PDF when it is a cover. */
+  cover: CoverImage | null;
 };
 
 export type Library = {
@@ -91,6 +99,13 @@ export type Library = {
   /** The parsed book as the reader sees it: with the title and author the reader last set. */
   book(id: string): Promise<ParsedBook | null>;
   pdf(id: string): Promise<{ path: string; size: number } | null>;
+  /** Null when the book has no cover of its own, or has not been looked at yet. */
+  cover(id: string): Promise<CoverImage | null>;
+  /**
+   * Books stored before covers were kept have never been looked at: finds theirs, one book at a time, and notes the
+   * books without one so they are not looked at again. Never rejects.
+   */
+  addMissingCovers(renderCover: RenderCover): Promise<void>;
   setProgress(id: string, chapterId: string, blockId: string, offset: number): Promise<ReadingProgress | null>;
   /** The caller has validated and trimmed `patch`. False when the book does not exist. */
   update(id: string, patch: BookUpdate): Promise<boolean>;
@@ -172,6 +187,7 @@ export function createLibrary(dataDir: string): Library {
       wordCount: meta.wordCount,
       addedAt: meta.addedAt,
       progress: meta.progress,
+      hasCover: meta.cover === true,
     };
   }
 
@@ -240,13 +256,14 @@ export function createLibrary(dataDir: string): Library {
       return null;
     },
 
-    async add({ uploadPath, sha256, parsed }) {
+    async add({ uploadPath, sha256, parsed, cover }) {
       await ready();
       const staging = join(tempDir, `book-${randomUUID()}`);
       try {
         await mkdir(join(staging, "cache"), { recursive: true });
         await rename(uploadPath, join(staging, "source.pdf"));
         await writeFileAtomic(join(staging, "book.json"), JSON.stringify(parsed));
+        if (cover) await writeFile(join(staging, COVER_FILES[cover.type]), cover.data);
 
         const chapterWordCounts = Object.fromEntries(parsed.chapters.map((c) => [c.id, chapterWords(c)]));
         // Reading time is the book's own text: a title page, an index or a licence is not reading.
@@ -268,6 +285,7 @@ export function createLibrary(dataDir: string): Library {
             progress: null,
             sha256,
             chapterWordCounts,
+            cover: cover !== null,
           };
           await writeFileAtomic(join(staging, "meta.json"), JSON.stringify(meta));
           try {
@@ -315,6 +333,42 @@ export function createLibrary(dataDir: string): Library {
       } catch (error) {
         if (isMissing(error)) return null;
         throw error;
+      }
+    },
+
+    async cover(id) {
+      await ready();
+      for (const [type, name] of Object.entries(COVER_FILES) as Array<[CoverImage["type"], string]>) {
+        try {
+          return { data: await readFile(join(dirOf(id), name)), type };
+        } catch (error) {
+          if (!isMissing(error)) throw error;
+        }
+      }
+      return null;
+    },
+
+    async addMissingCovers(renderCover) {
+      try {
+        for (const id of await bookIds()) {
+          try {
+            if ((await readMeta(id))?.cover !== undefined) continue;
+            // Drawn outside the queue: a reader saving their place in this book does not wait for the drawing.
+            const cover = await renderCover(join(dirOf(id), "source.pdf"));
+            await serialized(id, async () => {
+              const meta = await readMeta(id);
+              // Removed while its cover was being drawn: writing now would bring part of it back.
+              if (!meta) return;
+              // The image first, so meta.json never promises a cover that is not there.
+              if (cover) await writeFileAtomic(join(dirOf(id), COVER_FILES[cover.type]), cover.data);
+              await writeFileAtomic(join(dirOf(id), "meta.json"), JSON.stringify({ ...meta, cover: cover !== null }));
+            });
+          } catch (error) {
+            console.warn(`could not look for the cover of ${id}:`, error);
+          }
+        }
+      } catch (error) {
+        console.warn("could not look for the covers of older books:", error);
       }
     },
 

@@ -13,6 +13,7 @@ function book(title: string, progress?: { percent: number; updatedAt: string }):
     wordCount: 36_000,
     addedAt: "2026-01-01T00:00:00.000Z",
     progress: progress ? { chapterId: "c1", blockId: "c1-b1", chapterTitle: "One", ...progress } : null,
+    hasCover: false,
   };
 }
 

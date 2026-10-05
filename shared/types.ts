@@ -75,6 +75,8 @@ export type BookSummary = {
   wordCount: number;
   addedAt: string;
   progress: ReadingProgress | null;
+  /** Page 1 of the PDF is the book's cover, served at /api/books/<id>/cover. Without one the library draws a cover. */
+  hasCover: boolean;
 };
 
 export type BookDetail = BookSummary & {

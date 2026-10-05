@@ -7,7 +7,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { BookUpdate, ParsedBook, ReadingProgress } from "../shared/types.ts";
-import type { ParsePdf } from "./deps.ts";
+import type { ParsePdf, RenderCover } from "./deps.ts";
 import {
   apiError,
   blockNotFound,
@@ -121,8 +121,8 @@ function sendPdf(c: Context, path: string, size: number): Response {
   return c.body(body, status, partial);
 }
 
-export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf }): Hono {
-  const { library, parsePdf } = deps;
+export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; renderCover: RenderCover }): Hono {
+  const { library, parsePdf, renderCover } = deps;
   const routes = new Hono();
 
   routes.get("/", async (c) => c.json(await library.list()));
@@ -164,6 +164,9 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf }): Hon
           if (existing) return c.json(existing, 200);
         }
 
+        // Drawn while the book is parsed, each in a thread of its own, so looking for the cover adds nothing to the wait.
+        // It never rejects, so a parse that fails can leave it to finish on its own.
+        const cover = renderCover(uploadPath);
         let parsed: ParsedBook;
         try {
           parsed = await parsePdf(uploadPath);
@@ -173,7 +176,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf }): Hon
           return apiError(c, 500, "parse_failed", "This PDF could not be read because of an unexpected problem. Try again, or use a different copy of the book.");
         }
 
-        const { id, created } = await library.add({ uploadPath, sha256, parsed });
+        const { id, created } = await library.add({ uploadPath, sha256, parsed, cover: await cover });
         const detail = await library.detail(id);
         if (!detail) throw new Error(`book ${id} vanished right after it was added`);
         return c.json(detail, created ? 201 : 200);
@@ -231,6 +234,21 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf }): Hon
     if (!isBookId(id)) return invalidId(c);
     const pdf = await library.pdf(id);
     return pdf ? sendPdf(c, pdf.path, pdf.size) : bookNotFound(c);
+  });
+
+  routes.get("/:id/cover", async (c) => {
+    const id = c.req.param("id");
+    if (!isBookId(id)) return invalidId(c);
+    const cover = await library.cover(id);
+    if (!cover) return apiError(c, 404, "cover_not_found", "This book has no cover of its own.");
+    const headers = {
+      "Content-Type": cover.type,
+      // The cover is drawn once from the PDF, and the id contains a hash of that file, so it hardly ever changes.
+      "Cache-Control": "private, max-age=86400",
+      ETag: `"${createHash("sha256").update(cover.data).digest("base64url").slice(0, 27)}"`,
+    };
+    if (c.req.header("if-none-match") === headers.ETag) return c.body(null, 304, headers);
+    return c.body(cover.data, 200, headers);
   });
 
   routes.put(
