@@ -1,0 +1,39 @@
+fileType: momentic/test/v2
+id: word-card-viewport-1280x800
+description: A justified, centered text column keeps the margin word card inside the viewport at 1280x800.
+viewport: "1280, 800"
+steps:
+  - module:
+      path: ./modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c8
+  - click:
+      css: button[aria-label="Reading settings"]
+  - click:
+      css: label:has(input[name="reading-settings-align"][value="justify"])
+  - checkElementVisible:
+      css: html[data-align="justify"]
+  - click:
+      css: button[aria-label="Reading settings"]
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c8
+        PHRASE:
+          string: "induction"
+  - click:
+      x: "{{ env.TEXT_AT.cx }}"
+      y: "{{ env.TEXT_AT.cy }}"
+  - checkElementVisible:
+      css: .word-popover
+      timeout: 5000
+  - javascript:
+      environment: browser
+      code: |-
+        const card = document.querySelector(".word-popover");
+        const box = card.getBoundingClientRect();
+        if (box.right > innerWidth || box.left < 0) throw new Error(`word card outside ${innerWidth}px viewport: ${box.left}-${box.right}`);
+        window.scrollTo({ top: 0, behavior: "instant" });
+        return { left: box.left, right: box.right, width: innerWidth, height: innerHeight };

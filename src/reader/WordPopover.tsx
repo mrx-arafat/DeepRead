@@ -114,7 +114,7 @@ export function WordPopover({ lookup, bookId, lang, onListenFromHere, onClose }:
   const { refs, floatingStyles } = useFloating({
     placement: margin ? "right-start" : "bottom",
     middleware: margin
-      ? [offset(gutter()), shift({ padding: EDGES })]
+      ? [offset(gutter()), shift({ crossAxis: true, padding: { ...EDGES, right: 12 } })]
       : [offset(GAP), flip({ padding: EDGES }), shift({ padding: 12 })],
     whileElementsMounted: autoUpdate,
   });
