@@ -1,0 +1,78 @@
+fileType: momentic/test/v2
+id: library-drop-rejections
+description: A multi-file drop is rejected in full, a drop cannot interrupt editing, and a second drop during an upload gets an explanation.
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - javascript:
+      environment: browser
+      code: |-
+        const blob = await (await fetch("/e2e/fixtures/problems-of-philosophy.pdf")).blob();
+        const files = ["first.pdf", "second.pdf"].map((name) => new File([blob], name, { type: "application/pdf" }));
+        const dt = new DataTransfer();
+        files.forEach((file) => dt.items.add(file));
+        window.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (!document.querySelector(".inline-error")?.textContent?.includes("one PDF at a time"))
+          throw new Error("Multi-file drop did not explain the single-file limit");
+        if (document.querySelector(".drop-busy")) throw new Error("Multi-file drop started an upload");
+        if ((await (await fetch("/api/books")).json()).length !== 0) throw new Error("Multi-file drop added a book");
+  - module: ./modules/add-fixture-book.module.yaml
+  - click: Back to your books
+  - click: More actions for The Problems of Philosophy
+  - click: Edit The Problems of Philosophy
+  - checkElementFocused: Title input
+  - javascript:
+      environment: browser
+      code: |-
+        const originalFetch = window.fetch.bind(window);
+        let uploads = 0;
+        window.fetch = (...args) => {
+          if (String(args[0]).endsWith("/api/books") && args[1]?.method === "POST") uploads += 1;
+          return originalFetch(...args);
+        };
+        const blob = await (await originalFetch("/e2e/fixtures/problems-of-philosophy.pdf")).blob();
+        const dt = new DataTransfer();
+        dt.items.add(new File([blob], "while-editing.pdf", { type: "application/pdf" }));
+        window.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (uploads !== 0) throw new Error("Dropping while editing started an upload");
+        if (!document.querySelector("dialog.shelf-dialog[open]")) throw new Error("Edit dialog closed after drop");
+        if (!document.querySelector("form.shelf-edit")) throw new Error("Edit form disappeared after drop");
+        window.fetch = originalFetch;
+  - click: Cancel button
+  - javascript:
+      environment: browser
+      code: |-
+        const blob = await (await fetch("/e2e/fixtures/problems-of-philosophy.pdf")).blob();
+        const dt = new DataTransfer();
+        dt.items.add(new File([blob], "first.pdf", { type: "application/pdf" }));
+        window.__secondDrop = new DataTransfer();
+        window.__secondDrop.items.add(new File([blob], "second.pdf", { type: "application/pdf" }));
+        const originalFetch = window.fetch.bind(window);
+        let uploads = 0;
+        let release;
+        window.fetch = (...args) => {
+          if (String(args[0]).endsWith("/api/books") && args[1]?.method === "POST") {
+            uploads += 1;
+            return new Promise((resolve) => { release = () => resolve(originalFetch(...args)); });
+          }
+          return originalFetch(...args);
+        };
+        window.__finishUpload = () => {
+          if (uploads !== 1 || !release) throw new Error(`Expected one pending upload, got ${uploads}`);
+          window.fetch = originalFetch;
+          release();
+        };
+        window.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (!document.querySelector(".drop-busy")) throw new Error("First drop did not start uploading");
+        window.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: window.__secondDrop }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (uploads !== 1) throw new Error(`Second drop started another upload: ${uploads}`);
+        if (!document.querySelector(".inline-error")?.textContent?.includes("Drop it again"))
+          throw new Error("Busy drop was not explained");
+        window.__finishUpload();
+  - checkPageContains: is already in your library

@@ -2,12 +2,13 @@ import { useEffect, useEffectEvent, useState } from "react";
 
 const carriesFiles = (event: DragEvent) => event.dataTransfer?.types.includes("Files") ?? false;
 
-/** Lets a file be dropped anywhere on the page. `dragging` is true while one is over it; `onFile` gets the first one dropped. */
-export function useFileDrop(onFile: (file: File | undefined) => void): boolean {
+/** Receives page-wide file drops while enabled. */
+export function useFileDrop(onFiles: (files: FileList) => void, enabled: boolean): boolean {
   const [dragging, setDragging] = useState(false);
-  const received = useEffectEvent(onFile);
+  const received = useEffectEvent(onFiles);
 
   useEffect(() => {
+    if (!enabled) setDragging(false);
     // A drag enters and leaves every element it passes over, so only when every one it entered has been left is it off the page.
     let inside = 0;
     const enter = (event: DragEvent) => {
@@ -17,7 +18,7 @@ export function useFileDrop(onFile: (file: File | undefined) => void): boolean {
       if (!carriesFiles(event)) return;
       // Without this the browser opens the file in the tab instead of handing it to the page.
       event.preventDefault();
-      setDragging(true);
+      if (enabled) setDragging(true);
     };
     const leave = (event: DragEvent) => {
       if (!carriesFiles(event)) return;
@@ -29,7 +30,8 @@ export function useFileDrop(onFile: (file: File | undefined) => void): boolean {
       event.preventDefault();
       inside = 0;
       setDragging(false);
-      received(event.dataTransfer?.files[0]);
+      const files = event.dataTransfer?.files;
+      if (enabled && files?.length) received(files);
     };
     window.addEventListener("dragenter", enter);
     window.addEventListener("dragover", over);
@@ -41,7 +43,7 @@ export function useFileDrop(onFile: (file: File | undefined) => void): boolean {
       window.removeEventListener("dragleave", leave);
       window.removeEventListener("drop", drop);
     };
-  }, []);
+  }, [enabled]);
 
   return dragging;
 }

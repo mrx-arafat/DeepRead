@@ -51,7 +51,8 @@ export function LibraryPage() {
   const [focusAfterRemoval, setFocusAfterRemoval] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
-  const dragging = useFileDrop((file) => void add(file));
+  const uploadingNow = useRef(false);
+  const dragging = useFileDrop(onDrop, active?.kind !== "edit");
 
   useEffect(() => {
     // `current` drops the answer of a request the reader has already replaced by pressing "Try again".
@@ -73,8 +74,22 @@ export function LibraryPage() {
     setFocusAfterRemoval(null);
   }, [focusAfterRemoval]);
 
+  function onDrop(files: FileList) {
+    if (active?.kind === "edit") return;
+    if (uploadingNow.current) {
+      setError("A book is still being added. Drop it again when the upload finishes.");
+      return;
+    }
+    if (files.length !== 1) {
+      setError("Add one PDF at a time. No files were added; drop one PDF to try again.");
+      return;
+    }
+    void add(files[0]);
+  }
+
   async function add(file: File | undefined) {
-    if (!file || uploading) return;
+    if (!file || uploadingNow.current) return;
+    uploadingNow.current = true;
     setError(null);
     setAlready(null);
     setUploading(file.name);
@@ -84,12 +99,14 @@ export function LibraryPage() {
         // Stay on the shelf: the reader asked to add a book, not to open one, and nothing was added.
         setAlready({ id: book.id, title: book.title });
         setUploading(null);
+        uploadingNow.current = false;
         return;
       }
       navigate(`/book/${book.id}`);
     } catch (err) {
       setError(addFailure(file.name, err));
       setUploading(null);
+      uploadingNow.current = false;
     }
   }
 
@@ -193,7 +210,7 @@ export function LibraryPage() {
                   <FileUp size={18} aria-hidden /> Add a book (PDF)
                 </button>
                 <span className="drop-hint">
-                  {dragging ? "Drop the PDF to add it" : empty ? "or drop a PDF here" : "or drop a PDF anywhere"}
+                  {dragging ? "Drop one PDF to add it" : empty ? "or drop one PDF here" : "or drop one PDF anywhere"}
                 </span>
               </div>
             )}
