@@ -5,7 +5,10 @@ description: Adds the public-domain fixture book through the Add a book (PDF) bu
 steps:
   - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
   - click: Add a book (PDF) button
-  - waitForUrl: /book/
+  # Reading the PDF takes a few seconds, and longer on a busy machine.
+  - waitForUrl:
+      substring: /book/
+      timeout: 30000
   # The book opens at its own text (the preface), past the title page and contents.
   - checkElementVisible:
       css: "main.page > article.chapter:nth-of-type(1) .chapter-text"

@@ -10,9 +10,10 @@ type Props = {
 };
 
 /**
- * The edit form in a modal dialog over the shelf, so correcting a title never moves the books around it. The form
- * decides when to close (Escape, Cancel, a saved change): the browser's own Escape is stopped, or it would close the
- * dialog under a save that is still running.
+ * The edit form in a modal dialog over the shelf, so correcting a title never moves the books around it. The browser's
+ * own Escape is stopped while a save is running, which it would otherwise close the dialog under; at any other time it
+ * closes the dialog as Cancel does. The browser can still close a dialog by itself (after repeated Escapes), so its
+ * close always goes back through `onClose`: otherwise the shelf would think the dialog open and never show it again.
  */
 export function BookEditDialog({ book, saving, onSave, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -27,7 +28,16 @@ export function BookEditDialog({ book, saving, onSave, onClose }: Props) {
   }, []);
 
   return (
-    <dialog ref={dialog} className="shelf-dialog" aria-labelledby={headingId} onCancel={(event) => event.preventDefault()}>
+    <dialog
+      ref={dialog}
+      className="shelf-dialog"
+      aria-labelledby={headingId}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!saving) onClose();
+      }}
+      onClose={onClose}
+    >
       <h2 id={headingId}>Edit book</h2>
       <BookEditForm book={book} saving={saving} onSave={onSave} onClose={onClose} />
     </dialog>

@@ -33,6 +33,15 @@ const BAR_INTRO_MS = 2500;
 const CONTROLS =
   "a, button, input, select, textarea, label, summary, [contenteditable], [data-block], .note, .tip, .aid, .topbar, .listen-bar, .toast, dialog, [popover], .book-end";
 
+// Where a wheel or a swipe belongs to the control under it, not to the page: a slider, the menus, the player.
+const OWN_GESTURES = "input, select, textarea, dialog, [popover], .topbar, .listen-bar";
+
+/** The Aa menu or the chapter list is open, or `target` is a control that takes the gesture itself. */
+function gestureTaken(target: EventTarget | null): boolean {
+  if (document.querySelector(":popover-open, dialog[open]")) return true;
+  return target instanceof Element && target.closest(OWN_GESTURES) !== null;
+}
+
 /** An element under `target` that scrolls on its own (the chapter list, the Aa menu, a long note) keeps its wheel. */
 function scrollsItself(target: EventTarget | null): boolean {
   for (let element = target instanceof Element ? target : null; element && element !== document.body; element = element.parentElement) {
@@ -183,7 +192,7 @@ export function usePages(on: boolean, ready: boolean, paused: boolean): Pages {
     let wheelSum = 0;
     let wheelTurned = false;
     const onWheel = (event: WheelEvent) => {
-      if (event.ctrlKey || pausedNow.current || scrollsItself(event.target)) return;
+      if (event.ctrlKey || pausedNow.current || gestureTaken(event.target) || scrollsItself(event.target)) return;
       const now = performance.now();
       if (now - wheelAt > GESTURE_GAP_MS) {
         wheelSum = 0;
@@ -207,7 +216,7 @@ export function usePages(on: boolean, ready: boolean, paused: boolean): Pages {
         y: event.clientY,
         id: event.pointerId,
         touch: event.pointerType !== "mouse",
-        quiet: pausedNow.current || scrollsItself(event.target),
+        quiet: pausedNow.current || gestureTaken(event.target) || scrollsItself(event.target),
       };
     };
     const onPointerUp = (event: PointerEvent) => {

@@ -31,8 +31,12 @@ steps:
           // The drop box has an edge only on a first visit (dashed); with books on the shelf the add button carries its own.
           if (document.querySelector(".library-top[data-empty]")) border("dropBox", ".drop"); else border("addButton", ".drop .button");
           border("textField", ".shelf-field input"); border("cancelButton", ".shelf-edit-actions .quiet-button");
-          size("addButton", ".drop .button"); size("continueButton", ".continue-action"); size("rowIcon", ".icon-button"); size("removeLink", ".shelf-confirm .link-button.danger"); size("keepLink", ".shelf-confirm .link-button:not(.danger)"); size("rowLink", ".shelf-link");
+          size("dropBox", ".drop"); size("addButton", ".drop .button"); size("continueButton", ".continue-action"); size("rowIcon", ".icon-button"); size("removeLink", ".shelf-confirm .link-button.danger"); size("keepLink", ".shelf-confirm .link-button:not(.danger)"); size("rowLink", ".shelf-link");
           out.overflowX = document.documentElement.scrollWidth - innerWidth;
+          // Where the first book sits on the page (not on the screen), to tell whether it moved between two states.
+          // The link, not the cover: the cover lifts 3px while the pointer is over it, which is not a layout move.
+          const cover = document.querySelector(".shelf-item .shelf-link");
+          if (cover) { const r = cover.getBoundingClientRect(); out.cover = `${Math.round(r.left + scrollX)},${Math.round(r.top + scrollY)}`; }
           return out;
         };
         return document.documentElement.dataset.theme;
@@ -47,7 +51,8 @@ steps:
       on: Add a book (PDF) button
       retries: 2
   - checkPageContains: That file is not a PDF
-  - assertVisually: A readable red error sentence sits under the dashed welcome box, the box has not changed size, and the No books yet sentence is still inside it
+  # A screenshot cannot show that the box kept its size (the AI check compares it with other screenshots, even ones from an older design), so the size is measured: see the dropBox check at the end.
+  - assertVisually: A readable red error sentence sits under the dashed welcome box, and the No books yet sentence is still inside the box
   - javascript:
       environment: browser
       code: return window.__measure();
@@ -56,7 +61,10 @@ steps:
   - click:
       on: Add a book (PDF) button
       retries: 2
-  - waitForUrl: /book/
+  # Reading the PDF takes a few seconds, and longer on a busy machine.
+  - waitForUrl:
+      substring: /book/
+      timeout: 30000
   # The book opens at its own text (the preface), past the title page and contents.
   - checkElementVisible:
       css: "main.page > article.chapter:nth-of-type(1) .chapter-text"
@@ -65,7 +73,8 @@ steps:
   - wait: 2000
   - click: Back to your books
   - checkPageContains: Your books
-  - assertVisually: Under a Continue reading heading a card shows the book cover, the title in serif, the chapter, a progress line with its percentage and the time left, and a blue Continue button at the right (a phone puts the button below, full width). Under the Your books heading there is one cloth-coloured book cover with the title stamped in cream serif, a thin progress line, a smaller line of grey text and a three-dot button. Contrast is comfortable and nothing overlaps
+  # The book was only opened, not scrolled, so its progress reads "Just started"; a percentage appears once the reader has moved.
+  - assertVisually: Under a Continue reading heading a card shows the book cover, the title in serif, the chapter, a progress line with its label (the words Just started, or a percentage) and the time left, and a blue Continue button at the right (a phone puts the button below, full width). Under the Your books heading there is one cloth-coloured book cover with the title stamped in cream serif, a thin progress line, a smaller line of grey text and a three-dot button. Contrast is comfortable and nothing overlaps
   - javascript:
       environment: browser
       code: return window.__measure();
@@ -92,9 +101,16 @@ steps:
       code: return window.__measure();
       saveAs: T_LONG
   - click: the three-dot more actions button under the book's cover
-  - click: the red Remove menu item with the bin icon
+  # With the long title the last book sits at the bottom edge of a phone screen, so its panel opens below what is on screen; a reader scrolls it into view, and so does the test.
+  - javascript:
+      environment: browser
+      code: |-
+        document.querySelector(".shelf-menu-panel")?.scrollIntoView({ block: "nearest" });
+        return null;
+  - click: the Remove menu item with the bin icon in the book's actions panel
   - checkPageContains: Keep
-  - assertVisually: Under the book's cover a grey box asks whether to remove the book and its notes, with the red word Remove and the blue word Keep. They are clearly separate, readable, and inside the screen, and the cover did not move
+  # That the cover did not move is measured (see the cover check at the end), not judged from a screenshot.
+  - assertVisually: Under the book's cover a grey box asks whether to remove the book and its notes, with the red word Remove and the blue word Keep. They are clearly separate, readable, and inside the screen
   - javascript:
       environment: browser
       code: return window.__measure();
@@ -104,6 +120,8 @@ steps:
       environment: browser
       saveAs: T_DRAG
       code: |-
+        // With books on the shelf the drop area is in the page header, which the steps above may have scrolled out of view.
+        window.scrollTo(0, 0);
         const file = new File([new Blob(["%PDF-1.4"])], "x.pdf", { type: "application/pdf" });
         const dt = new DataTransfer();
         dt.items.add(file);
@@ -126,4 +144,6 @@ steps:
             if (["addButton", "continueButton", "rowIcon", "removeLink", "keepLink"].includes(k) && Math.min(w, h) < minTarget) problems.add(`"${k}" target is ${v}px, needs ${minTarget}px (${state})`);
           }
         }
+        if (env.T_ERROR.sizes.dropBox !== env.T_EMPTY.sizes.dropBox) problems.add(`the drop box changed size when the error appeared: ${env.T_EMPTY.sizes.dropBox} before, ${env.T_ERROR.sizes.dropBox} after`);
+        if (env.T_CONFIRM.cover !== env.T_LONG.cover) problems.add(`the cover moved when the remove question opened: at ${env.T_LONG.cover} before, ${env.T_CONFIRM.cover} after`);
         if (problems.size) throw new Error(`Polish checks failed in the ${env.THEME} theme at ${env.T_EMPTY.viewport}: ` + [...problems].join("; "));

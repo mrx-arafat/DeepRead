@@ -8,7 +8,9 @@ steps:
   - refresh
   - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
   - click: Add a book (PDF) button
-  - waitForUrl: /book/
+  - waitForUrl:
+      substring: /book/
+      timeout: 30000
   # The book saves "Continue" 1.2 s after it opens, so a row only shows it if the reader stays that long.
   - wait: 1600
   - click: Back to your books
@@ -17,7 +19,9 @@ steps:
   - click:
       on: Add a book (PDF) button
       retries: 2
-  - waitForUrl: /book/
+  - waitForUrl:
+      substring: /book/
+      timeout: 30000
   - wait: 1600
   - click: Back to your books
   - checkPageContains: Your books
@@ -25,7 +29,9 @@ steps:
   - click:
       on: Add a book (PDF) button
       retries: 2
-  - waitForUrl: /book/
+  - waitForUrl:
+      substring: /book/
+      timeout: 30000
   - wait: 1600
   - click: Back to your books
   - checkPageContains: Your books

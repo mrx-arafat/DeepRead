@@ -1,10 +1,7 @@
 import { ArrowDown, ArrowUp, Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
 import type { Ref } from "react";
-import { setPrefs } from "../prefs.ts";
+import { RATES, setPrefs } from "../prefs.ts";
 import type { Listen } from "./useListen.ts";
-
-// Slow choices for a reader still learning to follow spoken English.
-const RATES = [0.6, 0.7, 0.8, 0.9, 1, 1.2, 1.5];
 
 /** Player controls, pinned to the bottom of the window while listening. */
 export function ListenBar({

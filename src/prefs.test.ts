@@ -15,7 +15,7 @@ beforeAll(async () => {
 describe("readPrefs", () => {
   it("should keep known saved choices and replace unknown ones with the defaults", () => {
     const prefs = readPrefs(
-      { lang: "xx", fontSize: 23, theme: "neon", font: 3, margins: "wide", align: "justify", layout: "pages", rate: 1.25 },
+      { lang: "xx", fontSize: 23, theme: "neon", font: 3, margins: "wide", align: "justify", layout: "pages", rate: 1.2 },
       false,
     );
     expect(prefs).toEqual({
@@ -27,8 +27,25 @@ describe("readPrefs", () => {
       margins: "wide",
       align: "justify",
       layout: "pages",
-      rate: 1.25,
+      rate: 1.2,
     });
+  });
+
+  it("should replace a text size, a speed or a language that is not one DeepRead offers", () => {
+    const odd = readPrefs({ fontSize: "huge", rate: "fast", lang: "toString" }, false);
+    expect([odd.fontSize, odd.rate, odd.lang]).toEqual([19, 1, DEFAULT_LANG]);
+    expect(readPrefs({ fontSize: null, rate: Number.NaN }, false)).toMatchObject({ fontSize: 19, rate: 1 });
+    expect(readPrefs({ fontSize: 18.5, rate: 1.1 }, false)).toMatchObject({ fontSize: 19, rate: 1 });
+    expect(readPrefs({ lang: "__proto__" }, false).lang).toBe(DEFAULT_LANG);
+  });
+
+  it("should bring a text size beyond the Aa menu's range back to its nearest end", () => {
+    expect(readPrefs({ fontSize: 4 }, false).fontSize).toBe(15);
+    expect(readPrefs({ fontSize: 90 }, false).fontSize).toBe(26);
+  });
+
+  it("should keep every speed the player offers, including those of earlier versions", () => {
+    for (const rate of [0.6, 0.8, 1, 1.2, 1.5]) expect(readPrefs({ rate }, false).rate).toBe(rate);
   });
 
   it("should read the book as one scroll unless pages were chosen", () => {

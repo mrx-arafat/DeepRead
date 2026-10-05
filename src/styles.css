@@ -1691,7 +1691,8 @@ li:not(.toc-matter) + .toc-matter {
    or a press beside the column turn the page. The page sits between a top margin and the footer, with paper laid
    over both, the lower one from the first line that does not fit whole, so a line is never shown cut. */
 :root[data-layout="pages"]:has(.reader) {
-  --page-top: 2.75rem;
+  /* Below the top bar, so the bar shown over the page never covers its first line. */
+  --page-top: calc(var(--topbar) + 0.5rem);
 
   overflow: hidden;
   /* A jump to a chapter or a reopened place lands on the page's first line, not under a margin. */

@@ -29,7 +29,9 @@ steps:
         const drop = document.querySelector(".drop");
         drop.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: window.__deepreadDt }));
         return { draggingAfterDrop: drop.dataset.dragging ?? null };
-  - waitForUrl: /book/
+  - waitForUrl:
+      substring: /book/
+      timeout: 30000
   # The book opens at its own text (the preface), past the title page and contents.
   - checkElementVisible:
       css: "main.page > article.chapter:nth-of-type(1) .chapter-text"

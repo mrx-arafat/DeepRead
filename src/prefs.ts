@@ -28,6 +28,8 @@ export type Prefs = {
 };
 
 export const FONT_SIZES = { min: 15, max: 26 } as const;
+/** Read-aloud speeds, slow ones first, for a reader still learning to follow spoken English. */
+export const RATES = [0.6, 0.7, 0.8, 0.9, 1, 1.2, 1.5] as const;
 
 const KEY = "deepread.prefs";
 
@@ -50,7 +52,13 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
     rate: 1,
   };
   const merged = { ...defaults, ...(typeof saved === "object" && saved !== null ? saved : {}) } as Prefs;
-  if (!(merged.lang in LANGUAGES)) merged.lang = DEFAULT_LANG;
+  // Own keys only: `in` would take an inherited name such as "toString" for a language.
+  if (!Object.hasOwn(LANGUAGES, merged.lang)) merged.lang = DEFAULT_LANG;
+  merged.fontSize = Number.isInteger(merged.fontSize)
+    ? Math.min(FONT_SIZES.max, Math.max(FONT_SIZES.min, merged.fontSize))
+    : defaults.fontSize;
+  // A speed the player does not offer would leave its list with nothing chosen.
+  merged.rate = RATES.includes(merged.rate as (typeof RATES)[number]) ? merged.rate : defaults.rate;
   merged.theme = oneOf(THEMES, merged.theme, defaults.theme);
   merged.font = oneOf(FONTS, merged.font, defaults.font);
   merged.spacing = oneOf(SPACINGS, merged.spacing, defaults.spacing);

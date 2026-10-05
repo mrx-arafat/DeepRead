@@ -9,7 +9,9 @@ steps:
   - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
   - click: Add a book (PDF) button
   - checkPageContains: A long book can take a minute.
-  - waitForUrl: /book/
+  - waitForUrl:
+      substring: /book/
+      timeout: 30000
   - assertVisually: The reader page has opened for The Problems of Philosophy and shows readable book text near the top of the page
   - javascript:
       code: |-
