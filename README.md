@@ -118,7 +118,7 @@ If you have both, open **Aa** in the reader and pick one under **AI helper**.
 DeepRead remembers your choice.
 If you install one later, it shows up there the next time you open the menu.
 
-<table><tr><td><img src="docs/images/settings.webp" alt="The Aa menu with text size, theme, explanation language and the AI helper picker" width="900"></td></tr></table>
+<table><tr><td><img src="docs/images/settings.webp" alt="The Aa menu with theme, font, text size, line spacing, margins, alignment, layout, explanation language and the AI helper picker" width="900"></td></tr></table>
 
 **With no AI helper at all**, you can still read, listen, change settings, and tap a word to see a quick translation in your language.
 Only the explanations (the meaning, the example sentence and the passage notes) need an AI helper, and DeepRead tells you how to add one.
@@ -156,7 +156,7 @@ It opens at the book itself, past the title page and contents, and the next chap
 Scroll up from the start of a chapter and the one before it comes in above, without moving the text you are on, so you can re-read how the last chapter ended.
 Your place is saved as you go.
 
-<table><tr><td><img src="docs/images/reader.webp" alt="The reading view at the start of a chapter" width="900"></td></tr></table>
+<table><tr><td><img src="docs/images/reader.webp" alt="The reading view in the sepia theme at the start of a chapter: a centred chapter title, a Before you read box and the book text in one column" width="900"></td></tr></table>
 
 ### 4. Tap a word
 
@@ -182,7 +182,7 @@ Select a sentence or a paragraph, then choose what you want:
 | **In Bangla** (named after your language) | A faithful translation into your language, then a short explanation |
 | The headphones | Reading aloud from that passage |
 
-<table><tr><td><img src="docs/images/select-passage.webp" alt="A selected passage with the Explain, Example and In Bangla buttons" width="900"></td></tr></table>
+<table><tr><td><img src="docs/images/select-passage.webp" alt="A selected passage with the Explain, Example, In Bangla and Listen buttons" width="900"></td></tr></table>
 
 The answer is pinned beside the paragraph like a teacher's note, and it stays there when you come back to the book.
 
