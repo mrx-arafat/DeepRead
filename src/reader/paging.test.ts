@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mergeLines, pageEnd, pagesLeft, previousPageTop, showOnPage, snapShift } from "./paging.ts";
+import { chaptersIn, mergeLines, pageEnd, pagesLeft, previousPageTop, showOnPage, snapShift } from "./paging.ts";
 
 /** Lines 20px tall every 30px from `first`, as text set with some leading would give. */
 const linesFrom = (first: number, count: number) =>
@@ -17,6 +17,26 @@ describe("mergeLines", () => {
       { top: 100, bottom: 121 },
       { top: 140, bottom: 162 },
     ]);
+  });
+});
+
+describe("chaptersIn", () => {
+  it("should read non-enumerable DOMRect bounds when selecting laid-out chapters", () => {
+    const rect = { get top() { return 900; }, get bottom() { return 1900; } };
+    const chapter = { id: 1, getBoundingClientRect: () => rect };
+    expect(chaptersIn([chapter], 1000, 1800)).toEqual([chapter]);
+  });
+
+  it("should select only chapters that overlap the page band, including its boundaries", () => {
+    const chapter = (id: number, top: number, bottom: number) => ({ id, getBoundingClientRect: () => ({ top, bottom }) });
+    const chapters = Array.from({ length: 80 }, (_, index) => chapter(index, index * 3000, index * 3000 + 900));
+    chapters[10] = chapter(10, 90, 950);
+    chapters[11] = chapter(11, 950, 1900);
+    chapters[12] = chapter(12, 1900, 2050);
+
+    const overlapping = chaptersIn(chapters, 1000, 2000);
+    expect(overlapping.map(({ id }) => id)).toEqual([11, 12]);
+    expect(overlapping).toHaveLength(2);
   });
 });
 

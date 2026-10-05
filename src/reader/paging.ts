@@ -3,6 +3,14 @@
 
 export type Box = { top: number; bottom: number };
 
+/** Chapters whose laid-out bounds intersect a page's measurement band. */
+export function chaptersIn<T extends { getBoundingClientRect(): Box }>(chapters: T[], from: number, to: number): T[] {
+  return chapters.filter((chapter) => {
+    const box = chapter.getBoundingClientRect();
+    return box.bottom >= from && box.top <= to;
+  });
+}
+
 /** The pieces of text that share a line (a word in another font, a highlighted span) as one line, top to bottom. */
 export function mergeLines(pieces: Box[]): Box[] {
   const lines: Box[] = [];
@@ -77,27 +85,34 @@ export function pageFrame(): Box {
  */
 export function linesIn(from: number, to: number): Box[] {
   const page = document.querySelector("main.page");
-  const column = page?.querySelector(".chapter")?.getBoundingClientRect();
-  if (!page || !column) return [];
+  if (!page) return [];
+  // Chapters are the units the flow loads and the page boundaries respect. Starting a walker at each overlapping
+  // chapter prevents a turn from traversing all the chapters already loaded above and below the page.
+  const chapters = chaptersIn([...page.querySelectorAll<HTMLElement>("[data-chapter]")], from, to);
+  const first = chapters[0];
+  const column = first?.getBoundingClientRect();
+  if (!column) return [];
   const pieces: Box[] = [];
-  const walker = document.createTreeWalker(page, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      if (node instanceof Element) {
-        const box = node.getBoundingClientRect();
-        // An element with no box of its own (display: contents) may still hold laid-out text.
-        if (box.width === 0 && box.height === 0) return NodeFilter.FILTER_SKIP;
-        const outside = box.bottom < from || box.top > to || box.right <= column.left || box.left >= column.right;
-        return outside ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
-      }
-      return node.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-    },
-  });
   const range = document.createRange();
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    range.selectNodeContents(node);
-    for (const rect of range.getClientRects()) {
-      // A few px is text hidden for screen readers only, not a line anyone sees.
-      if (rect.height >= 4 && rect.bottom >= from && rect.top <= to) pieces.push({ top: rect.top, bottom: rect.bottom });
+  for (const chapter of chapters) {
+    const walker = document.createTreeWalker(chapter, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (node instanceof Element) {
+          const box = node.getBoundingClientRect();
+          // An element with no box of its own (display: contents) may still hold laid-out text.
+          if (box.width === 0 && box.height === 0) return NodeFilter.FILTER_SKIP;
+          const outside = box.bottom < from || box.top > to || box.right <= column.left || box.left >= column.right;
+          return outside ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
+        }
+        return node.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      },
+    });
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      range.selectNodeContents(node);
+      for (const rect of range.getClientRects()) {
+        // A few px is text hidden for screen readers only, not a line anyone sees.
+        if (rect.height >= 4 && rect.bottom >= from && rect.top <= to) pieces.push({ top: rect.top, bottom: rect.bottom });
+      }
     }
   }
   return mergeLines(pieces);
