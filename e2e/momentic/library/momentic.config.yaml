@@ -7,7 +7,8 @@ include:
   - "**/*.module.yaml"
 
 retries: 0
-parallel: 2
+# One at a time: each journey starts by deleting every book in the instance, so two side by side undo each other.
+parallel: 1
 recordVideo: on-fail
 gitMainBranch: main
 fileFormat: v2

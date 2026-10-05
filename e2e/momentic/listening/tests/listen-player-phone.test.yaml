@@ -9,7 +9,9 @@ steps:
   - module: ../modules/stub-speech.module.yaml
   - javascript:
       environment: browser
-      code: window.__stub.wordMs = 500; return 'slow words';
+      # Slow enough that the first sentence (about 17 words) outlasts the screenshot check below, which on a busy
+      # machine or a slow connection can take 15 s: Pause must land while the first sentence is still being read.
+      code: window.__stub.wordMs = 1500; return 'slow words';
   - click:
       css: '.topbar-tools button[aria-pressed]'
   - wait: 1800

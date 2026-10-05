@@ -27,6 +27,9 @@ steps:
       coords: 358, 25
   - wait: 500
   - module: ../modules/contrast-scan.module.yaml
+  # The Aa menu is wide and tall enough now to cover the line the drag starts on: close it, as a reader would, before
+  # selecting a passage of the book.
+  - press: Escape
   - mouseDrag:
       coords: 24, 720
       delta: 250, 0

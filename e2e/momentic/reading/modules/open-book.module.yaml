@@ -5,6 +5,10 @@ steps:
   # Journeys share one book and run side by side, and opening any chapter is saved as where the reader is, so
   # another journey may have left the reader anywhere (the licence, say). Start every journey from the test
   # library's own place, partway through Chapter II.
+  # The shelf is drawn once the list of books has come back: on a busy machine that is after the page itself has loaded.
+  - checkElementVisible:
+      css: a.shelf-link
+      timeout: 15000
   - javascript:
       environment: browser
       code: |-

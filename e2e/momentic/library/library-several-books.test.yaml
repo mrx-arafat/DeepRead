@@ -9,6 +9,8 @@ steps:
   - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
   - click: Add a book (PDF) button
   - waitForUrl: /book/
+  # The book saves "Continue" 1.2 s after it opens, so a row only shows it if the reader stays that long.
+  - wait: 1600
   - click: Back to your books
   - checkPageContains: Your books
   - fileUpload: data/e2e-library/book-two.pdf
@@ -16,6 +18,7 @@ steps:
       on: Add a book (PDF) button
       retries: 2
   - waitForUrl: /book/
+  - wait: 1600
   - click: Back to your books
   - checkPageContains: Your books
   - fileUpload: data/e2e-library/book-three.pdf
@@ -23,6 +26,7 @@ steps:
       on: Add a book (PDF) button
       retries: 2
   - waitForUrl: /book/
+  - wait: 1600
   - click: Back to your books
   - checkPageContains: Your books
   - javascript:
