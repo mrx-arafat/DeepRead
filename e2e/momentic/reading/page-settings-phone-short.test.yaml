@@ -1,0 +1,40 @@
+fileType: momentic/test/v2
+id: dr-read-page-settings-phone-short
+description: "Journey 5 on a short phone screen, 390x600: the Aa menu holds more than the room under the top bar, so it scrolls inside itself. Every control can be brought into view, the last ones included, and the book behind the menu stays where it was."
+viewport: "390, 600"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - navigate: /book/{{ env.BOOK_ID }}/c4
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - scrollDown: 1600
+  - wait: 2600
+  - module: ./modules/settings-state.module.yaml
+  - javascript: setVariable('PAGE_START', env.PAGE)
+  - click:
+      css: button[aria-label="Reading settings"]
+  - module: ./modules/check-settings-menu.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PANEL);
+      assert(p.scrollHeight > p.clientHeight + 40, `on a ${p.viewport.h}px screen the Aa menu holds ${p.scrollHeight}px in ${p.clientHeight}px: this check needs a menu taller than the room it has`)
+      assert(p.overflowY === 'auto' || p.overflowY === 'scroll', `the Aa menu is taller than its room and its overflow is ${p.overflowY}`)
+      assert(p.cutOff > 0 && p.furthest > 0, `${p.cutOff} controls were cut off at first and the menu scrolled ${p.furthest}px to bring them into view`)
+  # To its end: the last control is whole and above the bottom edge of the screen.
+  - javascript:
+      environment: browser
+      saveAs: MENU_END
+      code: |-
+        const menu = document.getElementById('reading-settings');
+        menu.scrollTop = menu.scrollHeight;
+        const last = Array.from(menu.querySelectorAll('select')).pop().getBoundingClientRect();
+        const box = menu.getBoundingClientRect();
+        return JSON.stringify({ scrollTop: Math.round(menu.scrollTop), room: Math.round(menu.scrollHeight - menu.clientHeight), lastBottom: Math.round(last.bottom), menuBottom: Math.round(box.bottom), screen: innerHeight, scrollY: Math.round(scrollY) });
+  - javascript: |-
+      const e = JSON.parse(env.MENU_END), s = JSON.parse(env.PAGE_START);
+      assert(e.scrollTop >= e.room - 1, `the menu stopped at ${e.scrollTop}px of ${e.room}px`)
+      assert(e.lastBottom <= e.menuBottom && e.menuBottom <= e.screen, `the last control ends ${e.lastBottom}px down, in a menu ending at ${e.menuBottom}px on a ${e.screen}px screen`)
+      assert(e.scrollY === s.scrollY, `scrolling the menu moved the book from ${s.scrollY}px to ${e.scrollY}px`)
+  - assertVisually:
+      that: The open reading settings menu is scrolled to its end, showing the Explain in language picker and the AI helper picker, and the menu stays inside the phone screen
+      timeout: 20000

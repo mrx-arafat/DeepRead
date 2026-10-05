@@ -1,0 +1,49 @@
+fileType: momentic/module/v2
+id: dr-read-m-settings-state
+name: The page as the reader's settings leave it
+steps:
+  - javascript:
+      environment: browser
+      saveAs: PAGE
+      code: |-
+        // What the Aa menu's choices did to the page: the attributes on <html>, what the stylesheet made of them, what was
+        // saved, which radios the menu shows as chosen, and the footer under the text. Read-only.
+        const q = (s) => document.querySelector(s);
+        const cs = (el, p) => (el ? getComputedStyle(el)[p] : null);
+        const rect = (el) => {
+          if (!el) return null;
+          const b = el.getBoundingClientRect();
+          const r = (n) => Math.round(n * 10) / 10;
+          return { left: r(b.left), right: r(b.right), top: r(b.top), bottom: r(b.bottom), width: r(b.width), height: r(b.height) };
+        };
+        const root = document.documentElement;
+        const text = q('.chapter-text');
+        const para = q('.chapter-text p[data-block]');
+        const fontPx = text ? parseFloat(cs(text, 'fontSize')) : null;
+        const leadingPx = text ? parseFloat(cs(text, 'lineHeight')) : null;
+        let prefs = null;
+        try { prefs = JSON.parse(localStorage.getItem('deepread.prefs')); } catch (error) { prefs = 'unreadable'; }
+        const checked = {};
+        for (const input of document.querySelectorAll('#reading-settings input[type="radio"]:checked')) checked[input.name.replace('reading-settings-', '')] = input.value;
+        const radios = {};
+        for (const input of document.querySelectorAll('#reading-settings input[type="radio"]')) radios[input.name.replace('reading-settings-', '')] = (radios[input.name.replace('reading-settings-', '')] || []).concat(input.value);
+        const slider = q('#reading-settings input[type="range"]');
+        const footerLine = q('.reading-footer-line');
+        const footerBar = q('.reading-footer');
+        const panel = q('#reading-settings');
+        return JSON.stringify({
+          data: { theme: root.dataset.theme, font: root.dataset.font, spacing: root.dataset.spacing, margins: root.dataset.margins, align: root.dataset.align },
+          prefs, checked, radios,
+          slider: slider && { value: Number(slider.value), min: Number(slider.min), max: Number(slider.max) },
+          smallerDisabled: q('button[aria-label="Smaller text"]') && q('button[aria-label="Smaller text"]').disabled,
+          largerDisabled: q('button[aria-label="Larger text"]') && q('button[aria-label="Larger text"]').disabled,
+          paper: cs(document.body, 'backgroundColor'), ink: cs(text, 'color'), face: cs(text, 'fontFamily'),
+          fontPx, leading: fontPx && leadingPx ? Math.round((leadingPx / fontPx) * 100) / 100 : null,
+          textAlign: cs(para, 'textAlign'), hyphens: cs(para, 'hyphens'),
+          column: rect(q('.chapter')), text: rect(text),
+          head: { align: cs(q('.chapter-head'), 'textAlign'), caps: cs(q('.chapter-head h2'), 'fontVariantCaps') },
+          footer: footerLine && { text: footerLine.textContent.trim(), ...rect(footerLine), shown: footerLine.getClientRects().length > 0 },
+          footerBar: rect(footerBar),
+          panelOpen: !!panel && panel.matches(':popover-open'),
+          scrollWidth: root.scrollWidth, innerWidth, innerHeight, scrollY: Math.round(scrollY), url: location.pathname.split('/').pop(),
+        });

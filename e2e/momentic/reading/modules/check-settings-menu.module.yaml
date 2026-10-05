@@ -1,0 +1,46 @@
+fileType: momentic/module/v2
+id: dr-read-m-check-settings-menu
+name: Check the open Aa menu fits the screen
+steps:
+  # The Aa menu has to be open. Measures it, then fails if it runs off the screen, if it cannot scroll to what does not
+  # fit, if any control is smaller than a fingertip, or if the book behind it moves. Leaves the menu scrolled to its top.
+  - javascript:
+      environment: browser
+      saveAs: PANEL
+      code: |-
+        const panel = document.getElementById('reading-settings');
+        const round = (n) => Math.round(n * 10) / 10;
+        const cs = getComputedStyle(panel);
+        const rect = panel.getBoundingClientRect();
+        const y0 = scrollY;
+        const controls = Array.from(panel.querySelectorAll('.segmented label, button, input[type="range"], select')).filter((el) => el.getClientRects().length);
+        const named = (el) => el.getAttribute('aria-label') || (el.textContent || '').trim().slice(0, 30) || el.id || el.tagName;
+        const small = controls.map((el) => { const b = el.getBoundingClientRect(); return { name: named(el), w: round(b.width), h: round(b.height) }; }).filter((c) => c.w < 43.9 || c.h < 43.9);
+        // Bring each control into view by scrolling the menu, as a reader's thumb would, and see how far that went.
+        // Only the text under the last control may be the part that does not fit, so count the controls cut off at first.
+        const cutOff = controls.filter((el) => { const b = el.getBoundingClientRect(); return b.bottom > rect.bottom + 0.5 || b.top < rect.top - 0.5; }).length;
+        const unreachable = [];
+        let furthest = 0;
+        for (const el of controls) {
+          el.scrollIntoView({ block: 'nearest' });
+          furthest = Math.max(furthest, panel.scrollTop);
+          const b = el.getBoundingClientRect();
+          if (b.top < rect.top - 0.5 || b.bottom > rect.bottom + 0.5 || b.left < rect.left - 0.5 || b.right > rect.right + 0.5) unreachable.push(`${named(el)} at ${round(b.top)}-${round(b.bottom)} in a menu at ${round(rect.top)}-${round(rect.bottom)}`);
+        }
+        const pageMoved = Math.round(scrollY - y0);
+        panel.scrollTop = 0;
+        return JSON.stringify({
+          viewport: { w: innerWidth, h: innerHeight }, rect: { left: round(rect.left), right: round(rect.right), top: round(rect.top), bottom: round(rect.bottom) },
+          overflowY: cs.overflowY, overscroll: cs.overscrollBehaviorY, scrollHeight: panel.scrollHeight, clientHeight: panel.clientHeight,
+          count: controls.length, small, unreachable, cutOff, furthest: Math.round(furthest), pageMoved,
+        });
+  - javascript: |-
+      const p = JSON.parse(env.PANEL);
+      assert(p.rect.left >= 0 && p.rect.right <= p.viewport.w && p.rect.top >= 0 && p.rect.bottom <= p.viewport.h, `the Aa menu is at ${JSON.stringify(p.rect)} on a ${p.viewport.w}x${p.viewport.h} screen`)
+      assert(p.scrollHeight <= p.clientHeight + 1 || (p.overflowY === 'auto' || p.overflowY === 'scroll'), `the Aa menu holds ${p.scrollHeight}px in ${p.clientHeight}px but its overflow is ${p.overflowY}, so it does not scroll`)
+      assert(p.overscroll === 'contain', `scrolling to the end of the Aa menu would carry on scrolling the book: overscroll-behavior is ${p.overscroll}`)
+      assert(p.count >= 14, `only ${p.count} controls found in the Aa menu`)
+      assert(p.small.length === 0, `controls under 44px in the Aa menu: ${JSON.stringify(p.small)}`)
+      assert(p.unreachable.length === 0, `controls the Aa menu cannot scroll fully into view: ${p.unreachable.join('; ')}`)
+      assert(p.cutOff === 0 || p.furthest > 0, `${p.cutOff} controls of the Aa menu were cut off by the edge of the screen and scrolling the menu did not bring them into view`)
+      assert(p.pageMoved === 0, `scrolling the Aa menu moved the book by ${p.pageMoved}px`)

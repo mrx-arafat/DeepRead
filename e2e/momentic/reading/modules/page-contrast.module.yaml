@@ -1,0 +1,36 @@
+fileType: momentic/module/v2
+id: dr-read-m-page-contrast
+name: Contrast of the reading page's text
+steps:
+  - javascript:
+      environment: browser
+      saveAs: CONTRAST
+      code: |-
+        // WCAG contrast of the text a reader meets on the reading page, against the paper actually behind it. The Aa menu
+        // is measured too when it is open.
+        const parse = (c) => {
+          const n = (c.match(/-?[\d.]+(?:e-?\d+)?/g) || []).map(Number);
+          const k = c.startsWith('color(') ? 255 : 1;
+          return { r: n[0] * k, g: n[1] * k, b: n[2] * k, a: n.length > 3 ? n[3] : 1 };
+        };
+        const paperBehind = (el) => {
+          const layers = [];
+          for (let node = el; node; node = node.parentElement) {
+            const c = parse(getComputedStyle(node).backgroundColor);
+            if (c.a > 0) { layers.push(c); if (c.a >= 1) break; }
+          }
+          let base = { r: 255, g: 255, b: 255 };
+          for (const l of layers.reverse()) base = { r: l.r * l.a + base.r * (1 - l.a), g: l.g * l.a + base.g * (1 - l.a), b: l.b * l.a + base.b * (1 - l.a) };
+          return base;
+        };
+        const lum = ({ r, g, b }) => [r, g, b].map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+        const ratio = (fg, bg) => { const [hi, lo] = [lum(fg), lum(bg)].sort((a, b) => b - a); return (hi + 0.05) / (lo + 0.05); };
+        const rows = [];
+        for (const sel of ['.chapter-text p[data-block]', '.chapter-meta', '.chapter-head h2', '.reading-footer-line', '.topbar-title', '.topbar-percent', '.aid', '#reading-settings .settings-label', '#reading-settings .settings-hint', '#reading-settings select']) {
+          const el = document.querySelector(sel);
+          if (!el || !el.getClientRects().length) continue;
+          const fg = parse(getComputedStyle(el).color);
+          rows.push({ sel, ratio: Math.round(ratio(fg, paperBehind(el)) * 100) / 100 });
+        }
+        const body = rows.find((r) => r.sel === '.chapter-text p[data-block]');
+        return JSON.stringify({ theme: document.documentElement.dataset.theme, rows, body: body && body.ratio, lowest: rows.reduce((m, r) => (r.ratio < m.ratio ? r : m), { ratio: 99 }) });

@@ -1,0 +1,88 @@
+fileType: momentic/test/v2
+id: dr-read-page-settings-phone
+description: "Journey 5 at phone 390x844: the Aa menu fits the screen, every control in it is at least 44px, choosing sepia, Atkinson, loose spacing, wide margins and justified text keeps the line being read in place and the page free of sideways scrolling, sepia stays readable, and the time-left footer fits the screen."
+viewport: "390, 844"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - navigate: /book/{{ env.BOOK_ID }}/c4
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - scrollDown: 1600
+  - wait: 2600
+
+  # The footer under the text, on a phone.
+  - module: ./modules/settings-state.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE);
+      assert(p.footer && p.footer.shown, 'there is no footer under the book text')
+      assert(/^(?:\d+ min|Less than a minute) left in chapter$/.test(p.footer.text), `the footer says "${p.footer.text}", not "N min left in chapter"`)
+      assert(p.footerBar.bottom >= p.innerHeight - 1 && p.footerBar.bottom <= p.innerHeight + 1, `the footer ends ${p.footerBar.bottom}px down a ${p.innerHeight}px screen, not at its bottom edge`)
+      assert(p.footer.left >= 0 && p.footer.right <= p.innerWidth, `the footer runs from ${p.footer.left}px to ${p.footer.right}px on a ${p.innerWidth}px screen`)
+      assert(p.scrollWidth <= p.innerWidth, `the page scrolls sideways before any change: ${p.scrollWidth}px wide on a ${p.innerWidth}px screen`)
+  - module: ./modules/eye-line.module.yaml
+  - javascript: setVariable('LINE_BEFORE', env.EYE_LINE)
+
+  # The menu: it fits the screen, every control can be reached by scrolling the menu itself, and none is smaller than a
+  # fingertip.
+  - click:
+      css: button[aria-label="Reading settings"]
+  - module: ./modules/check-settings-menu.module.yaml
+
+  # Sepia, Atkinson, loose spacing, wide margins, justified: each keeps the line in place.
+  - click:
+      css: '#reading-settings input[value="sepia"]'
+  - module: ./modules/page-contrast.module.yaml
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const c = JSON.parse(env.CONTRAST), a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(c.theme === 'sepia', `the page is ${c.theme} after choosing Sepia`)
+      assert(c.body >= 7, `sepia body text has a contrast of ${c.body}:1, under 7:1`)
+      assert(c.lowest.ratio >= 4.5, `in sepia ${c.lowest.sel} has a contrast of ${c.lowest.ratio}:1, under 4.5:1`)
+      assert(Math.abs(b.top - a.top) <= 2, `after choosing Sepia the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the screen`)
+  - click:
+      css: '#reading-settings input[value="sans"]'
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(Math.abs(b.top - a.top) <= 2, `after choosing Atkinson the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the screen`)
+  - click:
+      css: '#reading-settings input[value="loose"]'
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(Math.abs(b.top - a.top) <= 2, `after choosing loose spacing the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the screen`)
+  - click:
+      css: '#reading-settings input[value="wide"]'
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(Math.abs(b.top - a.top) <= 2, `after choosing wide margins the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the screen`)
+  - click:
+      css: '#reading-settings input[value="justify"]'
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(Math.abs(b.top - a.top) <= 2, `after choosing Justify the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the screen`)
+  - assertVisually:
+      that: The open reading settings menu sits inside the phone screen, below the top bar, with Sepia chosen among the Light, Sepia and Dark page swatches, and none of its controls are cut off at the sides
+      timeout: 20000
+  - press: Escape
+
+  # With all five chosen, the page still fits the screen.
+  - module: ./modules/settings-state.module.yaml
+  - module: ./modules/metrics.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE), m = JSON.parse(env.METRICS);
+      assert(JSON.stringify(p.data) === JSON.stringify({ theme: 'sepia', font: 'sans', spacing: 'loose', margins: 'wide', align: 'justify' }), `the page is ${JSON.stringify(p.data)}, not sepia, sans, loose, wide and justified`)
+      assert(!p.panelOpen, 'the Aa menu is still open after Escape')
+      assert(p.scrollWidth <= p.innerWidth, `the page scrolls sideways: ${p.scrollWidth}px wide on a ${p.innerWidth}px screen`)
+      assert(p.column.left >= 0 && p.column.right <= p.innerWidth, `the book column runs from ${p.column.left}px to ${p.column.right}px on a ${p.innerWidth}px screen`)
+      assert(p.text.width >= 240, `the book text is only ${p.text.width}px wide on a ${p.innerWidth}px screen`)
+      assert(m.overflowing.length === 0, `these stick out past the screen: ${m.overflowing.join(', ')}`)
+      assert(p.footer.left >= 0 && p.footer.right <= p.innerWidth && /^(?:\d+ min|Less than a minute) left in chapter$/.test(p.footer.text), `the footer reads "${p.footer.text}" from ${p.footer.left}px to ${p.footer.right}px on a ${p.innerWidth}px screen`)
+  - scrollDown: 700
+  - wait: 800
+  - assertVisually:
+      that: The page is a sepia page of justified sans-serif book text with wide margins and loose line spacing that fits the phone screen, with no clipped words, no sideways overflow and a small time-left line at the bottom
+      timeout: 20000

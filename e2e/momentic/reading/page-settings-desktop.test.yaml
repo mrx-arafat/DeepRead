@@ -1,0 +1,230 @@
+fileType: momentic/test/v2
+id: dr-read-page-settings-desktop
+description: "Journey 5 at desktop 1440: the Aa menu sets the page as an e-reader does (sepia, Atkinson, loose spacing, wide margins, justified text and the text size slider). Each choice shows at once, keeps the line being read where it is and a line of 55 to 75 characters, and survives a reload; the footer says how much of the chapter is left; chapters open centred."
+viewport: "1440, 900"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - navigate: /book/{{ env.BOOK_ID }}/c4
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - scrollDown: 2400
+  - wait: 2600
+
+  # The footer under the text: minutes left in the chapter, in line with the text, and counting down as the reader reads.
+  - module: ./modules/settings-state.module.yaml
+  - javascript: setVariable('PAGE_START', env.PAGE)
+  - javascript: |-
+      const p = JSON.parse(env.PAGE_START);
+      assert(p.footer && p.footer.shown, 'there is no footer under the book text')
+      assert(/^(?:\d+ min|Less than a minute) left in chapter$/.test(p.footer.text), `the footer says "${p.footer.text}", not "N min left in chapter"`)
+      assert(p.footerBar.bottom >= p.innerHeight - 1 && p.footerBar.bottom <= p.innerHeight + 1, `the footer ends ${p.footerBar.bottom}px down a ${p.innerHeight}px window, not at its bottom edge`)
+      assert(Math.abs(p.footer.left - p.text.left) <= 2 && Math.abs(p.footer.width - p.text.width) <= 2, `the footer (${p.footer.left}px, ${p.footer.width}px wide) is not in line with the text (${p.text.left}px, ${p.text.width}px wide)`)
+  - scrollDown: 1800
+  - wait: 1500
+  - module: ./modules/settings-state.module.yaml
+  - javascript: |-
+      const a = JSON.parse(env.PAGE_START), b = JSON.parse(env.PAGE);
+      const minutes = (t) => (/^Less than/.test(t) ? 0 : Number(t.match(/^(\d+)/)[1]));
+      assert(a.url === b.url, `the reader moved from ${a.url} to ${b.url} while scrolling, so the footer cannot be compared`)
+      assert(/^(?:\d+ min|Less than a minute) left in chapter$/.test(b.footer.text), `after scrolling the footer says "${b.footer.text}"`)
+      assert(minutes(b.footer.text) < minutes(a.footer.text), `after scrolling 1800px further down the footer still says "${b.footer.text}" (it said "${a.footer.text}")`)
+
+  # The line the reader is on, which every change below must leave where it is.
+  - module: ./modules/eye-line.module.yaml
+  - javascript: setVariable('LINE_BEFORE', env.EYE_LINE)
+  - click:
+      css: button[aria-label="Reading settings"]
+  - module: ./modules/settings-state.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE);
+      assert(p.panelOpen, 'the Aa menu did not open')
+      assert(JSON.stringify(p.radios) === JSON.stringify({ theme: ['light', 'sepia', 'dark'], font: ['serif', 'sans'], spacing: ['tight', 'normal', 'loose'], margins: ['narrow', 'normal', 'wide'], align: ['left', 'justify'] }), `the Aa menu offers ${JSON.stringify(p.radios)}`)
+      assert(p.slider && p.slider.min === 15 && p.slider.max === 26 && p.slider.value === p.fontPx, `the text size slider is ${JSON.stringify(p.slider)} while the book text is ${p.fontPx}px`)
+
+  # Sepia: warm paper and brown ink, readable.
+  - click:
+      css: '#reading-settings input[value="sepia"]'
+  - module: ./modules/settings-state.module.yaml
+  - module: ./modules/page-contrast.module.yaml
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE), c = JSON.parse(env.CONTRAST), a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(p.data.theme === 'sepia' && p.checked.theme === 'sepia' && p.prefs.theme === 'sepia', `after choosing Sepia the page is ${p.data.theme}, the menu shows ${p.checked.theme}, saved ${p.prefs && p.prefs.theme}`)
+      assert(p.paper === 'rgb(246, 239, 223)' && p.ink === 'rgb(59, 45, 31)', `the sepia page is ${p.paper} with ${p.ink} text, not warm paper with brown ink`)
+      assert(c.body >= 7, `sepia body text has a contrast of ${c.body}:1, under 7:1`)
+      assert(c.lowest.ratio >= 4.5, `in sepia ${c.lowest.sel} has a contrast of ${c.lowest.ratio}:1, under 4.5:1`)
+      assert(Math.abs(b.top - a.top) <= 2, `after choosing Sepia the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the window`)
+  - assertVisually:
+      that: The reading page is in a sepia theme, warm cream paper with dark brown text, and the open reading settings menu shows Sepia as the chosen theme
+      timeout: 20000
+
+  # Atkinson, loose spacing, wide margins, justified: each reflows the book and each keeps the line in place and the
+  # line length comfortable.
+  - click:
+      css: '#reading-settings input[value="sans"]'
+  - module: ./modules/settings-state.module.yaml
+  - module: ./modules/metrics.module.yaml
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE), m = JSON.parse(env.METRICS), a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(p.data.font === 'sans' && p.checked.font === 'sans' && p.prefs.font === 'sans', `after choosing Atkinson the page is ${p.data.font}, the menu shows ${p.checked.font}, saved ${p.prefs && p.prefs.font}`)
+      assert(/Atkinson/.test(p.face), `the book text is set in ${p.face}, not Atkinson`)
+      assert(m.charsPerLineMedian >= 55 && m.charsPerLineMedian <= 75, `in Atkinson a line holds ${m.charsPerLineMedian} characters, not 55-75`)
+      assert(Math.abs(b.top - a.top) <= 2, `after choosing Atkinson the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the window`)
+  - click:
+      css: '#reading-settings input[value="loose"]'
+  - module: ./modules/settings-state.module.yaml
+  - module: ./modules/metrics.module.yaml
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE), m = JSON.parse(env.METRICS), a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(p.data.spacing === 'loose' && p.checked.spacing === 'loose' && p.prefs.spacing === 'loose', `after choosing loose spacing the page is ${p.data.spacing}, the menu shows ${p.checked.spacing}, saved ${p.prefs && p.prefs.spacing}`)
+      assert(Math.abs(p.leading - 1.95) <= 0.02, `loose spacing sets ${p.leading} times the text size between lines, not 1.95`)
+      assert(m.charsPerLineMedian >= 55 && m.charsPerLineMedian <= 75, `with loose spacing a line holds ${m.charsPerLineMedian} characters, not 55-75`)
+      assert(Math.abs(b.top - a.top) <= 2, `after choosing loose spacing the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the window`)
+  - click:
+      css: '#reading-settings input[value="wide"]'
+  - module: ./modules/settings-state.module.yaml
+  - module: ./modules/metrics.module.yaml
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE), s = JSON.parse(env.PAGE_START), m = JSON.parse(env.METRICS), a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(p.data.margins === 'wide' && p.checked.margins === 'wide' && p.prefs.margins === 'wide', `after choosing wide margins the page is ${p.data.margins}, the menu shows ${p.checked.margins}, saved ${p.prefs && p.prefs.margins}`)
+      assert(p.column.width <= s.column.width - 40, `wide margins leave a column ${p.column.width}px wide, not narrower than the ${s.column.width}px it was`)
+      assert(m.charsPerLineMedian >= 55 && m.charsPerLineMedian <= 75, `with wide margins a line holds ${m.charsPerLineMedian} characters, not 55-75`)
+      assert(Math.abs(b.top - a.top) <= 2, `after choosing wide margins the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the window`)
+  - click:
+      css: '#reading-settings input[value="justify"]'
+  - module: ./modules/settings-state.module.yaml
+  - module: ./modules/metrics.module.yaml
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE), m = JSON.parse(env.METRICS), a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(p.data.align === 'justify' && p.checked.align === 'justify' && p.prefs.align === 'justify', `after choosing Justify the page is ${p.data.align}, the menu shows ${p.checked.align}, saved ${p.prefs && p.prefs.align}`)
+      assert(p.textAlign === 'justify' && p.hyphens === 'auto', `the book text is ${p.textAlign} with hyphens ${p.hyphens}, not justified with hyphenation`)
+      assert(m.charsPerLineMedian >= 55 && m.charsPerLineMedian <= 75, `with justified text a line holds ${m.charsPerLineMedian} characters, not 55-75`)
+      assert(Math.abs(b.top - a.top) <= 2, `after choosing Justify the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the window`)
+
+  # The text size slider moves with the book text and the A buttons, from one end to the other and back to 19.
+  - click:
+      css: '#reading-settings input[aria-label="Text size"]'
+  - module: ./modules/settings-state.module.yaml
+  - module: ./modules/metrics.module.yaml
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE), m = JSON.parse(env.METRICS), a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(p.slider.value > 19 && p.slider.value < 26, `a tap in the middle of the slider set it to ${p.slider.value}`)
+      assert(p.fontPx === p.slider.value && p.prefs.fontSize === p.slider.value, `the slider says ${p.slider.value}, the book text is ${p.fontPx}px, saved ${p.prefs && p.prefs.fontSize}`)
+      assert(m.charsPerLineMedian >= 55 && m.charsPerLineMedian <= 75, `at ${p.fontPx}px a line holds ${m.charsPerLineMedian} characters, not 55-75`)
+      assert(Math.abs(b.top - a.top) <= 2, `after moving the slider to ${p.slider.value} the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the window`)
+  - press: End
+  - module: ./modules/settings-state.module.yaml
+  - module: ./modules/metrics.module.yaml
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE), m = JSON.parse(env.METRICS), a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(p.slider.value === 26 && p.fontPx === 26, `with the slider at its end (${p.slider.value}) the book text is ${p.fontPx}px, not 26px`)
+      assert(p.largerDisabled === true && p.smallerDisabled === false, `at the largest size Larger text is ${p.largerDisabled ? 'disabled' : 'enabled'} and Smaller text is ${p.smallerDisabled ? 'disabled' : 'enabled'}`)
+      assert(m.charsPerLineMedian >= 55 && m.charsPerLineMedian <= 75, `at the largest size a line holds ${m.charsPerLineMedian} characters, not 55-75`)
+      assert(Math.abs(b.top - a.top) <= 2, `after the slider went to its largest the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the window`)
+  - press: Home
+  - module: ./modules/settings-state.module.yaml
+  - module: ./modules/metrics.module.yaml
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE), m = JSON.parse(env.METRICS), a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(p.slider.value === 15 && p.fontPx === 15, `with the slider at its start (${p.slider.value}) the book text is ${p.fontPx}px, not 15px`)
+      assert(p.smallerDisabled === true && p.largerDisabled === false, `at the smallest size Smaller text is ${p.smallerDisabled ? 'disabled' : 'enabled'} and Larger text is ${p.largerDisabled ? 'disabled' : 'enabled'}`)
+      assert(m.charsPerLineMedian >= 55 && m.charsPerLineMedian <= 75, `at the smallest size a line holds ${m.charsPerLineMedian} characters, not 55-75`)
+      assert(Math.abs(b.top - a.top) <= 2, `after the slider went to its smallest the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the window`)
+  - click:
+      css: button[aria-label="Larger text"]
+      times: 4
+  - module: ./modules/settings-state.module.yaml
+  - module: ./modules/metrics.module.yaml
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE), m = JSON.parse(env.METRICS), a = JSON.parse(env.LINE_BEFORE), b = JSON.parse(env.EYE_LINE);
+      assert(p.fontPx === 19 && p.slider.value === 19, `four taps on Larger text from 15 give ${p.fontPx}px with the slider at ${p.slider.value}, not 19`)
+      assert(m.charsPerLineMedian >= 55 && m.charsPerLineMedian <= 75, `at 19px a line holds ${m.charsPerLineMedian} characters, not 55-75`)
+      assert(Math.abs(b.top - a.top) <= 2, `after the text size came back to 19px the line under the top bar ("${a.text}") moved from ${a.top}px to ${b.top}px down the window`)
+  - press: Escape
+
+  # Everything is kept after a reload, the menu shows it, and the reader is back on the same line.
+  - wait: 2200
+  - module: ./modules/settings-state.module.yaml
+  - javascript: setVariable('PAGE_SAVED', env.PAGE)
+  # The line the book saves and reopens at is the one that starts under the top bar in the page as it is now, so pick
+  # that afresh rather than follow the character picked before the changes.
+  - javascript:
+      environment: browser
+      code: |-
+        window.__eyeLine = null;
+        return 'picking afresh';
+  - module: ./modules/eye-line.module.yaml
+  - javascript: setVariable('LINE_SAVED', env.EYE_LINE)
+  - refresh
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - wait: 1500
+  - module: ./modules/settings-state.module.yaml
+  - javascript: setVariable('PAGE_RELOADED', env.PAGE)
+  - module: ./modules/metrics.module.yaml
+  - module: ./modules/eye-line.module.yaml
+  - javascript: |-
+      const a = JSON.parse(env.PAGE_SAVED), b = JSON.parse(env.PAGE_RELOADED), m = JSON.parse(env.METRICS);
+      const chosen = { theme: 'sepia', font: 'sans', spacing: 'loose', margins: 'wide', align: 'justify' };
+      assert(JSON.stringify(b.data) === JSON.stringify(chosen), `after a reload the page is ${JSON.stringify(b.data)}, not ${JSON.stringify(chosen)}`)
+      assert(JSON.stringify(a.prefs) === JSON.stringify(b.prefs) && b.prefs.fontSize === 19, `the saved choices changed over a reload: ${JSON.stringify(a.prefs)} became ${JSON.stringify(b.prefs)}`)
+      for (const key of ['paper', 'ink', 'face', 'leading', 'textAlign', 'hyphens', 'fontPx']) assert(a[key] === b[key], `after a reload the page's ${key} is ${b[key]}, it was ${a[key]}`)
+      assert(a.column.width === b.column.width, `after a reload the column is ${b.column.width}px wide, it was ${a.column.width}px`)
+      assert(m.charsPerLineMedian >= 55 && m.charsPerLineMedian <= 75, `after a reload a line holds ${m.charsPerLineMedian} characters, not 55-75`)
+      assert(/^(?:\d+ min|Less than a minute) left in chapter$/.test(b.footer.text), `after a reload the footer says "${b.footer.text}"`)
+  - javascript: |-
+      const a = JSON.parse(env.LINE_SAVED), b = JSON.parse(env.EYE_LINE);
+      assert(a.block === b.block && a.offset === b.offset, `after a reload the line under the top bar starts "${b.text}" (${b.block}, ${b.top}px down) but it was "${a.text}" (${a.block}, ${a.top}px down)`)
+  - click:
+      css: button[aria-label="Reading settings"]
+  - module: ./modules/settings-state.module.yaml
+  - javascript: |-
+      const p = JSON.parse(env.PAGE);
+      assert(JSON.stringify(p.checked) === JSON.stringify({ theme: 'sepia', font: 'sans', spacing: 'loose', margins: 'wide', align: 'justify' }), `after a reload the Aa menu shows ${JSON.stringify(p.checked)} as chosen`)
+      assert(p.slider.value === 19, `after a reload the text size slider is at ${p.slider.value}, not 19`)
+  - assertVisually:
+      that: The reading page is in a sepia theme with a sans-serif typeface, a narrower column of justified text with wide empty margins either side and generous space between the lines, and the open reading settings menu shows Sepia, Atkinson, loose line spacing, wide margins and justified alignment as the chosen options
+      timeout: 20000
+  - press: Escape
+
+  # A chapter opens as in a printed book: centred, the title in small capitals.
+  - navigate: /book/{{ env.BOOK_ID }}/c5
+  - checkPageContains:
+      text: Before you read
+      timeout: 15000
+  - javascript:
+      environment: browser
+      code: |-
+        document.querySelector('article[data-chapter="c5"]').scrollIntoView({ block: 'start', behavior: 'instant' });
+        return 'at the chapter start';
+  - wait: 1200
+  - javascript:
+      environment: browser
+      saveAs: OPENING
+      code: |-
+        const article = document.querySelector('article[data-chapter="c5"]');
+        const head = article.querySelector('.chapter-head'), title = head.querySelector('h2');
+        const range = document.createRange();
+        range.selectNodeContents(title);
+        const lines = Array.from(range.getClientRects());
+        const left = Math.min(...lines.map((r) => r.left)), right = Math.max(...lines.map((r) => r.right));
+        const column = article.getBoundingClientRect();
+        return JSON.stringify({ align: getComputedStyle(head).textAlign, caps: getComputedStyle(title).fontVariantCaps, title: title.textContent, titleCentre: Math.round((left + right) / 2), columnCentre: Math.round((column.left + column.right) / 2), top: Math.round(head.getBoundingClientRect().top) });
+  - javascript: |-
+      const o = JSON.parse(env.OPENING);
+      assert(o.align === 'center', `the chapter heading is aligned ${o.align}, not centred`)
+      assert(o.caps === 'all-small-caps', `the chapter title "${o.title}" is set in ${o.caps}, not small capitals`)
+      assert(Math.abs(o.titleCentre - o.columnCentre) <= 2, `the chapter title's middle is at ${o.titleCentre}px, the column's at ${o.columnCentre}px`)
+  - assertVisually:
+      that: A chapter opens centred, with a small line above, the chapter title in small capitals in the middle of the column, a short rule under it and then the first paragraph, all on a sepia page
+      timeout: 20000

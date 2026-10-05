@@ -1,0 +1,45 @@
+fileType: momentic/test/v2
+id: listening-footer-desktop
+description: Journey 1 - the time-left footer under the book text gives way to the player while listening and comes back when listening stops, desktop 1440 (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ../modules/open-chapter.module.yaml
+  - module: ../modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 500; return 'slow words';
+  - javascript:
+      environment: browser
+      saveAs: FOOTER_BEFORE
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const line = document.querySelector('.reading-footer-line');
+        need(line, 'there is no time-left footer before listening');
+        need(/^(?:\d+ min|Less than a minute) left in chapter$/.test(line.textContent.trim()), 'the footer says "' + line.textContent + '", not "N min left in chapter"');
+        return line.textContent.trim();
+  - click:
+      css: '.topbar-tools button[aria-pressed]'
+  - wait: 1200
+  - javascript:
+      environment: browser
+      saveAs: FOOTER_WHILE_LISTENING
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        need(document.querySelector('.listen-bar'), 'the player bar should be up while listening');
+        need(!document.querySelector('.reading-footer'), 'the time-left footer should give way to the player while listening, but it is still there: "' + (document.querySelector('.reading-footer-line') || {}).textContent + '"');
+        return 'player up, footer gone';
+  - click:
+      css: '.listen-bar button[aria-label="Stop listening"]'
+  - wait: 800
+  - javascript:
+      environment: browser
+      saveAs: FOOTER_AFTER
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        need(!document.querySelector('.listen-bar'), 'the player bar should be gone after Stop');
+        const line = document.querySelector('.reading-footer-line');
+        need(line, 'the time-left footer should come back when listening stops');
+        need(/^(?:\d+ min|Less than a minute) left in chapter$/.test(line.textContent.trim()), 'the footer says "' + line.textContent + '" after listening, not "N min left in chapter"');
+        return line.textContent.trim();
