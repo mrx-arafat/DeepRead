@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { LANGUAGES, type ExplainMode, type ExplainRequest, type LangCode } from "../../shared/types.ts";
 import { parseSections, RichText } from "./RichText.tsx";
 import { useAiStream } from "./useAiStream.ts";
@@ -47,9 +47,30 @@ export function NoteCard({ note, bookId, latest, onClose }: Props) {
   const answer = useAiStream("/api/ai/explain", request);
   // Folding only hides something when the answer has more than one part.
   const more = parseSections(answer.text).length > 1;
+  const panelRef = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const setPanelHeight = () => {
+      const top = panel.getBoundingClientRect().top;
+      const footerTop = document.querySelector(".reading-footer")?.getBoundingClientRect().top ?? window.innerHeight;
+      const bottom = Math.min(window.innerHeight, footerTop) - 12;
+      panel.style.setProperty("--panel-max", `${Math.max(48, bottom - top)}px`);
+    };
+    setPanelHeight();
+    window.addEventListener("resize", setPanelHeight);
+    window.addEventListener("scroll", setPanelHeight, { passive: true });
+    return () => {
+      window.removeEventListener("resize", setPanelHeight);
+      window.removeEventListener("scroll", setPanelHeight);
+    };
+  }, [open]);
 
   return (
     <aside
+      ref={panelRef}
       className="note"
       data-note={note.id}
       data-folded={open ? undefined : ""}
@@ -65,7 +86,7 @@ export function NoteCard({ note, bookId, latest, onClose }: Props) {
       <div
         aria-live="polite"
         aria-busy={answer.status === "loading"}
-        className={note.mode === "native" ? "note-native" : undefined}
+        className={note.mode === "native" ? "note-body note-native" : "note-body"}
         lang={note.mode === "native" ? lang : undefined}
       >
         {answer.text ? (

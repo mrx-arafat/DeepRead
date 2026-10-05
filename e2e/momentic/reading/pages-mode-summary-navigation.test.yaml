@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
 id: dr-read-pages-summary-navigation
-description: A streamed chapter summary keeps the next heading off the current Pages view, and the visible arrow buttons turn forward and back.
+description: A streamed chapter summary opens as an inline accordion in Pages mode, scrolls internally, stays on the same page, and leaves page arrows working.
 viewport: "1280, 800"
 steps:
   - module: ./modules/open-book.module.yaml
@@ -15,27 +15,77 @@ steps:
   - press: Escape
   - javascript:
       environment: browser
+      saveAs: BEFORE_OPEN_Y
       code: |-
-        const button = document.querySelector('article[data-chapter="c3"] section[aria-label="What you just read"] button');
-        button.scrollIntoView({ block: "center", behavior: "instant" });
+        const previewButton = document.querySelector('article[data-chapter="c3"] section[aria-label="Before you read"] button');
+        previewButton.scrollIntoView({ block: "center", behavior: "instant" });
         await new Promise(requestAnimationFrame);
         await new Promise(requestAnimationFrame);
         const originalFetch = window.fetch.bind(window);
+        window.__chapterAiCalls = 0;
         window.fetch = (input, init) => {
           const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
           if (!url.endsWith("/api/ai/chapter")) return originalFetch(input, init);
+          window.__chapterAiCalls += 1;
+          const longSummary = Array.from(
+            { length: 28 },
+            (_, index) => `Point ${index + 1}: This summary confirms the chapter's main point while staying inside the reader panel instead of pushing the page apart.`,
+          ).join("\n\n");
           const events = [
-            `event: delta\ndata: ${JSON.stringify({ text: "This summary confirms the chapter's main point." })}\n\n`,
+            `event: delta\ndata: ${JSON.stringify({ text: longSummary })}\n\n`,
             "event: done\ndata: {}\n\n",
           ];
           const body = new ReadableStream({ start(controller) { for (const event of events) controller.enqueue(new TextEncoder().encode(event)); controller.close(); } });
           return Promise.resolve(new Response(body, { headers: { "content-type": "text/event-stream" } }));
         };
-        return { pageY: Math.round(scrollY), button: button.getBoundingClientRect().toJSON() };
+        return Math.round(scrollY);
+  - click:
+      css: article[data-chapter="c3"] section[aria-label="Before you read"] button
+  - checkElementVisible:
+      css: article[data-chapter="c3"] section[aria-label="Before you read"] .aid-body
+      timeout: 5000
+  - javascript:
+      environment: browser
+      code: |-
+        const deadline = performance.now() + 5000;
+        let aid = document.querySelector('article[data-chapter="c3"] section[aria-label="Before you read"]');
+        while (!aid?.textContent.includes("Point 28") && performance.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          aid = document.querySelector('article[data-chapter="c3"] section[aria-label="Before you read"]');
+        }
+        const close = aid.querySelector('button[aria-label="Hide Before you read"]');
+        if (!aid?.textContent.includes("Point 28")) throw new Error("the preview did not finish streaming");
+        if (!close) throw new Error("the preview needs a close button");
+        if (close.getAttribute("aria-expanded") !== "true") throw new Error("the expanded preview toggle needs aria-expanded=true");
+        if (Math.abs(Math.round(scrollY) - Number(env.BEFORE_OPEN_Y)) > 2) throw new Error(`opening the inline preview changed the page from ${env.BEFORE_OPEN_Y} to ${Math.round(scrollY)}`);
+        if (getComputedStyle(aid).position === "fixed") throw new Error("the preview opened as a floating overlay instead of an inline accordion");
+        if (aid.scrollHeight <= aid.clientHeight) throw new Error(`the long preview should scroll inside the card, card=${aid.clientHeight}, content=${aid.scrollHeight}`);
+        aid.scrollTop = aid.scrollHeight;
+        await new Promise(requestAnimationFrame);
+        if (aid.scrollTop <= 0) throw new Error("the preview card did not scroll internally");
+  - click:
+      css: article[data-chapter="c3"] section[aria-label="Before you read"] button[aria-label="Hide Before you read"]
+  - checkElementVisible:
+      css: article[data-chapter="c3"] section[aria-label="Before you read"] .aid-ask
+      timeout: 5000
+  - javascript:
+      environment: browser
+      code: |-
+        const toggle = document.querySelector('article[data-chapter="c3"] section[aria-label="Before you read"] .aid-ask');
+        if (toggle?.getAttribute("aria-expanded") !== "false") throw new Error("the collapsed preview toggle needs aria-expanded=false");
+  - javascript:
+      environment: browser
+      saveAs: BEFORE_OPEN_Y
+      code: |-
+        const button = document.querySelector('article[data-chapter="c3"] section[aria-label="What you just read"] button');
+        button.scrollIntoView({ block: "center", behavior: "instant" });
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        return Math.round(scrollY);
   - click:
       css: article[data-chapter="c3"] section[aria-label="What you just read"] button
   - checkElementVisible:
-      css: article[data-chapter="c3"] section[aria-label="What you just read"] p
+      css: article[data-chapter="c3"] section[aria-label="What you just read"] .aid-body
       timeout: 5000
   - javascript:
       environment: browser
@@ -49,10 +99,51 @@ steps:
         const next = document.querySelector('article[data-chapter="c4"] h2');
         const mask = document.querySelector('.page-mask-bottom');
         const footer = document.querySelector('.reading-footer').innerText;
+        const body = aid.querySelector('.aid-body');
+        const close = aid.querySelector('button[aria-label="Hide What you just read"]');
         if (!aid?.textContent.includes("main point")) throw new Error("the summary did not finish streaming");
+        if (!body || !close) throw new Error("the opened summary needs a scrollable body and a close button");
+        if (Math.abs(Math.round(scrollY) - Number(env.BEFORE_OPEN_Y)) > 2) throw new Error(`opening the inline summary changed the page from ${env.BEFORE_OPEN_Y} to ${Math.round(scrollY)}`);
+        if (getComputedStyle(aid).position === "fixed") throw new Error("the summary opened as a floating overlay instead of an inline accordion");
+        const aidBox = aid.getBoundingClientRect();
+        const closeBox = close.getBoundingClientRect();
+        if (aidBox.top < 0 || aidBox.bottom > innerHeight) throw new Error(`the summary card does not fit in the viewport: ${JSON.stringify(aidBox.toJSON())}`);
+        if (aid.scrollHeight <= aid.clientHeight) throw new Error(`the long summary should scroll inside the card, card=${aid.clientHeight}, content=${aid.scrollHeight}`);
+        if (closeBox.top < aidBox.top || closeBox.bottom > aidBox.bottom) throw new Error("the close button is not visible inside the summary card");
+        const pageBeforeKey = Math.round(scrollY);
+        aid.scrollTop = 0;
+        close.focus();
+        close.dispatchEvent(new KeyboardEvent("keydown", { key: "PageDown", bubbles: true, cancelable: true }));
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        if (Math.round(scrollY) !== pageBeforeKey) throw new Error(`PageDown inside the focused summary turned the page from ${pageBeforeKey} to ${Math.round(scrollY)}`);
+        if (aid.scrollTop <= 0) throw new Error("PageDown inside the focused summary did not scroll the summary card");
+        const pageBeforeArrow = Math.round(scrollY);
+        close.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        if (Math.round(scrollY) !== pageBeforeArrow) throw new Error(`ArrowRight inside the focused summary turned the page from ${pageBeforeArrow} to ${Math.round(scrollY)}`);
+        aid.scrollTop = aid.scrollHeight;
+        await new Promise(requestAnimationFrame);
+        if (aid.scrollTop <= 0) throw new Error("the summary card did not scroll internally");
         if (!next || !mask) throw new Error("the next chapter or page boundary has not been loaded");
         if (next.getBoundingClientRect().top < parseFloat(mask.style.top)) throw new Error(`next chapter heading is visible before the page boundary (heading y=${next.getBoundingClientRect().top}, boundary=${mask.style.top})`);
         if (!/pages? left in chapter|Last page in chapter/.test(footer)) throw new Error(`unexpected page footer: ${footer}`);
+  - click:
+      css: article[data-chapter="c3"] section[aria-label="What you just read"] button[aria-label="Hide What you just read"]
+  - checkElementVisible:
+      css: article[data-chapter="c3"] section[aria-label="What you just read"] button
+      timeout: 5000
+  - javascript:
+      environment: browser
+      code: |-
+        const aid = document.querySelector('article[data-chapter="c3"] section[aria-label="What you just read"]');
+        const ask = aid?.querySelector('.aid-ask');
+        const callsAfterClose = window.__chapterAiCalls;
+        if (!ask?.textContent.includes("Show summary")) throw new Error("closing the summary did not return to the cached show state");
+        ask.click();
+        await new Promise(requestAnimationFrame);
+        if (window.__chapterAiCalls !== callsAfterClose) throw new Error("reopening the summary generated a new AI request instead of reusing the same answer");
+        if (!aid.querySelector('.aid-body')?.textContent.includes("main point")) throw new Error("reopened summary did not show the cached answer");
+        aid.querySelector('button[aria-label="Hide What you just read"]').click();
   - checkElementVisible:
       css: button[aria-label="Next page"]:not(:disabled)
   - checkElementVisible:

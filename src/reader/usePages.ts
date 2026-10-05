@@ -55,6 +55,25 @@ function scrollsItself(target: EventTarget | null): boolean {
   return false;
 }
 
+function scrollSelfWithKey(target: EventTarget | null, key: string, shiftKey: boolean): boolean {
+  const panel = target instanceof Element ? target.closest(".aid:not([data-closed]), .note:not([data-folded])") : null;
+  if (panel && (key === "ArrowLeft" || key === "ArrowRight")) return true;
+  const forward = key === "ArrowDown" || key === "PageDown" || (key === " " && !shiftKey);
+  const back = key === "ArrowUp" || key === "PageUp" || (key === " " && shiftKey);
+  if (!forward && !back) return false;
+  for (let element = target instanceof Element ? target : null; element && element !== document.body; element = element.parentElement) {
+    const { overflowY } = getComputedStyle(element);
+    if ((overflowY !== "auto" && overflowY !== "scroll") || element.scrollHeight <= element.clientHeight) continue;
+    if (forward && element.scrollTop + element.clientHeight >= element.scrollHeight - 1) return false;
+    if (back && element.scrollTop <= 1) return false;
+    const page = Math.max(48, element.clientHeight - 48);
+    const delta = key === "ArrowDown" || key === "ArrowUp" ? 48 : page;
+    element.scrollBy({ top: forward ? delta : -delta, behavior: "smooth" });
+    return true;
+  }
+  return false;
+}
+
 const toDocument = (lines: Box[]) => lines.map((line) => ({ top: line.top + window.scrollY, bottom: line.bottom + window.scrollY }));
 
 /**
@@ -191,6 +210,10 @@ export function usePages(on: boolean, ready: boolean, paused: boolean): Pages {
       // Space presses a focused button or link; the arrows and Page keys do nothing there, so they still turn.
       if (event.key === " " && target?.closest("button, a, summary")) return;
       if (document.querySelector(":popover-open, dialog[open]")) return;
+      if (scrollSelfWithKey(target, event.key, event.shiftKey)) {
+        event.preventDefault();
+        return;
+      }
       const forward = event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === "PageDown" || (event.key === " " && !event.shiftKey);
       const back = event.key === "ArrowLeft" || event.key === "ArrowUp" || event.key === "PageUp" || (event.key === " " && event.shiftKey);
       if (!forward && !back) return;

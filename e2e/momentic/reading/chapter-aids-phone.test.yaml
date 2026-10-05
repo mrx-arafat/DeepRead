@@ -35,3 +35,51 @@ steps:
   - assertVisually:
       that: A chapter opens with a clear heading, a small line above it, one slim "Before you read" line with a button, and then paragraphs of book text. Nothing overlaps or is cut off
       timeout: 20000
+  - javascript:
+      environment: browser
+      code: |-
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = (input, init) => {
+          const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+          if (!url.endsWith("/api/ai/chapter")) return originalFetch(input, init);
+          const longSummary = Array.from(
+            { length: 32 },
+            (_, index) => `Scroll mode point ${index + 1}: the summary remains readable inside its own panel and the reader can close it when finished.`,
+          ).join("\n\n");
+          const body = new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(`event: delta\ndata: ${JSON.stringify({ text: longSummary })}\n\n`));
+              controller.enqueue(new TextEncoder().encode("event: done\ndata: {}\n\n"));
+              controller.close();
+            },
+          });
+          return Promise.resolve(new Response(body, { headers: { "content-type": "text/event-stream" } }));
+        };
+  - click:
+      css: article[data-chapter="c3"] section[aria-label="What you just read"] button
+  - checkElementVisible:
+      css: article[data-chapter="c3"] section[aria-label="What you just read"] .aid-body
+      timeout: 5000
+  - javascript:
+      environment: browser
+      code: |-
+        const deadline = performance.now() + 5000;
+        let aid = document.querySelector('article[data-chapter="c3"] section[aria-label="What you just read"]');
+        while (!aid?.textContent.includes("Scroll mode point 32") && performance.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          aid = document.querySelector('article[data-chapter="c3"] section[aria-label="What you just read"]');
+        }
+        const body = aid?.querySelector('.aid-body');
+        const close = aid?.querySelector('button[aria-label="Hide What you just read"]');
+        if (!body || !close) throw new Error("the summary needs a scrollable body and close button");
+        const aidBox = aid.getBoundingClientRect();
+        if (aidBox.height > innerHeight - 80) throw new Error(`the summary is too tall for the phone viewport: ${Math.round(aidBox.height)} of ${innerHeight}`);
+        if (aid.scrollHeight <= aid.clientHeight) throw new Error("the long summary should scroll inside the card");
+        aid.scrollTop = aid.scrollHeight;
+        await new Promise(requestAnimationFrame);
+        if (aid.scrollTop <= 0) throw new Error("the summary card did not scroll internally");
+  - click:
+      css: article[data-chapter="c3"] section[aria-label="What you just read"] button[aria-label="Hide What you just read"]
+  - checkElementVisible:
+      css: article[data-chapter="c3"] section[aria-label="What you just read"] .aid-ask
+      timeout: 5000

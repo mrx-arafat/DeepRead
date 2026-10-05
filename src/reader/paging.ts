@@ -94,10 +94,17 @@ export function linesIn(from: number, to: number): Box[] {
   if (!column) return [];
   const pieces: Box[] = [];
   const range = document.createRange();
+  const pagesMode = inPages();
   for (const chapter of chapters) {
     const walker = document.createTreeWalker(chapter, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         if (node instanceof Element) {
+          if (pagesMode && node.matches(".aid:not([data-closed]), .note:not([data-folded])")) {
+            const box = node.getBoundingClientRect();
+            const visible = box.bottom >= from && box.top <= to && box.right > column.left && box.left < column.right;
+            if (visible) pieces.push({ top: box.top, bottom: box.bottom });
+            return NodeFilter.FILTER_REJECT;
+          }
           const box = node.getBoundingClientRect();
           // An element with no box of its own (display: contents) may still hold laid-out text.
           if (box.width === 0 && box.height === 0) return NodeFilter.FILTER_SKIP;
