@@ -112,8 +112,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   const scrollTo = useCallback((range: Range) => {
     // Turning pages, the voice turns to the page the sentence is on, rather than sliding the text up mid-page.
     if (inPages()) {
-      scrolledAt.current = performance.now();
-      showOnPage(range.getBoundingClientRect());
+      if (showOnPage(range.getBoundingClientRect())) scrolledAt.current = performance.now();
       return;
     }
     const top = scrollTopFor(range.getBoundingClientRect(), window.innerHeight, window.scrollY);

@@ -117,10 +117,12 @@ export function setShownEnd(end: number | null): void {
 
 /**
  * Turns to the page that shows `box` (window coordinates), with its first line at the top, unless it is already
- * all on the page. For whatever follows the reader's place by itself: the voice reading aloud, the word cursor.
+ * all on the page. Returns whether it turned. For whatever follows the reader's place by itself: the voice reading
+ * aloud, the word cursor.
  */
-export function showOnPage(box: Box): void {
+export function showOnPage(box: Box): boolean {
   const frame = pageFrame();
-  if (box.top >= frame.top - 0.5 && box.bottom <= (shownEnd ?? frame.bottom) + 0.5) return;
+  if (box.top >= frame.top - 0.5 && box.bottom <= (shownEnd ?? frame.bottom) + 0.5) return false;
   window.scrollTo({ top: window.scrollY + box.top - frame.top, behavior: "instant" });
+  return true;
 }

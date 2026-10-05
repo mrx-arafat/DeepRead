@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { mergeLines, pageEnd, pagesLeft, previousPageTop, snapShift } from "./paging.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mergeLines, pageEnd, pagesLeft, previousPageTop, showOnPage, snapShift } from "./paging.ts";
 
 /** Lines 20px tall every 30px from `first`, as text set with some leading would give. */
 const linesFrom = (first: number, count: number) =>
@@ -87,5 +87,24 @@ describe("pagesLeft", () => {
 
   it("should say none are left on the chapter's last page", () => {
     expect(pagesLeft(280, 300, 40, 175)).toBe(0);
+  });
+});
+
+describe("showOnPage", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("should report a turn only when the sentence is outside the current page", () => {
+    const scrollTo = vi.fn();
+    vi.stubGlobal("document", {
+      documentElement: {},
+      querySelector: () => ({ getBoundingClientRect: () => ({ top: 650 }) }),
+    });
+    vi.stubGlobal("window", { innerHeight: 720, scrollY: 100, scrollTo });
+    vi.stubGlobal("getComputedStyle", () => ({ scrollPaddingTop: "60px" }));
+
+    expect(showOnPage({ top: 100, bottom: 120 })).toBe(false);
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(showOnPage({ top: 680, bottom: 700 })).toBe(true);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 720, behavior: "instant" });
   });
 });
