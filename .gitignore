@@ -10,3 +10,4 @@ data/
 !.env.example
 .worktrees/
 .playwright-cli/
+test-results/

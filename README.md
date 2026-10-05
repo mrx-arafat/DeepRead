@@ -180,7 +180,7 @@ Select a sentence or a paragraph, then choose what you want:
 | **Explain** | The passage in simple words, in context (who is speaking, what just happened), its deeper meaning, and its hard words |
 | **Example** | The idea retold as an everyday situation |
 | **In Bangla** (named after your language) | A faithful translation into your language, then a short explanation |
-| The headphones | Reading aloud from that passage |
+| **Listen** | Reading aloud from that passage |
 
 <table><tr><td><img src="docs/images/select-passage.webp" alt="A selected passage with the Explain, Example, In Bangla and Listen buttons" width="900"></td></tr></table>
 

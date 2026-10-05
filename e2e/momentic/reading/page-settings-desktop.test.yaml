@@ -39,7 +39,7 @@ steps:
   - javascript: |-
       const p = JSON.parse(env.PAGE);
       assert(p.panelOpen, 'the Aa menu did not open')
-      assert(JSON.stringify(p.radios) === JSON.stringify({ theme: ['light', 'sepia', 'dark'], font: ['serif', 'sans'], spacing: ['tight', 'normal', 'loose'], margins: ['narrow', 'normal', 'wide'], align: ['left', 'justify'] }), `the Aa menu offers ${JSON.stringify(p.radios)}`)
+      assert(JSON.stringify(p.radios) === JSON.stringify({ theme: ['light', 'sepia', 'dark'], font: ['serif', 'sans'], spacing: ['tight', 'normal', 'loose'], margins: ['narrow', 'normal', 'wide'], align: ['left', 'justify'], layout: ['scroll', 'pages'] }), `the Aa menu offers ${JSON.stringify(p.radios)}`)
       assert(p.slider && p.slider.min === 15 && p.slider.max === 26 && p.slider.value === p.fontPx, `the text size slider is ${JSON.stringify(p.slider)} while the book text is ${p.fontPx}px`)
 
   # Sepia: warm paper and brown ink, readable.
@@ -190,7 +190,7 @@ steps:
   - module: ./modules/settings-state.module.yaml
   - javascript: |-
       const p = JSON.parse(env.PAGE);
-      assert(JSON.stringify(p.checked) === JSON.stringify({ theme: 'sepia', font: 'sans', spacing: 'loose', margins: 'wide', align: 'justify' }), `after a reload the Aa menu shows ${JSON.stringify(p.checked)} as chosen`)
+      assert(JSON.stringify(p.checked) === JSON.stringify({ theme: 'sepia', font: 'sans', spacing: 'loose', margins: 'wide', align: 'justify', layout: 'scroll' }), `after a reload the Aa menu shows ${JSON.stringify(p.checked)} as chosen`)
       assert(p.slider.value === 19, `after a reload the text size slider is at ${p.slider.value}, not 19`)
   - assertVisually:
       that: The reading page is in a sepia theme with a sans-serif typeface, a narrower column of justified text with wide empty margins either side and generous space between the lines, and the open reading settings menu shows Sepia, Atkinson, loose line spacing, wide margins and justified alignment as the chosen options

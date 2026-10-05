@@ -9,7 +9,7 @@ steps:
   - module: ../modules/stub-speech.module.yaml
   - javascript:
       environment: browser
-      code: window.__stub.wordMs = 500; return 'slow words';
+      code: window.__stub.wordMs = 1500; return 'slow words';
   - click:
       css: '.topbar-tools button[aria-pressed]'
   - assert: A small player bar with previous, pause, next, speed and stop controls is visible at the bottom of the window
