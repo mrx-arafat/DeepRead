@@ -367,6 +367,8 @@ Explanations sit in the margin beside their paragraph on wide screens and direct
 
 ## For developers
 
+Picking up the work? Start with [docs/ROADMAP.md](docs/ROADMAP.md): what was just built, what is left and how to do it.
+
 ```bash
 git clone https://github.com/mrx-arafat/DeepRead.git
 cd DeepRead
