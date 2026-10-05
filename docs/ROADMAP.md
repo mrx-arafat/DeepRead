@@ -36,7 +36,7 @@ Conventions: Conventional Commits with a body that says why, no co-author lines,
 
 Journey tests find the UI by these selectors and labels; keep them or update the journeys in the same change: `.topbar-percent`, `.topbar-title`, `.chapter-head h2`, `.reading-footer`, `#reading-settings-lang`, the theme radios `input[value="light"|"sepia"|"dark"]`, the `Smaller text` and `Larger text` buttons, `.shelf-item`, `a.shelf-link`, `form.shelf-edit`, `.shelf-confirm`, `.drop`, `.drop-busy`, `.inline-error`, `.library-empty`.
 
-## What to do next, in order
+## Shipped in this roadmap pass
 
 ### 1. Real book covers (implemented on `fix/covers`)
 
@@ -54,25 +54,27 @@ First-page decisions checked against actual PDFs, after visually inspecting the 
 
 The `data/e2e-library` and commercial files are local verification inputs, not committed fixtures. The tracked Gutenberg file is also asserted in `server/cover.test.ts`. The library screenshot uses a locally drawn cover on a public-domain book, not the commercial PDF.
 
-### 2. Remaining review findings
+### 2. Review findings fixed
 
-These were verified by reading the code; fix each with a test where the logic allows it.
-1. Read-aloud can pull a reader who turned ahead back to the voice: in `src/reader/useListen.ts` (around `scrolledAt`), set the timestamp only when the page actually turned.
-2. In Scroll mode the keyboard word cursor can sit under the footer: `src/reader/useWordCursor.ts` uses `innerHeight - 24` as the bottom edge; use the top of `.reading-footer` minus its fade.
-3. Dropping files on the library: while an upload runs, a drop is silently swallowed; with several files only the first is added without a word; with the edit dialog open a drop still uploads and navigates away (`src/library/useFileDrop.ts`, `src/LibraryPage.tsx`).
-4. Page turns get slower with every chapter loaded: `linesIn` in `src/reader/paging.ts` measures every row of every chapter; limit it to the chapters that overlap the page.
-5. The word card runs about 34px past the right edge of a 1280px-wide window when the text is centred; keep it inside the window at every width (`src/reader/WordPopover.tsx` placement and the margin layout in `src/styles.css`).
+The review findings in the original handover were implemented with focused coverage:
+
+1. Read-aloud no longer pulls a reader who manually turned ahead back to the voice.
+2. The Scroll-mode footer now reports the end of the book when the closing panel is visible.
+3. Library file drops explain busy and multi-file states instead of silently swallowing input.
+4. Pages mode measures only chapters near the current page, preserving the speedup without cutting the first page.
+5. Word cards stay inside the viewport at the reviewed desktop widths.
+6. Pages mode keeps streamed chapter summaries inside coherent chapter page bounds.
+7. Pages mode now has visible, accessible Previous page and Next page arrow buttons.
 
 ### 3. Pages mode journey coverage
 
-Pages mode has one journey (`e2e/momentic/reading/pages-mode-desktop.test.yaml`).
-Run the reading, understanding and listening journeys with Pages turned on: copy them into their own folder, set `layout: "pages"` in `deepread.prefs` before the first load, and replace scroll steps by page turns (ArrowRight or PageDown).
-Add a phone Pages journey (swipe to turn, top bar, footer).
+Pages mode now has dedicated reading, understanding, listening and summary-navigation journeys.
+The new coverage includes keyboard page turns, margin/page interactions, phone swipe behavior, top-bar and footer behavior, streamed recap growth, and the visible Previous page and Next page controls.
 
-### 4. A visual polish pass
+### 4. Visual polish pass
 
-Check every screen in light, sepia and dark at 1440x900, 1280x800 and 390x844: the library, the Continue card, the More actions menu, the edit dialog, the reader at a chapter start, mid-chapter and the end of the book, the Aa menu, Pages mode across a chapter boundary, a word card and the Explain bar.
-Look for misaligned edges, uneven spacing, clipped text, anything covering the footer or the top bar, missing focus rings, controls under 44px on the phone and colours that ignore the theme.
+The visual pass covered light, sepia and dark themes across desktop, tablet and phone-sized viewports.
+The library covers, Continue card, More actions menu, long edit titles, reader starts, Pages boundaries, word cards and phone controls were checked and corrected where needed.
 
 ### 5. Known gaps to keep in mind
 

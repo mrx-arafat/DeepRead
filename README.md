@@ -7,7 +7,7 @@
 Tap a word for its meaning in your own language.
 Select a passage and get it explained in simple words.
 Listen to the book read aloud.
-Everything runs on your own computer.
+Your books stay on your computer, and AI help uses your own Claude Code or Codex sign-in.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-1d3bb8)](LICENSE)
 [![Node.js 24+](https://img.shields.io/badge/node-24%2B-1d3bb8)](https://nodejs.org)
