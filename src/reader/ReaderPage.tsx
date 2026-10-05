@@ -26,6 +26,12 @@ import { WordPopover, type Lookup } from "./WordPopover.tsx";
 
 type Props = { bookId: string; chapterId: string | null };
 
+/** How long the chapter has left, as an e-reader's footer says it. */
+function timeLeft(minutes: number | null): string {
+  if (minutes === null) return "";
+  return minutes === 0 ? "Less than a minute left in chapter" : `${minutes} min left in chapter`;
+}
+
 /** The book read start to finish as one flow: chapters follow each other as the reader scrolls. */
 export function ReaderPage({ bookId, chapterId }: Props) {
   const prefs = usePrefs();
@@ -335,6 +341,14 @@ export function ReaderPage({ bookId, chapterId }: Props) {
           </>
         )}
       </main>
+
+      {/* The e-reader's footer, for the eye: the same progress is the top bar's progress bar for a screen reader.
+          The player takes its place while listening. */}
+      {book && !listen.active && (
+        <footer className="reading-footer" aria-hidden>
+          <p className="reading-footer-line">{timeLeft(position.minutesLeft)}</p>
+        </footer>
+      )}
 
       {/* Always on the page, so a screen reader hears "Note removed" the moment it appears. */}
       <div role="status">

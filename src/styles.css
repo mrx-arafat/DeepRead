@@ -28,15 +28,63 @@
   --font-ui: "Atkinson Hyperlegible Next Variable", "Noto Sans Bengali Variable", system-ui, sans-serif;
 
   --book-size: 19px;
-  /* About 66 characters a line at every text size, so the column grows and shrinks with the book text.
-     Counted in book text sizes rather than ch, which would measure the interface font of the element using it. */
-  --column: calc(var(--book-size) * 32);
+  /* The reader's choices in the Aa menu (prefs.ts sets the data attributes these follow). */
+  --book-face: var(--font-book);
+  --leading: 1.7;
+  --measure: 32;
+  --side: 1.5rem;
+  /* About 66 characters a line at every text size (58 to 74 with the margin choices), so the column grows and
+     shrinks with the book text. Counted in book text sizes rather than ch, which would measure the interface font
+     of the element using it. */
+  --column: calc(var(--book-size) * var(--measure));
   --margin-note: 26rem;
   --gutter: 2.5rem;
   --topbar: 3.25rem;
   --radius: 4px;
 
   color-scheme: light;
+}
+
+/* Warm paper, as on an e-reader's sepia page: brown ink, and the notes still in blue pen. */
+:root[data-theme="sepia"] {
+  --paper: #f6efdf;
+  --raised: #fbf6ea;
+  --wash: #ece2cc;
+  --select: #e6d2a6;
+  --ink: #3b2d1f;
+  --ink-soft: #5a4835;
+  --ink-faint: #6b5945;
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235a4835' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --rule: #ddd0b5;
+  --pen: #23408f;
+  --pen-ink: #ffffff;
+  --pen-wash: #e6e2e3;
+  --marker: #f5d64a;
+  --marker-spoken: #d6e7b8;
+  --marker-voice: #8cc275;
+  --danger: #9f2a1d;
+}
+
+:root[data-font="sans"] {
+  --book-face: var(--font-ui);
+}
+
+:root[data-spacing="tight"] {
+  --leading: 1.5;
+}
+
+:root[data-spacing="loose"] {
+  --leading: 1.95;
+}
+
+:root[data-margins="narrow"] {
+  --measure: 36;
+  --side: 1rem;
+}
+
+:root[data-margins="wide"] {
+  --measure: 28;
+  --side: 2.25rem;
 }
 
 :root[data-theme="dark"] {
@@ -691,9 +739,13 @@ select {
 
   position: fixed;
   inset: calc(var(--topbar) + 0.5rem) 0.75rem auto auto;
-  width: min(19rem, calc(100vw - 1.5rem));
+  width: min(21rem, calc(100vw - 1.5rem));
+  /* On a short screen the panel scrolls inside itself rather than running off the bottom. */
+  max-height: calc(100dvh - var(--topbar) - 1.25rem);
   margin: 0;
   padding: 1rem 1.25rem 1.25rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   color: var(--ink);
 }
 
@@ -704,8 +756,28 @@ select {
   border: 0;
 }
 
-.settings-group + .settings-group {
-  margin-top: 1.25rem;
+.settings-group + .settings-group,
+.settings-group + .settings-pair,
+.settings-pair + .settings-group,
+.settings-divider + .settings-group {
+  margin-top: 1rem;
+}
+
+/* Line spacing and margins side by side: each is three small pictures. */
+.settings-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.settings-pair > .settings-group {
+  margin-top: 0;
+}
+
+.settings-divider {
+  margin: 1.25rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
 }
 
 .settings-label {
@@ -733,10 +805,11 @@ select {
   line-height: 1.45;
 }
 
-/* Two choices side by side in one frame, the chosen one inked in pen blue. */
+/* A few choices side by side in one frame, the chosen one inked in pen blue. */
 .segmented {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
   border: 1px solid var(--frame, var(--rule));
   border-radius: var(--radius);
   overflow: hidden;
@@ -791,15 +864,105 @@ select {
   outline-offset: -2px;
 }
 
+/* Each theme as a little page in its own paper and ink. Written out, not taken from the tokens: every tile shows its
+   own theme, whatever the current one is. The values match the themes at the top of this file. */
+.swatches {
+  gap: 0.5rem;
+  border: 0;
+  overflow: visible;
+}
+
+.swatches > label {
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.5rem 0 0.375rem;
+  border: 1px solid var(--frame);
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+}
+
+.swatches > label:has(:checked) {
+  border-color: var(--pen);
+  box-shadow: inset 0 0 0 1px var(--pen);
+}
+
+.swatch-page {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2rem;
+  border: 1px solid var(--frame);
+  border-radius: 3px;
+  font-family: var(--font-book);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.swatches label:has(input[value="light"]) .swatch-page {
+  background: #ffffff;
+  color: #17181c;
+}
+
+.swatches label:has(input[value="sepia"]) .swatch-page {
+  background: #f6efdf;
+  color: #3b2d1f;
+}
+
+.swatches label:has(input[value="dark"]) .swatch-page {
+  background: #15171b;
+  color: #dddbd5;
+}
+
+/* Each font named in itself. */
+.font-sample-serif {
+  font-family: var(--font-book);
+  font-size: 1.0625rem;
+}
+
+.font-sample-sans {
+  font-family: var(--font-ui);
+}
+
+/* Text size: a smaller and a larger "A" either side of a slider over the same range. */
+.size-row {
+  display: grid;
+  grid-template-columns: 2.75rem 1fr 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 /* The book's own face: these buttons change the book text. */
 .text-size {
+  min-height: 2.75rem;
+  border: 1px solid var(--frame);
+  border-radius: var(--radius);
+  background: transparent;
   font-family: var(--font-book);
   font-size: 0.9375rem;
   font-weight: 600;
+  cursor: pointer;
+}
+
+.text-size:hover:not(:disabled) {
+  background: var(--wash);
+}
+
+.text-size:disabled {
+  color: var(--ink-faint);
+  opacity: 0.5;
+  cursor: default;
 }
 
 .text-size-large {
   font-size: 1.375rem;
+}
+
+.size-slider {
+  width: 100%;
+  height: 2.75rem;
+  margin: 0;
+  accent-color: var(--pen);
+  cursor: pointer;
 }
 
 /* A modal <dialog> drawn as a drawer down the left edge, over the dimmed page. */
@@ -908,18 +1071,41 @@ li:not(.toc-matter) + .toc-matter {
 /* The chapter */
 
 .page {
-  padding: 0 1.5rem;
+  padding: 0 var(--side);
 }
 
 .chapter,
 .flow-back,
-.flow-end {
+.flow-end,
+.reading-footer-line {
   max-width: var(--column);
   margin: 0 auto;
 }
 
+/* An e-reader's footer: how long the chapter has left, in line with the text. It sits on the page's own paper under
+   a short fade, so the text seems to pass under the bottom edge of the page. */
+.reading-footer {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 15;
+  padding: 0.25rem var(--side) calc(0.5rem + env(safe-area-inset-bottom));
+  background: var(--paper);
+  color: var(--ink-faint);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.reading-footer::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 100%;
+  height: 1.25rem;
+  background: linear-gradient(to bottom, transparent, var(--paper));
+}
+
 .chapter {
-  padding: 3rem 0 6rem;
+  padding: 4.5rem 0 6rem;
 }
 
 /* The book flows on: each new chapter opens under a rule, like a fresh page in a printed book. */
@@ -928,8 +1114,8 @@ li:not(.toc-matter) + .toc-matter {
 }
 
 .chapter + .chapter .chapter-head {
-  padding-top: 3rem;
-  border-top: 1px solid var(--ink);
+  padding-top: 4.5rem;
+  border-top: 1px solid var(--rule);
 }
 
 /* Before the first chapter on the page: where the chapter before it is loading. A fixed height, so the text below
@@ -962,7 +1148,7 @@ li:not(.toc-matter) + .toc-matter {
 
 .book-end h2 {
   color: var(--ink);
-  font-family: var(--font-book);
+  font-family: var(--book-face);
   font-size: calc(var(--book-size) * 1.4);
   font-weight: 650;
   line-height: 1.2;
@@ -978,28 +1164,51 @@ li:not(.toc-matter) + .toc-matter {
   margin-top: 1.5rem;
 }
 
+/* A chapter opens as in a printed book: centred, set in small capitals, with a short rule where the ornament goes. */
+.chapter-head {
+  text-align: center;
+}
+
+.chapter-head::after {
+  content: "";
+  display: block;
+  width: 2.5rem;
+  height: 1px;
+  margin: 1.75rem auto 0;
+  background: var(--ink-faint);
+}
+
 .chapter-meta {
   color: var(--ink-faint);
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
 }
 
 .chapter-head h2 {
-  margin-top: 0.375rem;
-  font-family: var(--font-book);
+  margin-top: 0.75rem;
+  font-family: var(--book-face);
   /* Twice the book text, so it keeps its place above a column that grows and shrinks with it; smaller on a phone. */
   font-size: min(var(--book-size) * 2, max(1.75rem, 1.2rem + 2vw));
-  font-weight: 650;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  /* Titles in the PDFs are often all capitals: as small capitals they read as a heading, not as shouting. */
+  font-variant-caps: all-small-caps;
+  /* Small capitals stand lower than the font size: a tighter line keeps a two-line title together. */
+  line-height: 1.1;
+  letter-spacing: 0.04em;
   overflow-wrap: anywhere;
   text-wrap: balance;
 }
 
 .chapter-text {
   margin-top: 2.5rem;
-  font-family: var(--font-book);
+  font-family: var(--book-face);
   font-size: var(--book-size);
-  line-height: 1.7;
+  line-height: var(--leading);
+}
+
+/* Justified like a printed page, with words broken at line ends so the gaps between them stay even. */
+:root[data-align="justify"] .chapter-text p[data-block] {
+  text-align: justify;
+  hyphens: auto;
 }
 
 /* A first-visit hint above the first paragraph (beside it on wide screens): how to ask about a word or a passage.
@@ -1225,9 +1434,16 @@ h5[data-block] {
     );
   }
 
+  /* The margin choice sets the column here; the side padding stays what the margin notes are placed against. */
+  .page,
+  .reading-footer {
+    padding-inline: 1.5rem;
+  }
+
   .chapter,
   .flow-back,
-  .flow-end {
+  .flow-end,
+  .reading-footer-line {
     --text-width: min(var(--column), 100% - var(--gutter) - var(--margin-note));
 
     max-width: var(--text-width);
@@ -1235,7 +1451,7 @@ h5[data-block] {
     transition: margin-left 0.25s ease-out;
   }
 
-  .reader:has(.note, .tip, .listen-bar, .toast) :is(.chapter, .flow-back, .flow-end) {
+  .reader:has(.note, .tip, .listen-bar, .toast) :is(.chapter, .flow-back, .flow-end, .reading-footer-line) {
     margin-left: min((100% - var(--text-width)) / 2, 100% - var(--text-width) - var(--gutter) - var(--margin-note));
   }
 
@@ -1247,7 +1463,8 @@ h5[data-block] {
   @media (prefers-reduced-motion: reduce) {
     .chapter,
     .flow-back,
-    .flow-end {
+    .flow-end,
+    .reading-footer-line {
       transition: none;
     }
   }

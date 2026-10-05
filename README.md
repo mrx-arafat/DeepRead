@@ -211,7 +211,9 @@ After a jump, the browser's Back button returns you to the paragraph you were re
 
 ### 9. Make it yours
 
-Open **Aa** at the top right to set the text size, a light or dark page, the language explanations come in, and your AI helper (pictured in [AI helpers](#ai-helpers)).
+Open **Aa** at the top right to set the page the way an e-reader does: a light, sepia or dark theme, the book's font (Literata or Atkinson), text size, line spacing, margins and justified text.
+Below those are the language explanations come in and your AI helper (pictured in [AI helpers](#ai-helpers)).
+The footer under the text tells you how many minutes of the chapter are left.
 Explanation languages: Bangla (the default), Hindi, Urdu, Arabic, Spanish, French, Indonesian and Turkish.
 
 DeepRead also fits a phone screen, here in the dark theme:

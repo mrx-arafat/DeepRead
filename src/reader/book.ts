@@ -4,8 +4,18 @@ import type { Block, Chapter, ChapterSummary, SectionKind } from "../../shared/t
 
 const normalize = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
+/** A relaxed reading pace. */
+const WORDS_A_MINUTE = 180;
+
 /** Minutes to read `words` at a relaxed pace. */
-export const minutes = (words: number): number => Math.max(1, Math.round(words / 180));
+export const minutes = (words: number): number => Math.max(1, Math.round(words / WORDS_A_MINUTE));
+
+/** Minutes left in a chapter read `fraction` of the way through, 0 under half a minute; null for an unknown chapter. */
+export function chapterMinutesLeft(chapters: ChapterSummary[], chapterId: string, fraction: number): number | null {
+  const chapter = chapters.find((item) => item.id === chapterId);
+  if (!chapter) return null;
+  return Math.round((chapter.wordCount * (1 - Math.min(Math.max(fraction, 0), 1))) / WORDS_A_MINUTE);
+}
 
 /** Books parsed before sections had kinds have none: all of such a book reads as its own text. */
 export const kindOf = (section: { kind?: SectionKind }): SectionKind => section.kind ?? "body";

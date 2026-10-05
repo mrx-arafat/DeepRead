@@ -2,13 +2,15 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import type { BookDetail, Chapter, ReadingProgress } from "../../shared/types.ts";
 import { api } from "../api.ts";
-import { bookPercent, indexAtLine, lastOfText } from "./book.ts";
+import { bookPercent, chapterMinutesLeft, indexAtLine, lastOfText } from "./book.ts";
 
 export type ReadingPosition = {
   /** The chapter at the top of the window. */
   chapterId: string | null;
   /** How much of the whole book lies above the top of the window, 0 to 100. */
   percent: number;
+  /** About how many minutes of that chapter are left to read; null until it is measured. */
+  minutesLeft: number | null;
 };
 
 /** The chapter at the eye line, and the block there or next below it; no block once its text is behind the reader. */
@@ -104,6 +106,9 @@ function atBookEnd(book: BookDetail): boolean {
   );
 }
 
+const same = (a: ReadingPosition, b: ReadingPosition) =>
+  a.chapterId === b.chapterId && a.percent === b.percent && a.minutesLeft === b.minutesLeft;
+
 type Place = Required<Pick<ReadingProgress, "chapterId" | "blockId" | "offset">>;
 
 /** The block at the eye line and how far into it the line there starts. */
@@ -149,7 +154,7 @@ export function useReadingPosition(
   start: Chapter | undefined,
 ): ReadingPosition {
   const [, navigate] = useLocation();
-  const [position, setPosition] = useState<ReadingPosition>({ chapterId: null, percent: 0 });
+  const [position, setPosition] = useState<ReadingPosition>({ chapterId: null, percent: 0, minutesLeft: null });
   // The newest progress saved from this page; the copy in `book` is only as fresh as the page load.
   const saved = useRef<Place | null>(null);
   const opened = useRef<Chapter | null>(null);
@@ -193,8 +198,10 @@ export function useReadingPosition(
     if (!book || !start) {
       // While a chapter opens, the top bar already names it and where it starts in the book.
       const id = book && inUrl.current;
-      const opening = id ? { chapterId: id, percent: bookPercent(book.chapters, id, 0) } : { chapterId: null, percent: 0 };
-      setPosition((prev) => (prev.chapterId === opening.chapterId && prev.percent === opening.percent ? prev : opening));
+      const opening: ReadingPosition = id
+        ? { chapterId: id, percent: bookPercent(book.chapters, id, 0), minutesLeft: null }
+        : { chapterId: null, percent: 0, minutesLeft: null };
+      setPosition((prev) => (same(prev, opening) ? prev : opening));
       return;
     }
     let measuring: number | undefined;
@@ -206,9 +213,14 @@ export function useReadingPosition(
       const spot = spotAtEyeLine();
       const id = spot?.chapter.dataset.chapter;
       if (!spot || !id) return;
-      const percent = atBookEnd(book) ? 100 : bookPercent(book.chapters, id, fractionRead(spot));
+      const fraction = fractionRead(spot);
+      const next: ReadingPosition = {
+        chapterId: id,
+        percent: atBookEnd(book) ? 100 : bookPercent(book.chapters, id, fraction),
+        minutesLeft: chapterMinutesLeft(book.chapters, id, fraction),
+      };
       // Unchanged rounded values keep the same state object, so scrolling does not re-render the book.
-      setPosition((prev) => (prev.chapterId === id && prev.percent === percent ? prev : { chapterId: id, percent }));
+      setPosition((prev) => (same(prev, next) ? prev : next));
       // A URL chapter that is not on the page is still being opened: leave the URL to it.
       const current = inUrl.current;
       if (current && id !== current && document.querySelector(`[data-chapter="${CSS.escape(current)}"]`)) {

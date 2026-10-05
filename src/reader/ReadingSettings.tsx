@@ -1,11 +1,111 @@
-import { Moon, Sun } from "lucide-react";
-import { useEffect, useState, type FocusEvent, type ToggleEvent } from "react";
+import { AlignJustify, AlignLeft } from "lucide-react";
+import { useEffect, useState, type FocusEvent, type ReactNode, type ToggleEvent } from "react";
 import { LANGUAGES, type AiProviderId, type AiStatus, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { FONT_SIZES, setPrefs, type Prefs } from "../prefs.ts";
 import { keepingLine } from "./useReadingPosition.ts";
 
 const PANEL = "reading-settings";
+
+type Option<T extends string> = { value: T; label: string; content: ReactNode };
+
+/** One choice out of a few, shown side by side; `iconOnly` keeps the label for screen readers and the tooltip. */
+function Choice<T extends string>(props: {
+  name: string;
+  legend: string;
+  value: T;
+  options: Option<T>[];
+  onChange: (value: T) => void;
+  iconOnly?: boolean;
+  className?: string;
+}) {
+  return (
+    <fieldset className="settings-group">
+      <legend className="settings-label">{props.legend}</legend>
+      <div className={`segmented ${props.className ?? ""}`}>
+        {props.options.map((option) => (
+          <label key={option.value} title={props.iconOnly ? option.label : undefined}>
+            <input
+              type="radio"
+              name={`${PANEL}-${props.name}`}
+              value={option.value}
+              checked={props.value === option.value}
+              onChange={() => props.onChange(option.value)}
+            />
+            {option.content}
+            {props.iconOnly ? <span className="visually-hidden">{option.label}</span> : null}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/** Three lines as far apart as the line spacing they stand for. */
+function SpacingIcon({ gap }: { gap: number }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+      {[-gap, 0, gap].map((dy) => (
+        <path key={dy} d={`M5 ${12 + dy}h14`} />
+      ))}
+    </svg>
+  );
+}
+
+/** A page with its lines as wide as the margins leave them. */
+function MarginsIcon({ inset }: { inset: number }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      {[8.5, 12, 15.5].map((y) => (
+        <path key={y} d={`M${3 + inset} ${y}H${21 - inset}`} />
+      ))}
+    </svg>
+  );
+}
+
+const THEME_OPTIONS: Option<Prefs["theme"]>[] = [
+  { value: "light", label: "Light", content: <Swatch label="Light" /> },
+  { value: "sepia", label: "Sepia", content: <Swatch label="Sepia" /> },
+  { value: "dark", label: "Dark", content: <Swatch label="Dark" /> },
+];
+
+/** The page as it would look: its paper, and "Aa" in its ink. */
+function Swatch({ label }: { label: string }) {
+  return (
+    <>
+      <span className="swatch-page" aria-hidden>
+        Aa
+      </span>
+      {label}
+    </>
+  );
+}
+
+const FONT_OPTIONS: Option<Prefs["font"]>[] = [
+  { value: "serif", label: "Literata", content: <span className="font-sample font-sample-serif">Literata</span> },
+  { value: "sans", label: "Atkinson", content: <span className="font-sample font-sample-sans">Atkinson</span> },
+];
+
+const SPACING_OPTIONS: Option<Prefs["spacing"]>[] = [
+  { value: "tight", label: "Tight line spacing", content: <SpacingIcon gap={3.5} /> },
+  { value: "normal", label: "Normal line spacing", content: <SpacingIcon gap={5} /> },
+  { value: "loose", label: "Loose line spacing", content: <SpacingIcon gap={6.5} /> },
+];
+
+const MARGIN_OPTIONS: Option<Prefs["margins"]>[] = [
+  { value: "narrow", label: "Narrow margins", content: <MarginsIcon inset={2.5} /> },
+  { value: "normal", label: "Normal margins", content: <MarginsIcon inset={4.5} /> },
+  { value: "wide", label: "Wide margins", content: <MarginsIcon inset={6} /> },
+];
+
+const ALIGN_OPTIONS: Option<Prefs["align"]>[] = [
+  { value: "left", label: "Align left", content: <AlignLeft size={20} aria-hidden /> },
+  { value: "justify", label: "Justify", content: <AlignJustify size={20} aria-hidden /> },
+];
+
+/** A change that reflows the book, made so the line being read stays where it is on screen. */
+const reflow = (patch: Partial<Prefs>) => keepingLine(() => setPrefs(patch));
 
 /** Tabbing on past the last control closes the menu, as a tap outside does; going back to the "Aa" button keeps it. */
 function closeWhenTabbedAway(event: FocusEvent<HTMLElement>) {
@@ -92,9 +192,9 @@ function AiHelper({ open }: { open: boolean }) {
 }
 
 /**
- * The "Aa" menu at the end of the top bar: text size, a light or dark page, the language explanations come in, and
- * the AI tool that writes them. A native popover, so a tap outside or Escape closes it and focus goes back to the
- * button, on every screen size.
+ * The "Aa" menu at the end of the top bar, laid out like an e-reader's: the page colour, the book's font, text size,
+ * line spacing, margins and alignment, then the language explanations come in and the AI tool that writes them.
+ * A native popover, so a tap outside or Escape closes it and focus goes back to the button, on every screen size.
  */
 export function ReadingSettings({ prefs }: { prefs: Prefs }) {
   const [open, setOpen] = useState(false);
@@ -111,57 +211,81 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
         onBlur={closeWhenTabbedAway}
         onToggle={(event: ToggleEvent<HTMLElement>) => setOpen(event.newState === "open")}
       >
+        <Choice
+          name="theme"
+          legend="Theme"
+          value={prefs.theme}
+          options={THEME_OPTIONS}
+          onChange={(theme) => setPrefs({ theme })}
+          className="swatches"
+        />
+
+        <Choice name="font" legend="Font" value={prefs.font} options={FONT_OPTIONS} onChange={(font) => reflow({ font })} />
+
         <div className="settings-group" role="group" aria-labelledby={`${PANEL}-size`}>
           <p id={`${PANEL}-size`} className="settings-label">
             Text size
           </p>
-          <div className="segmented">
+          <div className="size-row">
             <button
               type="button"
               className="text-size"
               aria-label="Smaller text"
               disabled={prefs.fontSize <= FONT_SIZES.min}
-              onClick={() => keepingLine(() => setPrefs({ fontSize: prefs.fontSize - 1 }))}
+              onClick={() => reflow({ fontSize: prefs.fontSize - 1 })}
             >
               A
             </button>
+            <input
+              type="range"
+              className="size-slider"
+              aria-label="Text size"
+              min={FONT_SIZES.min}
+              max={FONT_SIZES.max}
+              value={prefs.fontSize}
+              onChange={(event) => reflow({ fontSize: Number(event.target.value) })}
+            />
             <button
               type="button"
               className="text-size text-size-large"
               aria-label="Larger text"
               disabled={prefs.fontSize >= FONT_SIZES.max}
-              onClick={() => keepingLine(() => setPrefs({ fontSize: prefs.fontSize + 1 }))}
+              onClick={() => reflow({ fontSize: prefs.fontSize + 1 })}
             >
               A
             </button>
           </div>
         </div>
 
-        <fieldset className="settings-group">
-          <legend className="settings-label">Theme</legend>
-          <div className="segmented">
-            <label>
-              <input
-                type="radio"
-                name={`${PANEL}-theme`}
-                value="light"
-                checked={prefs.theme === "light"}
-                onChange={() => setPrefs({ theme: "light" })}
-              />
-              <Sun size={18} aria-hidden /> Light
-            </label>
-            <label>
-              <input
-                type="radio"
-                name={`${PANEL}-theme`}
-                value="dark"
-                checked={prefs.theme === "dark"}
-                onChange={() => setPrefs({ theme: "dark" })}
-              />
-              <Moon size={18} aria-hidden /> Dark
-            </label>
-          </div>
-        </fieldset>
+        <div className="settings-pair">
+          <Choice
+            name="spacing"
+            legend="Line spacing"
+            value={prefs.spacing}
+            options={SPACING_OPTIONS}
+            onChange={(spacing) => reflow({ spacing })}
+            iconOnly
+          />
+          <Choice
+            name="margins"
+            legend="Margins"
+            value={prefs.margins}
+            options={MARGIN_OPTIONS}
+            onChange={(margins) => reflow({ margins })}
+            iconOnly
+          />
+        </div>
+
+        <Choice
+          name="align"
+          legend="Alignment"
+          value={prefs.align}
+          options={ALIGN_OPTIONS}
+          onChange={(align) => reflow({ align })}
+          iconOnly
+        />
+
+        <hr className="settings-divider" />
 
         <div className="settings-group">
           <label className="settings-label" htmlFor={`${PANEL}-lang`}>

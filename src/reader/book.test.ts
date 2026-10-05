@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Block, ChapterSummary } from "../../shared/types.ts";
-import { bookPercent, chapterPosition, indexAtLine, nextInFlow, openingChapter, previousInFlow } from "./book.ts";
+import {
+  bookPercent,
+  chapterMinutesLeft,
+  chapterPosition,
+  indexAtLine,
+  nextInFlow,
+  openingChapter,
+  previousInFlow,
+} from "./book.ts";
 import { sentenceIndex, sentencesOf } from "./textRanges.ts";
 
 const section = (id: string, wordCount: number, kind?: ChapterSummary["kind"]): ChapterSummary => ({
@@ -51,6 +59,23 @@ describe("bookPercent", () => {
     expect(bookPercent(wrapped, "c2", 0.5)).toBe(16);
     expect(bookPercent(wrapped, "c1", 0.9)).toBe(0);
     expect(bookPercent(wrapped, "c4", 0)).toBe(100);
+  });
+});
+
+describe("chapterMinutesLeft", () => {
+  // 1,800 words: ten minutes at 180 words a minute.
+  const chapters = [section("c1", 1800)];
+
+  it("should count the minutes left in the part of the chapter not yet read", () => {
+    expect(chapterMinutesLeft(chapters, "c1", 0)).toBe(10);
+    expect(chapterMinutesLeft(chapters, "c1", 0.5)).toBe(5);
+  });
+
+  it("should say none are left under half a minute from the end, and know nothing of an unknown chapter", () => {
+    // 18 words left.
+    expect(chapterMinutesLeft(chapters, "c1", 0.99)).toBe(0);
+    expect(chapterMinutesLeft(chapters, "c1", 1)).toBe(0);
+    expect(chapterMinutesLeft(chapters, "c9", 0.5)).toBeNull();
   });
 });
 
