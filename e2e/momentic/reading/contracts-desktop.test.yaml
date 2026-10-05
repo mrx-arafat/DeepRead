@@ -61,5 +61,5 @@ steps:
       if (!toc.activeInsideToc) failures.push('keyboard focus stays on the page behind the chapter list when it opens');
       if (!/Problems of Philosophy/.test(c3.docTitle || '') || !(c3.docTitle || '').includes(c3.h1 || '?')) failures.push(`the browser tab title is "${c3.docTitle}" while reading ${c3.h1}`);
       if (toc.titles.some((t) => /Project Gutenberg License.*\d+ min/.test(t))) failures.push('the Project Gutenberg license is listed as a chapter of the book, with a reading time');
-      if (!/Continue|Resume|\d+%|Chapter \d+ of|You are in/i.test(env.C_SHELF)) failures.push(`the library row gives no sign of where the reader stopped: "${env.C_SHELF}"`);
+      if (!/Continue|Resume|Just started|\d+%|Chapter \d+ of|You are in/i.test(env.C_SHELF)) failures.push(`the library row gives no sign of where the reader stopped: "${env.C_SHELF}"`);
       assert(failures.length === 0, failures.join('; '))

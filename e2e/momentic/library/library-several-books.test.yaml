@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
 id: library-several-books
-description: "Three books in the library: newest first ordering, row spacing and dividers, and editing the middle row. book-two.pdf and book-three.pdf in data/e2e-library are made with pdfunite from two and three copies of the fixture. Run from the repo root."
+description: "Three books in the library: newest first ordering, cover spacing on the shelf, and editing the middle book. book-two.pdf and book-three.pdf in data/e2e-library are made with pdfunite from two and three copies of the fixture. Run from the repo root."
 viewport: 1440, 900
 before:
   - module: ./modules/reset-library.module.yaml
@@ -30,14 +30,15 @@ steps:
       saveAs: ROWS
       code: |-
         return [...document.querySelectorAll(".shelf-item")].map((r) => r.innerText.replace(/\n/g, " | "));
-  - assertVisually: The Your books list shows three book rows, each with a serif title, a grey meta line, and pencil and bin icons at the right. Rows are evenly spaced with thin dividers between them and nothing overlaps
-  - click: the Edit (pencil) button of the second book row in the list
+  - assertVisually: The Your books shelf shows three book covers side by side in one row, each in a muted cloth colour with its title stamped in cream serif, a thin line and a grey line of text under it, and a three-dot button. The covers are evenly spaced, the same size, and nothing overlaps
+  - click: the three-dot more actions button under the second book's cover
+  - click: the Edit menu item
   - fill:
       text: Second Book
       into: Title input
   - click: Save button
   - checkPageContains: Second Book
-  - assertVisually: The second row is now titled Second Book and the other two rows are unchanged, and all three rows keep the same spacing
+  - assertVisually: The second cover is now titled Second Book (and may have changed its cloth colour) and the other two covers are unchanged, and all three keep the same size and spacing
   - javascript:
       environment: browser
       saveAs: ROWS_AFTER_EDIT

@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
 id: library-continue-reading
-description: A reader reads for a while, goes back to the library and expects to see how far they got. The book row should show reading progress or a Continue action (currently it only shows total length). Run from the repo root.
+description: A reader reads for a while, goes back to the library and expects to see how far they got. The library should offer a Continue reading card for the book, and the book's cover on the shelf should show its progress. Run from the repo root.
 viewport: 1440, 900
 before:
   - module: ./modules/reset-library.module.yaml
@@ -17,4 +17,8 @@ steps:
       saveAs: API_AFTER_READING
   - click: Back to your books
   - checkPageContains: Your books
-  - assert: The library row for the book tells the reader how far they have read (a percentage, a chapter, or last-read text) or offers a Continue reading action
+  - checkPageContains: Continue reading
+  - assert: A Continue reading card shows the book with the chapter where the reader stopped, a percentage, the time left and a Continue button, and the book's cover on the shelf shows a progress line with a percentage
+  - click: Continue button
+  - waitForUrl: /book/
+  - assertVisually: The reader has opened for The Problems of Philosophy

@@ -132,19 +132,22 @@ Only the explanations (the meaning, the example sentence and the passage notes) 
 
 ### 1. Add a book
 
-Click **Add a book (PDF)**, or drop a PDF onto the page.
+Click **Add a book (PDF)**, or drop a PDF anywhere on the page.
 DeepRead works with PDFs whose text you can select (most e-books and Project Gutenberg books).
 Scanned books, where each page is a photo, need OCR first.
 
-<table><tr><td><img src="docs/images/library-empty.webp" alt="The first screen, with the Add a book button" width="900"></td></tr></table>
+<table><tr><td><img src="docs/images/library-empty.webp" alt="The first screen: a welcome box with an empty shelf and the Add a book button" width="900"></td></tr></table>
 
 ### 2. Your library
 
-Every book shows where you stopped.
-Click **Continue** to open it right there.
-The pencil renames a book or adds its author, and the bin removes it.
+Your books stand on a shelf as covers, each bound in a cloth colour that DeepRead picks from the title.
+The book you read last waits at the top in a **Continue reading** card, with the chapter you stopped in and how much of the book is left.
+Click **Continue**, or the card, to open it right there.
+Under each cover a thin line shows how far you are, with the time left, or **New** and the time it takes to read for a book you have not opened.
+Click a cover to open that book where you left it.
+The **...** button under a cover lets you edit the book's title and author, or remove it.
 
-<table><tr><td><img src="docs/images/library.webp" alt="The library with a book and a Continue link" width="900"></td></tr></table>
+<table><tr><td><img src="docs/images/library.webp" alt="The library with a Continue reading card and a shelf of book covers" width="900"></td></tr></table>
 
 ### 3. Read
 

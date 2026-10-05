@@ -23,17 +23,21 @@ steps:
           const border = (name, sel) => { const el = document.querySelector(sel); if (!el) return; const b = parse(getComputedStyle(el).borderTopColor); if (b) out.borders[name] = ratio(b, bgOf(el.parentElement || el)); };
           const size = (name, sel) => { const el = document.querySelector(sel); if (!el) return; const r = el.getBoundingClientRect(); out.sizes[name] = `${Math.round(r.width)}x${Math.round(r.height)}`; };
           text("intro", ".library-head p"); text("dropHint", ".drop-hint"); text("addLabel", ".drop .button"); text("sectionHeading", ".library-section");
-          text("bookTitle", ".shelf-title"); text("bookMeta", ".shelf-meta"); text("emptyState", ".library-empty"); text("error", ".inline-error");
+          text("bookTitle", ".shelf-item .cover-title"); text("bookAuthor", ".shelf-item .cover-author"); text("bookMeta", ".shelf-meta"); text("bookLead", ".shelf-meta-lead");
+          text("continueTitle", ".continue-title"); text("continueLeft", ".continue-left"); text("continueButton", ".continue-action"); text("continueChapter", ".continue-chapter");
+          text("emptyState", ".library-empty"); text("emptyMore", ".library-empty-more"); text("error", ".inline-error");
           text("editLabel", ".shelf-field label"); text("cancelLabel", ".shelf-edit-actions .quiet-button"); text("keepLink", ".shelf-confirm .link-button:not(.danger)");
           text("removeLink", ".shelf-confirm .link-button.danger"); text("rowIcon", ".icon-button");
-          border("dropBox", ".drop"); border("textField", ".shelf-field input"); border("cancelButton", ".shelf-edit-actions .quiet-button");
-          size("addButton", ".drop .button"); size("rowIcon", ".icon-button"); size("removeLink", ".shelf-confirm .link-button.danger"); size("keepLink", ".shelf-confirm .link-button:not(.danger)"); size("rowLink", ".shelf-link");
+          // The drop box has an edge only on a first visit (dashed); with books on the shelf the add button carries its own.
+          if (document.querySelector(".library-top[data-empty]")) border("dropBox", ".drop"); else border("addButton", ".drop .button");
+          border("textField", ".shelf-field input"); border("cancelButton", ".shelf-edit-actions .quiet-button");
+          size("addButton", ".drop .button"); size("continueButton", ".continue-action"); size("rowIcon", ".icon-button"); size("removeLink", ".shelf-confirm .link-button.danger"); size("keepLink", ".shelf-confirm .link-button:not(.danger)"); size("rowLink", ".shelf-link");
           out.overflowX = document.documentElement.scrollWidth - innerWidth;
           return out;
         };
         return document.documentElement.dataset.theme;
       saveAs: T_THEME
-  - assertVisually: The library page has a bold DeepRead title, a short grey intro, a dashed drop box with a blue Add a book (PDF) button (on a wide screen also the hint "or drop a PDF here"; a phone leaves it out, since a phone cannot drop files), and a small No books yet sentence. Text is readable against the background, spacing is even and nothing is cut off
+  - assertVisually: The library page has a bold serif DeepRead title, a short grey intro, and a dashed welcome box. In the box stand a few faded books on a shelf board, the sentence No books yet. Add a PDF to start reading., a line saying each book gets a cover, and a blue Add a book (PDF) button (on a wide screen also the hint "or drop a PDF here"; a phone leaves it out, since a phone cannot drop files). Text is readable against the background, spacing is even and nothing is cut off
   - javascript:
       environment: browser
       code: return window.__measure();
@@ -43,7 +47,7 @@ steps:
       on: Add a book (PDF) button
       retries: 2
   - checkPageContains: That file is not a PDF
-  - assertVisually: A readable red error sentence sits under the drop box, the layout has not jumped, and the No books yet sentence is still below it
+  - assertVisually: A readable red error sentence sits under the dashed welcome box, the box has not changed size, and the No books yet sentence is still inside it
   - javascript:
       environment: browser
       code: return window.__measure();
@@ -57,16 +61,19 @@ steps:
   - checkElementVisible:
       css: "main.page > article.chapter:nth-of-type(1) .chapter-text"
       timeout: 30000
+  # The reader saves the place about a second after a book opens, so the library has somewhere to continue from.
+  - wait: 2000
   - click: Back to your books
   - checkPageContains: Your books
-  - assertVisually: Under the Your books heading there is one book row. The title is in a serif face, the meta line is smaller grey text, and the pencil and bin icons are aligned at the right. Contrast is comfortable and nothing overlaps
+  - assertVisually: Under a Continue reading heading a card shows the book cover, the title in serif, the chapter, a progress line with its percentage and the time left, and a blue Continue button at the right (a phone puts the button below, full width). Under the Your books heading there is one cloth-coloured book cover with the title stamped in cream serif, a thin progress line, a smaller line of grey text and a three-dot button. Contrast is comfortable and nothing overlaps
   - javascript:
       environment: browser
       code: return window.__measure();
       saveAs: T_LIST
+  - click: More actions for The Problems of Philosophy
   - click: Edit The Problems of Philosophy
   - checkElementFocused: Title input
-  - assertVisually: The row has become a form with Title and Author fields, a filled Save button and a Cancel button. The field borders, labels and buttons are all clearly visible against the background
+  - assertVisually: A dialog titled Edit book is open over the dimmed page, with Title and Author fields, a filled Save button and a Cancel button. The field borders, labels and buttons are all clearly visible against the background
   - javascript:
       environment: browser
       code: return window.__measure();
@@ -79,14 +86,15 @@ steps:
       into: Author input
   - click: Save button
   - checkPageContains: Illustrated Annotated Edition
-  - assertVisually: The book row shows a very long title wrapped over several lines and a long author line, with the pencil and bin icons still inside the page at the right. Nothing is cut off, overlaps, or runs past the screen edge
+  - assertVisually: The Continue reading card shows the very long title wrapped over several lines (cut with an ellipsis after four lines on a phone) and the long author line over up to two lines. The book's cover on the shelf stamps the long title in a small size and cuts the long author line after two lines with an ellipsis. Nothing overlaps, or runs past the screen edge
   - javascript:
       environment: browser
       code: return window.__measure();
       saveAs: T_LONG
-  - click: the bin (remove) icon button on the book row
+  - click: the three-dot more actions button under the book's cover
+  - click: the red Remove menu item with the bin icon
   - checkPageContains: Keep
-  - assertVisually: Under the long title a grey box asks whether to remove the book and its notes, with the red word Remove and the blue word Keep. They are clearly separate, readable, and inside the screen, and the title did not re-wrap
+  - assertVisually: Under the book's cover a grey box asks whether to remove the book and its notes, with the red word Remove and the blue word Keep. They are clearly separate, readable, and inside the screen, and the cover did not move
   - javascript:
       environment: browser
       code: return window.__measure();
@@ -102,7 +110,7 @@ steps:
         document.querySelector(".drop").dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }));
         await new Promise((r) => setTimeout(r, 200));
         return { dragging: document.querySelector(".drop").dataset.dragging ?? null, measure: window.__measure() };
-  - assertVisually: The drop box is highlighted with a solid blue border and a tinted background, and its text and button are still easy to read
+  - assertVisually: A blue frame runs round the whole window, and the area with the Add a book (PDF) button has a light blue tint inside a blue ring; its text (on a wide screen "Drop the PDF to add it") and button are still easy to read
   - javascript:
       code: |-
         const states = { empty: env.T_EMPTY, error: env.T_ERROR, list: env.T_LIST, edit: env.T_EDIT, long: env.T_LONG, confirm: env.T_CONFIRM, drag: env.T_DRAG.measure };
@@ -115,7 +123,7 @@ steps:
           if (m.overflowX > 0) problems.add(`page scrolls sideways by ${m.overflowX}px (${state})`);
           for (const [k, v] of Object.entries(m.sizes)) {
             const [w, h] = v.split("x").map(Number);
-            if (["rowIcon", "removeLink", "keepLink"].includes(k) && Math.min(w, h) < minTarget) problems.add(`"${k}" target is ${v}px, needs ${minTarget}px (${state})`);
+            if (["addButton", "continueButton", "rowIcon", "removeLink", "keepLink"].includes(k) && Math.min(w, h) < minTarget) problems.add(`"${k}" target is ${v}px, needs ${minTarget}px (${state})`);
           }
         }
         if (problems.size) throw new Error(`Polish checks failed in the ${env.THEME} theme at ${env.T_EMPTY.viewport}: ` + [...problems].join("; "));

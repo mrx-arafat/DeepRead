@@ -7,6 +7,8 @@ before:
 steps:
   - refresh
   - module: ./modules/add-fixture-book.module.yaml
+  # The reader saves the place about a second after a book opens; with it the library also offers a Continue reading card, which is a stop of its own.
+  - wait: 2000
   - click: Back to your books
   - checkPageContains: Your books
   - javascript:
@@ -29,15 +31,15 @@ steps:
       code: |-
         const e = document.activeElement; const cs = getComputedStyle(e);
         return { name: e.getAttribute("aria-label") || e.innerText.split("\n")[0], tag: e.tagName, outline: cs.outlineStyle + " " + cs.outlineWidth + " " + cs.outlineColor };
-  - assertVisually: The book title link in the Your books list shows a clearly visible keyboard focus indicator (outline or ring)
+  - assertVisually: The Continue button on the Continue reading card shows a clearly visible keyboard focus indicator (outline or ring)
   - press: Tab
   - javascript:
       environment: browser
       saveAs: STOP_3
       code: |-
         const e = document.activeElement; const cs = getComputedStyle(e);
-        return { name: e.getAttribute("aria-label") || e.innerText.split("\n")[0], outline: cs.outlineStyle + " " + cs.outlineWidth + " " + cs.outlineColor };
-  - assertVisually: The pencil (edit) icon button on the book row shows a clearly visible keyboard focus indicator
+        return { name: e.getAttribute("aria-label") || e.innerText.split("\n")[0], tag: e.tagName, outline: cs.outlineStyle + " " + cs.outlineWidth + " " + cs.outlineColor };
+  - assertVisually: The book's cover in the Your books shelf shows a clearly visible keyboard focus indicator (outline or ring) that follows the cover's corners
   - press: Tab
   - javascript:
       environment: browser
@@ -45,8 +47,16 @@ steps:
       code: |-
         const e = document.activeElement; const cs = getComputedStyle(e);
         return { name: e.getAttribute("aria-label") || e.innerText.split("\n")[0], outline: cs.outlineStyle + " " + cs.outlineWidth + " " + cs.outlineColor };
-  - assertVisually: The bin (remove) icon button on the book row shows a clearly visible keyboard focus indicator
-  - press: Shift+Tab
+  - assertVisually: The three-dot more actions button under the book's cover shows a clearly visible keyboard focus indicator
+  - press: Enter
+  - press: Tab
+  - javascript:
+      environment: browser
+      saveAs: STOP_5
+      code: |-
+        const e = document.activeElement; const cs = getComputedStyle(e);
+        return { name: e.getAttribute("aria-label") || e.innerText.split("\n")[0], outline: cs.outlineStyle + " " + cs.outlineWidth + " " + cs.outlineColor };
+  - assertVisually: The Edit item in the small panel under the book shows a clearly visible keyboard focus indicator
   - press: Enter
   - checkElementFocused: Title input
   - press: Escape
@@ -54,7 +64,9 @@ steps:
       environment: browser
       saveAs: AFTER_ESCAPE
       code: |-
-        return { focus: document.activeElement.getAttribute("aria-label"), formOpen: !!document.querySelector("form.shelf-edit") };
+        return { focus: document.activeElement.getAttribute("aria-label"), formOpen: !!document.querySelector("form.shelf-edit"), panelOpen: !!document.querySelector(".shelf-menu-panel") };
+  - press: Enter
+  - press: Tab
   - press: Tab
   - press: Enter
   - checkPageContains: Keep

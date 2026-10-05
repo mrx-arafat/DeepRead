@@ -9,6 +9,7 @@ steps:
   - module: ./modules/add-fixture-book.module.yaml
   - click: Back to your books
   - checkPageContains: Your books
+  - click: More actions for The Problems of Philosophy
   - click: Edit The Problems of Philosophy
   - checkElementFocused: Title input
   - type:
@@ -21,6 +22,7 @@ steps:
         return { rowText: document.querySelector(".shelf-item").innerText, focus: document.activeElement.getAttribute("aria-label") || document.activeElement.tagName, formOpen: !!document.querySelector("form.shelf-edit") };
       environment: browser
       saveAs: AFTER_CANCEL_BUTTON
+  - click: More actions for The Problems of Philosophy
   - click: Edit The Problems of Philosophy
   - checkElementFocused: Title input
   - type:
@@ -33,6 +35,7 @@ steps:
         return { rowText: document.querySelector(".shelf-item").innerText, focus: document.activeElement.getAttribute("aria-label") || document.activeElement.tagName, formOpen: !!document.querySelector("form.shelf-edit") };
       environment: browser
       saveAs: AFTER_ESCAPE
+  - click: More actions for The Problems of Philosophy
   - click: Edit The Problems of Philosophy
   - checkElementFocused: Title input
   - fill:
@@ -46,7 +49,7 @@ steps:
         return { saveDisabled: save.disabled, titleValue: title.value, titleRequired: title.required, formText: f.innerText, alerts: [...f.querySelectorAll("[role=alert]")].map((a) => a.innerText), describedBy: title.getAttribute("aria-describedby"), invalid: title.getAttribute("aria-invalid") };
       environment: browser
       saveAs: EMPTY_TITLE
-  - assertVisually: The edit form is open with an empty Title field, a message under it saying the title cannot be empty, and the Save button still shown as usable
+  - assertVisually: The Edit book dialog is open with an empty Title field, a message under it saying the title cannot be empty, and the Save button still shown as usable
   - press: Enter
   - javascript:
       code: |-

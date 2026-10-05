@@ -24,6 +24,20 @@
   --marker-voice: #7fcf6c;
   --danger: #b3261e;
 
+  /* Book cloth for the library's covers, chosen from the title. Muted and dark, so the cream cover ink clears 5.8:1 on
+     every one, and the page behind them (white or sepia) clears 5.5:1 against every cloth. */
+  --cloth-1: #7a2e2b;
+  --cloth-2: #2e5242;
+  --cloth-3: #2a4468;
+  --cloth-4: #6a4730;
+  --cloth-5: #2b5a62;
+  --cloth-6: #565a2b;
+  --cloth-7: #7a5a12;
+  --cloth-8: #3d4047;
+  --cloth-9: #5b3a52;
+  --cloth-10: #8a3f22;
+  --cover-ink: #fbf5e6;
+
   --font-book: "Literata Variable", "Noto Sans Bengali Variable", Georgia, serif;
   --font-ui: "Atkinson Hyperlegible Next Variable", "Noto Sans Bengali Variable", system-ui, sans-serif;
 
@@ -104,6 +118,18 @@
   --marker-spoken: #1c4226;
   --marker-voice: #2a6236;
   --danger: #ff8a80;
+
+  /* The same cloths, lifted to the same lightness (cover ink still clears 5.8:1), so each cover is a shape on the dark page. */
+  --cloth-1: #a03c39;
+  --cloth-2: #3a6753;
+  --cloth-3: #3a5e91;
+  --cloth-4: #7e5439;
+  --cloth-5: #30646d;
+  --cloth-6: #5c612e;
+  --cloth-7: #7a5a12;
+  --cloth-8: #595e68;
+  --cloth-9: #734e66;
+  --cloth-10: #984525;
 
   color-scheme: dark;
 }
@@ -337,14 +363,49 @@ select {
 /* Library */
 
 .library {
-  max-width: 44rem;
+  max-width: 60rem;
   margin: 0 auto;
-  padding: 4rem 1.5rem 6rem;
+  padding: 3rem 1.5rem 6rem;
+}
+
+/* A first visit has only the welcome on the page, so it sits a little lower rather than hugging the top edge. */
+.library:has(> .library-top[data-empty]) {
+  padding-top: 5rem;
+}
+
+/* A file being dragged over the page: a frame around the whole window, whichever part of it the file is over. */
+.library[data-dragging]::after {
+  content: "";
+  position: fixed;
+  inset: 0.5rem;
+  z-index: 40;
+  border: 2px solid var(--pen);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+/* The name on the left, the add button on the right. On a first visit the name and its welcome sit above a larger drop box. */
+.library-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+}
+
+.library-top[data-waiting] .drop {
+  visibility: hidden;
+}
+
+.library-head {
+  flex: 1 1 auto;
 }
 
 .library-head h1 {
-  font-size: 1.75rem;
+  font-family: var(--font-book);
+  font-size: 2rem;
   font-weight: 700;
+  line-height: 1.2;
   letter-spacing: -0.01em;
 }
 
@@ -355,35 +416,104 @@ select {
   font-size: 1.125rem;
 }
 
+.library-head h1 + p {
+  margin-top: 0.75rem;
+}
+
 /* What kind of book works is part of the welcome, not something to find out from an error. */
 .library-head p + p {
   margin-top: 0.5rem;
   font-size: 1rem;
 }
 
+.library-top[data-empty] .library-head {
+  flex-basis: 100%;
+}
+
+/* The name and the add button must share a line on a phone, so the name is a little smaller there. */
+@media (max-width: 40rem) {
+  .library-top {
+    gap: 1rem;
+  }
+
+  .library-head h1 {
+    font-size: 1.5rem;
+  }
+}
+
+.library-top[data-empty] {
+  gap: 2rem;
+}
+
 .drop {
   display: flex;
-  flex-wrap: wrap;
+  flex: 0 1 auto;
   align-items: center;
-  gap: 1rem;
-  margin-top: 2rem;
-  padding: 1.5rem;
-  /* Tall enough for the "reading your book" state too, so the page below never jumps when a book is added. */
-  min-height: 6.25rem;
-  border: 1px dashed var(--ink-faint);
+  gap: 1.5rem;
+  min-height: 2.75rem;
   border-radius: var(--radius);
 }
 
-
+/* A file is over the page: the box takes the pen's wash and a ring of it, so it shows without the page below moving. */
 .drop[data-dragging] {
+  background: var(--pen-wash);
+  box-shadow:
+    0 0 0 0.5rem var(--pen-wash),
+    0 0 0 calc(0.5rem + 1px) var(--pen);
+}
+
+.drop-body {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.drop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+/* With books on the shelf, adding another is the quieter choice; carrying on with one is the loud one. */
+.library-top:not([data-empty]) .drop .button {
+  border: 1px solid var(--ink-faint);
+  background: transparent;
+  color: var(--ink);
+}
+
+.library-top:not([data-empty]) .drop .button:hover {
+  background: var(--wash);
+  filter: none;
+}
+
+.library-top[data-empty] .drop {
+  flex: 1 1 100%;
+  gap: 2.5rem;
+  padding: 2.5rem;
+  border: 1px dashed var(--ink-faint);
+}
+
+.library-top[data-empty] .drop[data-dragging] {
   border-style: solid;
   border-color: var(--pen);
-  background: var(--pen-wash);
+  box-shadow: none;
+}
+
+/* Tall enough for the "reading your book" state too, so nothing below ever jumps when a book is added. */
+.library-top[data-empty] .drop-body {
+  min-height: 9rem;
+  align-content: center;
 }
 
 .drop-hint,
 .drop-busy {
   color: var(--ink-soft);
+}
+
+.drop[data-dragging] .drop-hint {
+  color: var(--pen);
+  font-weight: 600;
 }
 
 /* A finger cannot drop a file onto the page, and on a narrow window the hint would wrap under the button and make the box taller. */
@@ -432,6 +562,70 @@ select {
   }
 }
 
+/* An empty shelf: faded books, each in one of the cloths the covers will have, standing on a board, one leaning. */
+.drop-shelf {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 0.375rem;
+  height: 9rem;
+  padding: 0 0.75rem;
+  border-bottom: 3px solid var(--ink-faint);
+}
+
+.drop-shelf span {
+  --cloth: var(--cloth-1);
+
+  width: 1.75rem;
+  height: 7rem;
+  border: 1px solid color-mix(in srgb, var(--cloth) 55%, var(--paper));
+  border-bottom: 0;
+  border-radius: 2px 3px 0 0;
+  background: color-mix(in srgb, var(--cloth) 16%, var(--paper));
+  box-shadow: inset 5px 0 0 color-mix(in srgb, var(--cloth) 28%, var(--paper));
+}
+
+/* A tint of dark cloth on a dark page all but vanishes, so the dark theme takes more of the cloth. */
+:root[data-theme="dark"] .drop-shelf span {
+  border-color: color-mix(in srgb, var(--cloth) 85%, var(--paper));
+  background: color-mix(in srgb, var(--cloth) 40%, var(--paper));
+  box-shadow: inset 5px 0 0 color-mix(in srgb, var(--cloth) 60%, var(--paper));
+}
+
+.drop-shelf span:nth-child(1) {
+  --cloth: var(--cloth-3);
+}
+
+.drop-shelf span:nth-child(2) {
+  --cloth: var(--cloth-1);
+
+  width: 1.5rem;
+  height: 8.25rem;
+}
+
+.drop-shelf span:nth-child(3) {
+  --cloth: var(--cloth-6);
+
+  width: 2rem;
+  height: 6.25rem;
+}
+
+.drop-shelf span:nth-child(4) {
+  --cloth: var(--cloth-4);
+
+  width: 1.625rem;
+  height: 7.75rem;
+}
+
+.drop-shelf span:nth-child(5) {
+  --cloth: var(--cloth-2);
+
+  height: 6.75rem;
+  margin-left: 0.5rem;
+  transform: rotate(9deg);
+  transform-origin: bottom left;
+}
+
 .inline-notice {
   font-size: 0.9375rem;
 }
@@ -442,8 +636,8 @@ select {
   text-underline-offset: 0.15em;
 }
 
-.drop + .inline-error,
-.drop + .inline-notice {
+.library > .inline-error,
+.library > .inline-notice {
   margin-top: 1rem;
 }
 
@@ -455,100 +649,309 @@ select {
   font-weight: 600;
 }
 
-.shelf-item {
-  display: flex;
-  /* Only an error message wraps, onto a line of its own under the row. */
-  flex-wrap: wrap;
-  align-items: center;
-  column-gap: 0.75rem;
-  border-bottom: 1px solid var(--rule);
+/* A book's cover. The cloth is one of ten, chosen from the title; the ink is cream on all of them. The cover is its own
+   container, so every size on it is a share of its width and a small cover is the same book as a big one. */
+.cover {
+  --cloth: var(--cloth-1);
+
+  display: block;
+  position: relative;
+  aspect-ratio: 2 / 3;
+  container-type: inline-size;
+  overflow: hidden;
+  border-radius: 2px 5px 5px 2px;
+  background-color: var(--cloth);
+  /* From the top: the groove a hardcover has beside its spine (dark, then a thread of light), the shade the spine side
+     lies in, and a faint weave. Everything painted over the cloth only darkens it, so the ink never loses contrast. */
+  background-image:
+    linear-gradient(90deg, transparent 9%, rgb(0 0 0 / 0.32) 9% 10.25%, rgb(255 255 255 / 0.14) 10.25% 11.5%, transparent 11.5%),
+    linear-gradient(90deg, rgb(0 0 0 / 0.28), rgb(0 0 0 / 0) 9%),
+    repeating-linear-gradient(0deg, rgb(0 0 0 / 0.045) 0 1px, transparent 1px 3px);
+  color: var(--cover-ink);
+  box-shadow:
+    inset 0 -1px 0 rgb(0 0 0 / 0.25),
+    0 1px 2px rgb(0 0 0 / 0.3),
+    0 0.5rem 0.75rem -0.5rem rgb(0 0 0 / 0.4);
+  transition:
+    transform 0.15s ease-out,
+    box-shadow 0.15s ease-out;
 }
 
-.shelf-link {
+.cover[data-cloth="1"] {
+  --cloth: var(--cloth-1);
+}
+.cover[data-cloth="2"] {
+  --cloth: var(--cloth-2);
+}
+.cover[data-cloth="3"] {
+  --cloth: var(--cloth-3);
+}
+.cover[data-cloth="4"] {
+  --cloth: var(--cloth-4);
+}
+.cover[data-cloth="5"] {
+  --cloth: var(--cloth-5);
+}
+.cover[data-cloth="6"] {
+  --cloth: var(--cloth-6);
+}
+.cover[data-cloth="7"] {
+  --cloth: var(--cloth-7);
+}
+.cover[data-cloth="8"] {
+  --cloth: var(--cloth-8);
+}
+.cover[data-cloth="9"] {
+  --cloth: var(--cloth-9);
+}
+.cover[data-cloth="10"] {
+  --cloth: var(--cloth-10);
+}
+
+/* On the dark page a dark cloth would melt into it, so a thread of light runs round the board. */
+:root[data-theme="dark"] .cover {
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.16),
+    0 0.5rem 0.75rem -0.5rem rgb(0 0 0 / 0.6);
+}
+
+.cover-face {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8cqw;
+  height: 100%;
+  /* The left is wider: the spine and its groove take the first eighth. */
+  padding: 13cqw 10cqw 10cqw 20cqw;
+  font-family: var(--font-book);
+}
+
+/* A thin rule stamped round the face, a little in from the board's edge, as on a cloth binding. */
+.cover::after {
+  content: "";
+  position: absolute;
+  inset: 5cqw 5cqw 5cqw 15cqw;
+  border: 1px solid rgb(251 245 230 / 0.3);
+  pointer-events: none;
+}
+
+.cover-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 14cqw;
+  font-weight: 600;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+}
+
+.cover[data-size="2"] .cover-title {
+  font-size: 11cqw;
+}
+
+.cover[data-size="3"] .cover-title {
+  font-size: 9cqw;
+}
+
+.cover[data-size="4"] .cover-title {
+  font-size: 7.6cqw;
+  -webkit-line-clamp: 8;
+}
+
+.cover[data-size="5"] .cover-title {
+  font-size: 6.8cqw;
+  -webkit-line-clamp: 10;
+}
+
+/* A short stamped rule over the author's name, as on a cloth binding. */
+.cover-author {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 7.5cqw;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.cover-author::before {
+  content: "";
+  display: block;
+  width: 14cqw;
+  height: 1px;
+  margin-bottom: 3cqw;
+  background: var(--cover-ink);
+  opacity: 0.6;
+}
+
+/* The shelf: two covers across on a phone, as many as fit on a wide screen. */
+.shelf {
   display: grid;
-  /* `minmax(0, ...)` lets a long chapter name shrink to an ellipsis instead of widening the row. */
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.125rem;
-  flex: 1;
+  grid-template-columns: repeat(auto-fill, minmax(min(9.5rem, 45%), 1fr));
+  gap: 2rem 1.5rem;
+  margin-top: 1.75rem;
+}
+
+.shelf-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  padding: 1rem 0;
+}
+
+/* The whole cover is the link. Its rounded corners are the cover's, so the focus ring follows the book. */
+.shelf-link {
+  display: block;
+  border-radius: 2px 5px 5px 2px;
+  color: inherit;
   text-decoration: none;
 }
 
-.shelf-title {
-  font-family: var(--font-book);
-  font-size: 1.25rem;
-  font-weight: 600;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
+.shelf-link:hover .cover {
+  transform: translateY(-3px);
+  box-shadow:
+    inset 0 -1px 0 rgb(0 0 0 / 0.25),
+    0 2px 3px rgb(0 0 0 / 0.3),
+    0 0.75rem 1rem -0.5rem rgb(0 0 0 / 0.45);
 }
 
-/* The edit and remove icons are touch targets too: 44px, like the Add button. */
-.shelf-item .icon-button {
+:root[data-theme="dark"] .shelf-link:hover .cover {
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.28),
+    0 0.75rem 1rem -0.5rem rgb(0 0 0 / 0.7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cover {
+    transition: none;
+  }
+
+  .shelf-link:hover .cover {
+    transform: none;
+  }
+}
+
+/* How far through the book: a thin line under the cover, the way the reader draws it under its top bar. */
+.read-bar {
+  display: block;
+  height: 3px;
+  margin-top: 0.75rem;
+  border-radius: 2px;
+  background: var(--rule);
+}
+
+.read-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--pen);
+}
+
+/* A book not yet opened keeps the space, so its words line up with those of the books beside it. */
+.read-bar[data-empty] {
+  background: transparent;
+}
+
+.shelf-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  margin-top: 0.125rem;
+}
+
+.shelf-meta {
+  display: grid;
+  min-width: 0;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.shelf-meta-lead {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.shelf-item[data-state="new"] .shelf-meta-lead {
+  color: var(--pen);
+}
+
+/* The "more" button is a touch target, so it is 44px. */
+.shelf-info .icon-button {
   width: 2.75rem;
   height: 2.75rem;
 }
 
-.shelf-link:hover .shelf-title {
-  color: var(--pen);
-}
-
-/* Where the reader stopped, the way back in: "Continue" and how far take the pen colour and never shrink; the chapter name gives way. */
-.shelf-continue {
-  display: flex;
-  gap: 0.375rem;
-  color: var(--ink-soft);
-  font-size: 0.9375rem;
-}
-
-.shelf-continue-lead {
-  flex: none;
-  color: var(--pen);
-  font-weight: 600;
-}
-
-.shelf-continue-chapter {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.shelf-meta {
-  color: var(--ink-soft);
-  font-size: 0.9375rem;
-}
-
-/* Under the row, so the title above never changes width or wraps differently while the reader decides. */
-.shelf-confirm {
-  display: flex;
-  flex: 0 0 100%;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.25rem 1rem;
-  margin-bottom: 0.75rem;
-  padding: 0.5rem 0.5rem 0.5rem 1rem;
+/* Laid over the shelf under the book it belongs to, as wide as that book. */
+.shelf-menu-panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  z-index: 10;
+  display: grid;
+  padding: 0.25rem;
+  border: 1px solid var(--ink-faint);
   border-radius: var(--radius);
+  background: var(--raised);
+  box-shadow: 0 0.5rem 1rem -0.5rem rgb(0 0 0 / 0.4);
+}
+
+.shelf-menu-panel button {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.shelf-menu-panel button:hover {
   background: var(--wash);
 }
 
+.shelf-menu-panel button.danger {
+  color: var(--danger);
+}
+
+.shelf-info .icon-button[aria-expanded="true"] {
+  background: var(--wash);
+  color: var(--ink);
+}
+
+/* Under the cover, where the words about the book were, so the cover above never moves while the reader decides. */
+.shelf-confirm {
+  margin-top: 0.5rem;
+  padding: 0.75rem 0.75rem 0.5rem;
+  border-radius: var(--radius);
+  background: var(--wash);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
 .shelf-confirm p {
-  flex: 1 1 16rem;
-  min-width: 0;
   overflow-wrap: anywhere;
 }
 
+/* Pulled left by the buttons' own padding, so their words line up with the question above them. */
 .shelf-confirm-actions {
   display: flex;
   gap: 0.5rem;
+  margin: 0.25rem 0 0 -0.5rem;
 }
 
 /* Remove sits next to Keep and deletes for good, so both are a full thumb tall and apart. */
 .shelf-confirm .link-button {
   min-width: 2.75rem;
   min-height: 2.75rem;
-  padding: 0 0.625rem;
+  padding: 0 0.5rem;
 }
 
 .shelf-confirm .link-button:disabled {
@@ -556,23 +959,175 @@ select {
   cursor: default;
 }
 
-.shelf-item .icon-button[aria-expanded="true"] {
-  background: var(--wash);
-  color: var(--danger);
-}
-
 .shelf-item-error {
-  flex: 0 0 100%;
-  padding-bottom: 0.75rem;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
 }
 
-/* A row turns into this form while its title and author are being corrected. */
+/* The book read last, with a way straight back in. */
+.continue-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "cover body action";
+  align-items: center;
+  gap: 1.25rem 1.75rem;
+  margin-top: 1.25rem;
+  padding: 1.25rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--raised);
+}
+
+.continue-cover {
+  grid-area: cover;
+  width: 8.5rem;
+}
+
+.continue-body {
+  grid-area: body;
+  min-width: 0;
+  max-width: 36rem;
+}
+
+/* A long title or author is cut after a few lines (the whole of it is in the tooltip), so the card never outgrows a phone's screen. */
+.continue-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-family: var(--font-book);
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.continue-card:hover .continue-title {
+  color: var(--pen);
+}
+
+.continue-author {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 0.25rem;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.continue-chapter {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.continue-chapter svg {
+  flex: none;
+  margin-top: 0.1875rem;
+  color: var(--pen);
+}
+
+.continue-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 26rem;
+  margin-top: 1rem;
+}
+
+.continue-progress .read-bar {
+  flex: 1;
+  height: 4px;
+  margin-top: 0;
+}
+
+.continue-percent {
+  flex: none;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.continue-left {
+  margin-top: 0.25rem;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+
+.continue-action {
+  grid-area: action;
+}
+
+/* The link's box is the whole card, so a click anywhere on it carries on reading. */
+.continue-action::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+@media (max-width: 40rem) {
+  .continue-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "cover body"
+      "action action";
+    align-items: start;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .continue-cover {
+    width: 5.75rem;
+  }
+
+  .continue-title {
+    font-size: 1.25rem;
+  }
+
+  .continue-chapter {
+    margin-top: 0.75rem;
+    font-size: 0.9375rem;
+  }
+
+  .continue-progress {
+    margin-top: 0.75rem;
+  }
+
+  .continue-action {
+    justify-self: stretch;
+    justify-content: center;
+  }
+}
+
+/* A modal dialog, so the books around the one being corrected stay where they are. */
+.shelf-dialog {
+  width: min(30rem, calc(100vw - 2rem));
+  max-width: none;
+  padding: 1.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.shelf-dialog::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+
+.shelf-dialog h2 {
+  margin-bottom: 1rem;
+  font-family: var(--font-book);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
 .shelf-edit {
   display: grid;
-  flex: 1;
-  min-width: 0;
   gap: 0.75rem;
-  padding: 1rem 0 1.25rem;
 }
 
 .shelf-field {
@@ -646,8 +1201,30 @@ select {
 }
 
 .library-empty {
-  margin-top: 1.5rem;
+  color: var(--ink);
+  font-family: var(--font-book);
+  font-size: 1.375rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.library-empty-more {
+  max-width: 30rem;
   color: var(--ink-soft);
+}
+
+@media (max-width: 40rem) {
+  .library-top[data-empty] .drop {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 1.5rem 1.25rem;
+  }
+
+  /* About what the welcome takes when the words wrap to several lines, so the box keeps its size while a book is read. */
+  .library-top[data-empty] .drop-body {
+    min-height: 12rem;
+    align-content: start;
+  }
 }
 
 /* Reader frame */

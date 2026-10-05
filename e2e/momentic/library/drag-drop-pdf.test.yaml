@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
 id: library-drag-drop-pdf
-description: Momentic cannot drag a file in from the operating system, so this test simulates a drop with synthetic dragover and drop events on the drop area (a File is built in the page from the fixture served by the dev server). It checks the drop area's highlight while a file is over it and that dropping the PDF adds the book and opens the reader.
+description: Momentic cannot drag a file in from the operating system, so this test simulates a drop with synthetic dragover and drop events on the drop area (a File is built in the page from the fixture served by the dev server; the events bubble up to the window, where the page listens, so a drop anywhere on the page works the same). It checks the highlight while a file is over the page and that dropping the PDF adds the book and opens the reader.
 viewport: 1440, 900
 before:
   - module: ./modules/reset-library.module.yaml
@@ -21,7 +21,7 @@ steps:
         drop.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }));
         await new Promise((r) => setTimeout(r, 200));
         return { fileBytes: blob.size, dragging: drop.dataset.dragging ?? null, hintText: drop.innerText };
-  - assertVisually: The dashed drop box has changed to a solid blue-outlined box with a light blue tint, showing that a file is hovering over it
+  - assertVisually: The dashed welcome box has changed to a solid blue-outlined box with a light blue tint, and a blue frame runs round the whole window, showing that a file is hovering over the page
   - javascript:
       environment: browser
       saveAs: DROP

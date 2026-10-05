@@ -16,7 +16,7 @@ steps:
       saveAs: BEFORE_LEAVING
   - click: Back to your books
   - checkPageContains: Your books
-  - click: The Problems of Philosophy book title in the list
+  - click: The Problems of Philosophy book cover in the Your books shelf
   - waitForUrl: /book/
   - wait: 2000
   - javascript:

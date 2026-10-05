@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
 id: library-edit-book-save
-description: A reader opens the edit form on a library row, checks focus and field order, changes the title and adds the missing author, saves, and sees the new title in the library and in the reader top bar. Run from the repo root.
+description: A reader opens the edit form for a book on the shelf, checks focus and field order, changes the title and adds the missing author, saves, and sees the new title in the library and in the reader top bar. Run from the repo root.
 viewport: 1440, 900
 before:
   - module: ./modules/reset-library.module.yaml
@@ -9,9 +9,10 @@ steps:
   - module: ./modules/add-fixture-book.module.yaml
   - click: Back to your books
   - checkPageContains: Your books
+  - click: More actions for The Problems of Philosophy
   - click: Edit The Problems of Philosophy
   - checkElementFocused: Title input
-  - assertVisually: The row has turned into a small form with a Title field holding The Problems of Philosophy, an empty Author field, a blue Save button and a Cancel button. Labels sit above the fields, spacing is even and nothing overflows
+  - assertVisually: A dialog titled Edit book is open over the dimmed page, with a Title field holding The Problems of Philosophy, an empty Author field, a blue Save button and a Cancel button. Labels sit above the fields, spacing is even and nothing overflows
   - javascript:
       code: |-
         const f = document.querySelector("form.shelf-edit");
@@ -38,8 +39,8 @@ steps:
         return { rowText: row.innerText, focus: document.activeElement.getAttribute("aria-label") || document.activeElement.tagName };
       environment: browser
       saveAs: AFTER_SAVE
-  - assertVisually: The library row now reads Philosophy for Beginners with the line Bertrand Russell, 19 chapters, about 4 h of reading underneath, and the edit and bin icons are back at the right
-  - click: Philosophy for Beginners book title in the list
+  - assertVisually: The dialog has closed. The book's cover on the shelf now has Philosophy for Beginners stamped on it with Bertrand Russell at its foot, and the three-dot button sits under it
+  - click: Philosophy for Beginners book cover in the list
   - waitForUrl: /book/
   - checkPageContains: Philosophy for Beginners
   - assertVisually: The reader top bar names the book Philosophy for Beginners followed by the chapter name

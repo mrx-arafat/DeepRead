@@ -18,12 +18,14 @@ steps:
       saveAs: LANDING
   - click: Back to your books
   - checkPageContains: Your books
-  - assertVisually: The Your books list has one entry for The Problems of Philosophy. Title is large, the line under it is smaller grey text, and the pencil and bin icons sit at the right. Everything is aligned and nothing overflows
+  - assertVisually: The Your books shelf has one cover for The Problems of Philosophy, with the title stamped on it in serif. Under the cover are a thin progress line, a short grey line about the time to read or left, and a three-dot button at the right. Everything is aligned and nothing overflows
   - javascript:
       code: |-
         const row = document.querySelector(".shelf-item");
         return { rowText: row?.innerText, buttons: [...row.querySelectorAll("button, a")].map((e) => e.getAttribute("aria-label") || e.innerText) };
       environment: browser
       saveAs: ROW
-  - checkPageContains: 19 chapters
-  - checkPageContains: of reading
+  # The reader saves the place about a second after a book opens, so the shelf says either how long it takes to read or how much is left.
+  - javascript:
+      code: |-
+        if (!/(to read|left)/.test(env.ROW.rowText)) throw new Error(`The book on the shelf does not say how long it takes to read or how much is left: ${env.ROW.rowText}`);

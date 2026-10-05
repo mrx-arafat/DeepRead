@@ -13,9 +13,10 @@ steps:
       environment: browser
       saveAs: BOOK_HREF
       code: return document.querySelector(".shelf-link").getAttribute("href");
+  - click: More actions for The Problems of Philosophy
   - click: Remove The Problems of Philosophy
   - checkPageContains: Keep
-  - assertVisually: Under the book row a grey box asks whether to remove the book and the notes made in it, and offers Remove (in red) and Keep. The title above did not move and nothing overflows
+  - assertVisually: Under the book's cover a grey box asks whether to remove the book and the notes made in it, and offers Remove (in red) and Keep. The cover above did not move and nothing overflows
   - javascript:
       code: |-
         const row = document.querySelector(".shelf-item");
@@ -29,6 +30,7 @@ steps:
         return { confirmStillShown: !!document.querySelector(".shelf-confirm"), focus: document.activeElement.innerText };
       environment: browser
       saveAs: AFTER_ESCAPE
+  - click: More actions for The Problems of Philosophy
   - click: Remove The Problems of Philosophy
   - click: Keep
   - checkPageContains: The Problems of Philosophy
@@ -37,8 +39,9 @@ steps:
         return { rowText: document.querySelector(".shelf-item")?.innerText, focus: document.activeElement.getAttribute("aria-label") || document.activeElement.tagName };
       environment: browser
       saveAs: AFTER_KEEP
+  - click: More actions for The Problems of Philosophy
   - click: Remove The Problems of Philosophy
-  - click: the red Remove button in the question under the row
+  - click: the red Remove button in the question under the cover
   - checkPageContains: No books yet. Add a PDF to start reading.
   - javascript:
       code: |-

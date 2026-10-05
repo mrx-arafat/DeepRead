@@ -19,8 +19,11 @@ steps:
         text("dropHint", ".drop-hint");
         text("buttonLabel", ".drop .button");
         text("sectionHeading", ".library-section");
-        text("bookTitle", ".shelf-title");
+        text("bookTitle", ".shelf-item .cover-title");
+        text("bookAuthor", ".shelf-item .cover-author");
         text("bookMeta", ".shelf-meta");
+        text("continueTitle", ".continue-title");
+        text("continueButton", ".continue-action");
         text("emptyState", ".library-empty");
         text("error", ".inline-error");
         text("editLabel", ".shelf-field label");

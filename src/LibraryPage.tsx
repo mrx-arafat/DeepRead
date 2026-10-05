@@ -6,7 +6,9 @@ import type { BookSummary, BookUpdate } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
-import { addFailure, shortTitle } from "./library/bookText.ts";
+import { addFailure, latestRead, shortTitle } from "./library/bookText.ts";
+import { ContinueCard } from "./library/ContinueCard.tsx";
+import { useFileDrop } from "./library/useFileDrop.ts";
 import { APP_NAME, useDocumentTitle } from "./pageTitle.ts";
 import { usePrefs } from "./prefs.ts";
 
@@ -43,13 +45,13 @@ export function LibraryPage() {
   /** The book the reader tried to add again, which the library already holds. */
   const [already, setAlready] = useState<{ id: string; title: string } | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
-  const [dragging, setDragging] = useState(false);
   const [active, setActive] = useState<Active | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   // Where keyboard focus goes once a removed row is gone: a book's id, or "add". Set for one render.
   const [focusAfterRemoval, setFocusAfterRemoval] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
+  const dragging = useFileDrop((file) => void add(file));
 
   useEffect(() => {
     // `current` drops the answer of a request the reader has already replaced by pressing "Try again".
@@ -129,56 +131,74 @@ export function LibraryPage() {
     }
   }
 
-  return (
-    <main className="library">
-      <header className="library-head">
-        <h1>DeepRead</h1>
-        <p>Read a book in English. Tap any word, select any passage, and get it explained right there.</p>
-        <p>Meanings in {LANGUAGES[lang]} and simple English. Works with PDFs whose text you can select, not scans.</p>
-      </header>
+  const empty = books?.length === 0;
+  const resume = books && latestRead(books);
 
-      <div
-        className="drop"
-        data-dragging={dragging || undefined}
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDragging(false);
-          void add(event.dataTransfer.files[0]);
-        }}
-      >
-        <input
-          ref={input}
-          type="file"
-          accept="application/pdf,.pdf"
-          className="visually-hidden"
-          tabIndex={-1}
-          aria-hidden
-          onChange={(event) => {
-            void add(event.target.files?.[0]);
-            event.target.value = "";
-          }}
-        />
-        {uploading ? (
-          <div className="drop-busy" role="status">
-            <LoaderCircle className="drop-spinner" size={20} aria-hidden />
-            <span className="drop-busy-text">
-              <strong className="drop-busy-name">Reading {uploading}</strong>
-              <span>A long book can take a minute.</span>
+  return (
+    <main className="library" data-dragging={dragging || undefined}>
+      {/* Held back until the list has loaded: a first visit turns this into the welcome below, and showing the add button first would make it jump. */}
+      <div className="library-top" data-empty={empty || undefined} data-waiting={(books === null && !loadError) || undefined}>
+        <header className="library-head">
+          <h1>DeepRead</h1>
+          {empty && (
+            <>
+              <p>Read a book in English. Tap any word, select any passage, and get it explained right there.</p>
+              <p>Meanings in {LANGUAGES[lang]} and simple English. Works with PDFs whose text you can select, not scans.</p>
+            </>
+          )}
+        </header>
+
+        <div className="drop" data-dragging={dragging || undefined}>
+          <input
+            ref={input}
+            type="file"
+            accept="application/pdf,.pdf"
+            className="visually-hidden"
+            tabIndex={-1}
+            aria-hidden
+            onChange={(event) => {
+              void add(event.target.files?.[0]);
+              event.target.value = "";
+            }}
+          />
+          {empty && (
+            <span className="drop-shelf" aria-hidden>
+              <span />
+              <span />
+              <span />
+              <span />
+              <span />
             </span>
+          )}
+          <div className="drop-body">
+            {empty && !uploading && (
+              <>
+                <p className="library-empty">No books yet. Add a PDF to start reading.</p>
+                <p className="library-empty-more">
+                  Each book gets a cover here, and the one you read last waits at the top so you can pick up where you stopped.
+                </p>
+              </>
+            )}
+            {uploading ? (
+              <div className="drop-busy" role="status">
+                <LoaderCircle className="drop-spinner" size={20} aria-hidden />
+                <span className="drop-busy-text">
+                  <strong className="drop-busy-name">Reading {uploading}</strong>
+                  <span>A long book can take a minute.</span>
+                </span>
+              </div>
+            ) : (
+              <div className="drop-actions">
+                <button ref={addButton} type="button" className="button" onClick={() => input.current?.click()}>
+                  <FileUp size={18} aria-hidden /> Add a book (PDF)
+                </button>
+                <span className="drop-hint">
+                  {dragging ? "Drop the PDF to add it" : empty ? "or drop a PDF here" : "or drop a PDF anywhere"}
+                </span>
+              </div>
+            )}
           </div>
-        ) : (
-          <>
-            <button ref={addButton} type="button" className="button" onClick={() => input.current?.click()}>
-              <FileUp size={18} aria-hidden /> Add a book (PDF)
-            </button>
-            <span className="drop-hint">or drop a PDF here</span>
-          </>
-        )}
+        </div>
       </div>
 
       {error && (
@@ -205,7 +225,7 @@ export function LibraryPage() {
         </div>
       )}
 
-      {books?.length === 0 && !uploading && <p className="library-empty">No books yet. Add a PDF to start reading.</p>}
+      {resume && <ContinueCard book={resume} />}
 
       {books && books.length > 0 && (
         <section aria-label="Your books">
