@@ -1,5 +1,5 @@
 import { Ellipsis, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { FocusEvent, KeyboardEvent, RefObject } from "react";
 
 type Props = {
@@ -11,6 +11,12 @@ type Props = {
   onRemove: () => void;
 };
 
+/** Place the panel on the side with room for both actions when it cannot fit below the trigger. */
+export function menuOpensAbove(triggerTop: number, triggerBottom: number, panelHeight: number, viewportHeight: number): boolean {
+  const roomBelow = viewportHeight - triggerBottom;
+  return roomBelow < panelHeight + 8 && triggerTop > roomBelow;
+}
+
 /**
  * What can be done to a book besides reading it. A disclosure, not a menu role: the two buttons follow the "more"
  * button in tab order, and Escape, a click elsewhere or tabbing away folds them back in. The panel is laid over the shelf by the
@@ -19,7 +25,25 @@ type Props = {
 export function BookMenu({ title, disabled, triggerRef, onEdit, onRemove }: Props) {
   const panelId = useId();
   const root = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const [above, setAbove] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    function position() {
+      const trigger = triggerRef.current?.getBoundingClientRect();
+      const height = panel.current?.offsetHeight;
+      if (trigger && height) setAbove(menuOpensAbove(trigger.top, trigger.bottom, height, window.innerHeight));
+    }
+    position();
+    window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, true);
+    return () => {
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+    };
+  }, [open, triggerRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -63,7 +87,7 @@ export function BookMenu({ title, disabled, triggerRef, onEdit, onRemove }: Prop
         <Ellipsis size={20} aria-hidden />
       </button>
       {open && (
-        <div className="shelf-menu-panel" id={panelId}>
+        <div className="shelf-menu-panel" id={panelId} ref={panel} data-above={above || undefined}>
           <button type="button" aria-label={`Edit ${title}`} onClick={() => choose(onEdit)}>
             <Pencil size={18} aria-hidden /> Edit
           </button>

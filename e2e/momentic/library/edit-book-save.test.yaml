@@ -46,3 +46,20 @@ steps:
   - assertVisually: The reader top bar names the book Philosophy for Beginners followed by the chapter name
   - refresh
   - checkPageContains: Philosophy for Beginners
+  - click: Back to your books
+  - click: More actions for Philosophy for Beginners
+  - click: Edit Philosophy for Beginners
+  - fill:
+      text: The Problems of Philosophy and the Questions of What We Can Know About the World Around Us, Why It Matters, and How to Read It
+      into: Title input
+  - click: Save button
+  - click: More actions for The Problems of Philosophy and the Questions of What We Can Know About the World Around Us, Why It Matters, and How to Read It
+  - click: Edit The Problems of Philosophy and the Questions of What We Can Know About the World Around Us, Why It Matters, and How to Read It
+  - javascript:
+      environment: browser
+      code: |-
+        const input = document.querySelector("form.shelf-edit input");
+        if (document.activeElement !== input || input.selectionStart !== 0 || input.scrollLeft !== 0) {
+          throw new Error("A long title must open focused with its beginning visible.");
+        }
+        return { firstVisibleWords: input.value.slice(0, 26), caret: input.selectionStart, scroll: input.scrollLeft };

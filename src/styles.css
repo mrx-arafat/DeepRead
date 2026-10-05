@@ -935,6 +935,11 @@ select {
   box-shadow: 0 0.5rem 1rem -0.5rem rgb(0 0 0 / 0.4);
 }
 
+.shelf-menu-panel[data-above] {
+  top: auto;
+  bottom: 2.75rem;
+}
+
 .shelf-menu-panel button {
   display: flex;
   align-items: center;

@@ -25,6 +25,8 @@ export function BookEditForm({ book, saving, onSave, onClose }: Props) {
 
   useEffect(() => {
     titleInput.current?.focus();
+    titleInput.current?.setSelectionRange(0, 0);
+    if (titleInput.current) titleInput.current.scrollLeft = 0;
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {

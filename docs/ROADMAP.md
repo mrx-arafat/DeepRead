@@ -77,5 +77,5 @@ Look for misaligned edges, uneven spacing, clipped text, anything covering the f
 ### 5. Known gaps to keep in mind
 
 - Pages: page counts are estimates; a page can end one line earlier after the window height changes; read-aloud started mid-page first turns to the page where the sentence begins.
-- Library: two books can share a cloth colour (it is a hash of the title); the Continue card repeats the only book when the library holds one; the More actions menu opens downward even near the bottom of the window.
+- Library: two books can share a cloth colour (it is a hash of the title); the Continue card repeats the only book when the library holds one.
 - The journey lint warns that the `word-position` module's name does not match its file name.
