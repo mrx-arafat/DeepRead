@@ -1,14 +1,16 @@
 // Functional test of the HTTP API: real routes and real disk storage in a temp dir,
-// with the PDF parser, the model and the translator replaced by fakes (no network, no model process).
+// with the PDF parser, the cover renderer, the model and the translator replaced by fakes (no network, no model process).
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiProviderId, AiStatus, ApiError, BookDetail, BookSummary, ParsedBook } from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
 import { createApp } from "./app.ts";
-import type { ParsePdf } from "./deps.ts";
+import type { ParsePdf, RenderCover } from "./deps.ts";
+import { createLibrary } from "./library.ts";
+import type { Library } from "./library.ts";
 import { LlmError } from "./llm.ts";
 import type { LlmRequest } from "./llm.ts";
 import { ParseError } from "./parser/errors.ts";
@@ -55,6 +57,14 @@ const fakeParsePdf: ParsePdf = async (path) => {
   if (body.startsWith("SCANNED")) throw new ParseError("scanned", "This PDF looks like a scan.");
   const book = JSON.parse(body) as ParsedBook;
   return { ...book, title: book.title || basename(path).replace(/\.pdf$/i, "") };
+};
+
+// Like the real renderer, it finds a cover in some books and not in others: here, in those whose title says so.
+const coverBytes = (title: string) => new TextEncoder().encode(`RIFF webp cover of ${title}`);
+const fakeRenderCover: RenderCover = async (path) => {
+  const text = await readFile(path, "utf8").catch(() => "");
+  const title = /"title":"([^"]*Covered[^"]*)"/.exec(text)?.[1];
+  return title ? { data: coverBytes(title), type: "image/webp" } : null;
 };
 
 type Script = (request: LlmRequest, call: number) => Iterable<string> | AsyncIterable<string>;
@@ -115,15 +125,18 @@ const textOf = (events: SseEvent[]) =>
 
 describe("DeepRead API", () => {
   let dataDir: string;
+  let library: Library;
   let app: Hono;
   let llm: ReturnType<typeof fakeLlm>;
 
   beforeEach(async () => {
     dataDir = await mkdtemp(join(tmpdir(), "deepread-test-"));
+    library = createLibrary(dataDir);
     llm = fakeLlm();
     app = createApp({
-      dataDir,
+      library,
       parsePdf: fakeParsePdf,
+      renderCover: fakeRenderCover,
       llm: llm.llm,
       quickTranslate: async (text, lang) => {
         if (text === "boom") throw new Error("service down");
@@ -275,6 +288,7 @@ describe("DeepRead API", () => {
         expect((await send("PATCH", `/api/books/${id}`, { title: "New" })).status, `PATCH ${id}`).toBe(400);
         expect((await send("DELETE", `/api/books/${id}`)).status, `DELETE ${id}`).toBe(400);
         expect((await app.request(`/api/books/${id}/pdf`)).status, `PDF ${id}`).toBe(400);
+        expect((await app.request(`/api/books/${id}/cover`)).status, `cover ${id}`).toBe(400);
       }
       const viaBody = await send("POST", "/api/ai/explain", explainBody("../../etc"));
       expect(viaBody.status).toBe(400);
@@ -402,6 +416,122 @@ describe("DeepRead API", () => {
       expect((await app.request(`/api/books/${id}`)).status).toBe(404);
       expect(await (await app.request("/api/books")).json()).toEqual([]);
       expect(await entries(join(dataDir, "books"))).toEqual([]);
+      expect(await entries(join(dataDir, "tmp"))).toEqual([]);
+    });
+  });
+
+  describe("covers", () => {
+    const metaOf = async (id: string) =>
+      JSON.parse(await readFile(join(dataDir, "books", id, "meta.json"), "utf8")) as Record<string, unknown>;
+    const hasCover = async (id: string) =>
+      ((await (await app.request("/api/books")).json()) as BookSummary[]).find((book) => book.id === id)?.hasCover;
+
+    /** Makes a book look stored before covers were kept: meta.json does not say whether it has one, and there is no image. */
+    async function fromBeforeCovers(id: string): Promise<void> {
+      const { cover: _cover, ...meta } = await metaOf(id);
+      await writeFile(join(dataDir, "books", id, "meta.json"), JSON.stringify(meta));
+      await rm(join(dataDir, "books", id, "cover.webp"), { force: true });
+    }
+
+    it("should keep the cover found in the PDF, serve it, and say which books have one", async () => {
+      const covered = (await (await upload(sampleBook("Covered Book"))).json()) as BookDetail;
+      const plain = (await (await upload(sampleBook("Plain Book"))).json()) as BookDetail;
+      expect([covered.hasCover, plain.hasCover]).toEqual([true, false]);
+      expect([await hasCover(covered.id), await hasCover(plain.id)]).toEqual([true, false]);
+
+      const image = await app.request(`/api/books/${covered.id}/cover`);
+      expect(image.status).toBe(200);
+      expect(image.headers.get("content-type")).toBe("image/webp");
+      expect(image.headers.get("cache-control")).toMatch(/max-age=\d+/);
+      expect(new Uint8Array(await image.arrayBuffer())).toEqual(coverBytes("Covered Book"));
+      const etag = image.headers.get("etag") ?? "";
+      expect(etag).toMatch(/^"[^"]+"$/);
+      expect((await app.request(`/api/books/${covered.id}/cover`, { headers: { "if-none-match": etag } })).status).toBe(304);
+
+      const none = await app.request(`/api/books/${plain.id}/cover`);
+      expect(none.status).toBe(404);
+      expect(((await none.json()) as ApiError).error).toBe("cover_not_found");
+      expect((await app.request("/api/books/nope-12345678/cover")).status).toBe(404);
+
+      expect((await send("DELETE", `/api/books/${covered.id}`)).status).toBe(204);
+      expect((await app.request(`/api/books/${covered.id}/cover`)).status).toBe(404);
+    });
+
+    it("should look for the cover while the PDF is being parsed, not after it", async () => {
+      // This parser finishes only once the cover has been asked for: one after the other, the upload would never end.
+      let coverAskedFor = () => {};
+      const asked = new Promise<void>((resolve) => (coverAskedFor = resolve));
+      const both = createApp({
+        library,
+        parsePdf: async (path) => {
+          await asked;
+          return fakeParsePdf(path);
+        },
+        renderCover: (path) => {
+          coverAskedFor();
+          return fakeRenderCover(path);
+        },
+        llm: llm.llm,
+        quickTranslate: async (text) => text,
+      });
+      const form = new FormData();
+      form.set("file", new File([pdfBytes(sampleBook("Covered Book"))], "book.pdf", { type: "application/pdf" }));
+      const response = await both.request("/api/books", { method: "POST", body: form });
+      expect(response.status).toBe(201);
+      expect(((await response.json()) as BookDetail).hasCover).toBe(true);
+    });
+
+    it("should find the covers of books added before covers were kept, one book at a time and only once", async () => {
+      const ids: string[] = [];
+      for (const title of ["Covered One", "Covered Two", "Plain Three"]) ids.push(await addBook(sampleBook(title)));
+      for (const id of ids) await fromBeforeCovers(id);
+      expect(await Promise.all(ids.map(hasCover))).toEqual([false, false, false]);
+      expect((await app.request(`/api/books/${ids[0]}/cover`)).status).toBe(404);
+
+      let drawing = 0;
+      let mostAtOnce = 0;
+      const drawn: string[] = [];
+      const renderCover: RenderCover = async (path) => {
+        drawing += 1;
+        mostAtOnce = Math.max(mostAtOnce, drawing);
+        drawn.push(basename(dirname(path)));
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        drawing -= 1;
+        return fakeRenderCover(path);
+      };
+      await library.addMissingCovers(renderCover);
+
+      expect(mostAtOnce).toBe(1);
+      expect([...drawn].sort()).toEqual([...ids].sort());
+      expect(await Promise.all(ids.map(hasCover))).toEqual([true, true, false]);
+      expect(await Promise.all(ids.map(async (id) => (await metaOf(id)).cover))).toEqual([true, true, false]);
+      const image = await app.request(`/api/books/${ids[1]}/cover`);
+      expect(new Uint8Array(await image.arrayBuffer())).toEqual(coverBytes("Covered Two"));
+
+      // Every book has been looked at now, the one without a cover too, so the next start draws nothing.
+      await library.addMissingCovers(renderCover);
+      expect(drawn).toHaveLength(3);
+    });
+
+    it("should keep a reading position saved while a cover is drawn, and not bring back a book removed meanwhile", async () => {
+      const kept = await addBook(sampleBook("Covered Kept"));
+      const removed = await addBook(sampleBook("Covered Removed"));
+      await fromBeforeCovers(kept);
+      await fromBeforeCovers(removed);
+
+      // While each cover is being drawn, the reader saves their place in one book and removes the other.
+      await library.addMissingCovers(async (path) => {
+        const cover = await fakeRenderCover(path);
+        if (basename(dirname(path)) === kept) await send("PUT", `/api/books/${kept}/progress`, { chapterId: "c2", blockId: "c2-b1" });
+        else expect((await send("DELETE", `/api/books/${removed}`)).status).toBe(204);
+        return cover;
+      });
+
+      expect(await readdir(join(dataDir, "books"))).toEqual([kept]);
+      expect(await (await app.request(`/api/books/${kept}`)).json()).toMatchObject({
+        hasCover: true,
+        progress: { chapterId: "c2", blockId: "c2-b1" },
+      });
       expect(await entries(join(dataDir, "tmp"))).toEqual([]);
     });
   });
@@ -694,8 +824,9 @@ describe("DeepRead API", () => {
 
     beforeEach(() => {
       remote = createApp({
-        dataDir,
+        library,
         parsePdf: fakeParsePdf,
+        renderCover: fakeRenderCover,
         llm: llm.llm,
         quickTranslate: async (text) => text,
         remoteKey: KEY,
@@ -714,6 +845,9 @@ describe("DeepRead API", () => {
       expect((await remote.request("/api/unlock?key=wrong-key", { headers: viaTunnel })).status).toBe(403);
       // A host name that is not this computer counts as remote too (production serving without a proxy).
       expect((await remote.request(`${TUNNEL}/api/books`)).status).toBe(403);
+      // A cover is a book's own page: it is as private as the book.
+      const id = await addBook(sampleBook("Covered Book"));
+      expect((await remote.request(`/api/books/${id}/cover`, { headers: viaTunnel })).status).toBe(403);
     });
 
     it("should unlock a device with the key link and then answer its same-origin requests", async () => {
@@ -729,6 +863,9 @@ describe("DeepRead API", () => {
       const cookie = await unlockCookie();
       const headers = { ...viaTunnel, cookie, origin: TUNNEL, "sec-fetch-site": "same-origin" };
       expect((await remote.request("/api/books", { headers })).status).toBe(200);
+      // The shelf's pictures are requested by the page itself, so they pass as same-origin too.
+      const id = await addBook(sampleBook("Covered Book"));
+      expect((await remote.request(`/api/books/${id}/cover`, { headers })).status).toBe(200);
     });
 
     it("should refuse another website even when the device is unlocked", async () => {

@@ -735,10 +735,12 @@ select {
   pointer-events: none;
 }
 
-/* Capped at six lines by height, not line-clamp: Chrome does not balance a -webkit-box, and an unbalanced title
-   leaves a lone "The" on its first line. The sizes below already shrink a long title to fit. */
+/* Capped by height, not line-clamp: Chrome does not balance a -webkit-box, and an unbalanced title leaves a lone "The"
+   on its first line. The smaller sizes of a long title allow more lines, so the whole of it still fits on the board. */
 .cover-title {
-  max-height: calc(1.18em * 6);
+  --title-lines: 6;
+
+  max-height: calc(1.18em * var(--title-lines));
   overflow: hidden;
   font-size: 14cqw;
   font-weight: 600;
@@ -756,13 +758,15 @@ select {
 }
 
 .cover[data-size="4"] .cover-title {
+  --title-lines: 8;
+
   font-size: 7.6cqw;
-  -webkit-line-clamp: 8;
 }
 
 .cover[data-size="5"] .cover-title {
+  --title-lines: 10;
+
   font-size: 6.8cqw;
-  -webkit-line-clamp: 10;
 }
 
 /* A short stamped rule over the author's name, as on a cloth binding. */
@@ -784,6 +788,49 @@ select {
   margin-bottom: 3cqw;
   background: var(--cover-ink);
   opacity: 0.6;
+}
+
+/* The book's own cover, from page 1 of its PDF, in the same board as a made one: the same corners and shadow. It fills
+   the board and loses a sliver at the sides when its page is wider than 2:3. */
+.cover-picture {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
+}
+
+.cover[data-picture="shown"] .cover-picture {
+  opacity: 1;
+}
+
+/* Until the picture arrives the board stands blank, in a quiet colour rather than a cloth that would flash before it.
+   The made cover's words stay in the page for screen readers, unseen; if the picture never comes, they show. */
+.cover[data-picture] .cover-face {
+  opacity: 0;
+}
+
+.cover[data-picture="loading"] {
+  background: var(--wash);
+}
+
+.cover[data-picture="loading"]::after {
+  content: none;
+}
+
+/* Over the picture, where a hardcover bends beside its spine: a shade, then a thread of light. A hairline round the board
+   and its bottom edge too, so a printed cover, even a white one on the white page, still stands on the shelf as a board. */
+.cover[data-picture="shown"]::after {
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgb(0 0 0 / 0.2), rgb(0 0 0 / 0) 3.5%, rgb(255 255 255 / 0.12) 4.5%, rgb(255 255 255 / 0) 7%);
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 0.1),
+    inset 0 -1px 0 rgb(0 0 0 / 0.25);
 }
 
 /* The shelf: two covers across on a phone, as many as fit on a wide screen. */
@@ -824,7 +871,8 @@ select {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cover {
+  .cover,
+  .cover-picture {
     transition: none;
   }
 
@@ -854,9 +902,10 @@ select {
   background: transparent;
 }
 
+/* Top-aligned, so a line about the book that wraps does not lift its first line above its neighbours'. */
 .shelf-info {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.25rem;
   margin-top: 0.125rem;
@@ -990,7 +1039,7 @@ select {
   max-width: 36rem;
 }
 
-/* A long title or author is cut after a few lines (the whole of it is in the tooltip), so the card never outgrows a phone's screen. */
+/* A long title or author is cut after a few lines (the link carries the whole title as its tooltip), so the card never outgrows a phone's screen. */
 .continue-title {
   display: -webkit-box;
   overflow: hidden;

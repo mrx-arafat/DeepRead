@@ -19,14 +19,8 @@ export function ContinueCard({ book }: { book: StartedBook }) {
           <Cover book={book} />
         </div>
         <div className="continue-body">
-          <h3 className="continue-title" title={book.title}>
-            {book.title}
-          </h3>
-          {book.author && (
-            <p className="continue-author" title={book.author}>
-              {book.author}
-            </p>
-          )}
+          <h3 className="continue-title">{book.title}</h3>
+          {book.author && <p className="continue-author">{book.author}</p>}
           <p className="continue-chapter">
             <Bookmark size={16} aria-hidden />
             <span>
@@ -42,7 +36,9 @@ export function ContinueCard({ book }: { book: StartedBook }) {
           </div>
           <p className="continue-left">About {note.detail}</p>
         </div>
-        <Link href={`/book/${book.id}`} className="button continue-action">
+        {/* The tooltip carries the whole title, which the card cuts after a few lines. It sits on the link because the
+            link's box covers the whole card, heading included. */}
+        <Link href={`/book/${book.id}`} className="button continue-action" title={book.title}>
           Continue
           <span className="visually-hidden"> reading {book.title}</span>
           <ArrowRight size={18} aria-hidden />

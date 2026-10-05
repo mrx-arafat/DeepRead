@@ -5,7 +5,6 @@ import { join } from "node:path";
 import type { QuickTranslation } from "../shared/types.ts";
 import type { AppDeps } from "./deps.ts";
 import { apiError, invalidBody, isLangCode, LANG_HELP } from "./http.ts";
-import { createLibrary } from "./library.ts";
 import { accessGuard } from "./local-only.ts";
 import { aiRoutes } from "./routes-ai.ts";
 import { booksRoutes } from "./routes-books.ts";
@@ -13,7 +12,7 @@ import { booksRoutes } from "./routes-books.ts";
 const MAX_TRANSLATE_CHARS = 200;
 
 export function createApp(deps: AppDeps): Hono {
-  const library = createLibrary(deps.dataDir);
+  const { library } = deps;
   const app = new Hono();
 
   app.use("/api/*", accessGuard(deps.remoteKey));
@@ -37,7 +36,7 @@ export function createApp(deps: AppDeps): Hono {
     }
   });
 
-  app.route("/api/books", booksRoutes({ library, parsePdf: deps.parsePdf }));
+  app.route("/api/books", booksRoutes({ library, parsePdf: deps.parsePdf, renderCover: deps.renderCover }));
   app.route("/api/ai", aiRoutes({ library, llm: deps.llm }));
 
   // Unknown API paths answer in JSON, never with the web app's HTML.
