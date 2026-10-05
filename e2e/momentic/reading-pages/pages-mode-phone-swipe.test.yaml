@@ -1,0 +1,33 @@
+fileType: momentic/test/v2
+id: dr-read-pages-phone-swipe
+description: "Phone Pages journey: swipe turns a page, the top bar hides during reading, and the chapter footer remains visible."
+viewport: "390, 844"
+steps:
+  - navigate: /
+  - localStorage:
+      key: deepread.prefs
+      value: '{"layout":"pages"}'
+  - module: ./modules/open-book.module.yaml
+  - navigate: /book/{{ env.BOOK_ID }}/c4
+  - javascript:
+      environment: browser
+      timeout: 10000
+      code: |-
+        if (document.documentElement.dataset.layout !== 'pages') throw new Error('phone reader is not in Pages mode');
+        const page = document.querySelector('main.page');
+        if (!page) throw new Error('reader page is absent');
+        const before = scrollY;
+        const x = Math.round(innerWidth / 2);
+        const id = 41;
+        page.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: id, clientX: x, clientY: 550 }));
+        page.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch', pointerId: id, clientX: x, clientY: 220 }));
+        for (let i = 0; i < 40 && scrollY <= before; i += 1) await new Promise((resolve) => setTimeout(resolve, 100));
+        if (scrollY <= before) throw new Error(`touch swipe did not advance the page: ${before} -> ${scrollY}`);
+        const footer = document.querySelector('.reading-footer')?.innerText || '';
+        const layout = document.documentElement.dataset.layout;
+        if (layout !== 'pages') throw new Error(`phone reader layout is ${layout}`);
+        if (!/pages? left in chapter|Last page in chapter/i.test(footer)) throw new Error(`phone footer is "${footer}"`);
+        for (let i = 0; i < 40 && document.querySelector('.topbar')?.getBoundingClientRect().bottom > 0; i += 1) await new Promise((resolve) => setTimeout(resolve, 100));
+        const topbarBottom = document.querySelector('.topbar')?.getBoundingClientRect().bottom;
+        if (topbarBottom === undefined || topbarBottom > 0) throw new Error(`top bar did not hide: bottom ${topbarBottom}`);
+        return JSON.stringify({ layout, before, after: Math.round(scrollY), footer, topbarBottom });

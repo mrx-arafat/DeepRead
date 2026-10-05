@@ -1,0 +1,125 @@
+fileType: momentic/test/v2
+id: dr-listening-pages-player
+description: Journeys 1 and 2 - Listen from the top bar and every player control (pause, play, next, previous, speed, stop), desktop 1440 light theme (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ./modules/pages-prefs.module.yaml
+  - click:
+      css: a.shelf-link
+  - waitForUrl:
+      substring: /book/
+      timeout: 15000
+  - click:
+      css: button[aria-label="Chapters"]
+  - click:
+      css: .toc a[href$="/c3"]
+  - checkElementVisible:
+      css: article[data-chapter="c3"] h2
+      timeout: 15000
+  - module: ./modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 1500; return 'slow words';
+  - press: ArrowRight
+  - wait: 500
+  - click:
+      css: '.topbar-tools button[aria-pressed]'
+  - assert: A small player bar with previous, pause, next, speed and stop controls is visible at the bottom of the window
+  - wait: 2000
+  - javascript:
+      environment: browser
+      saveAs: STARTED
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const h = (n) => { const hl = CSS.highlights.get(n); return hl ? [...hl].map((r) => r.toString()).join('|') : null; };
+        const bar = document.querySelector('.listen-bar');
+        need(bar, 'player bar missing');
+        need(bar.querySelector('.listen-play').getAttribute('aria-label') === 'Pause', 'play button should say Pause while speaking');
+        need(h('dr-sentence').startsWith('Is there any knowledge'), 'listening from the top should start at the first sentence, got ' + h('dr-sentence'));
+        need(h('dr-spoken'), 'a spoken word should be highlighted');
+        const sr = [...CSS.highlights.get('dr-sentence')][0].getBoundingClientRect();
+        need(sr.bottom < bar.getBoundingClientRect().top, 'the player bar must not cover the sentence being read');
+        const column = document.querySelector('[data-block]').getBoundingClientRect();
+        need(bar.getBoundingClientRect().left >= column.right, 'on a wide window the player bar must sit in the margin, beside the text, not over it');
+        return JSON.stringify({ sentence: h('dr-sentence').slice(0, 30), spokenN: window.__stub.spoken.length });
+  - click:
+      css: '.listen-bar button[aria-label="Pause"]'
+  - wait: 1200
+  - javascript:
+      environment: browser
+      saveAs: PAUSED
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const bar = document.querySelector('.listen-bar');
+        const n = window.__stub.spoken.length;
+        need(bar.querySelector('.listen-play').getAttribute('aria-label') === 'Play', 'play button should say Play when paused');
+        need(CSS.highlights.get('dr-sentence'), 'paused sentence should stay highlighted');
+        need(!CSS.highlights.get('dr-spoken'), 'no spoken word while paused');
+        window.__n0 = n;
+        return JSON.stringify({ n });
+  - assert: The same sentence is still highlighted green after pausing and the player now shows a Play button
+  - click:
+      css: '.listen-bar button[aria-label="Play"]'
+  - wait: 800
+  - javascript:
+      environment: browser
+      saveAs: RESUMED
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const S = window.__stub;
+        need(S.spoken.length === window.__n0 + 1, 'pressing Play should speak again');
+        const before = S.spoken[window.__n0 - 1].text;
+        const after = S.spoken[S.spoken.length - 1].text;
+        const sentence = [...CSS.highlights.get('dr-sentence')][0].toString();
+        need(after !== before && sentence.includes(after), 'Play carries on from the word where it paused, not from the start of the sentence; got ' + JSON.stringify(after));
+        return JSON.stringify({ before, after });
+  - click:
+      css: '.listen-bar button[aria-label="Next sentence"]'
+  - wait: 800
+  - javascript:
+      environment: browser
+      saveAs: NEXT
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const h = (n) => { const hl = CSS.highlights.get(n); return hl ? [...hl].map((r) => r.toString()).join('|') : null; };
+        need(h('dr-sentence').startsWith('This question'), 'Next sentence should move to the second sentence, got ' + h('dr-sentence'));
+        return 'ok';
+  - click:
+      css: '.listen-bar button[aria-label="Previous sentence"]'
+  - click:
+      css: '.listen-bar button[aria-label="Previous sentence"]'
+  - wait: 800
+  - javascript:
+      environment: browser
+      saveAs: PREVIOUS
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const h = (n) => { const hl = CSS.highlights.get(n); return hl ? [...hl].map((r) => r.toString()).join('|') : null; };
+        need(h('dr-sentence').startsWith('CHAPTER I.'), 'Previous from the first sentence goes to the chapter title, got ' + h('dr-sentence'));
+        return 'ok';
+  - select:
+      css: '.listen-bar select'
+      label: 1.5x
+  - wait: 800
+  - javascript:
+      environment: browser
+      saveAs: SPEED
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const S = window.__stub;
+        need(document.querySelector('.listen-bar select').value === '1.5', 'speed select should show 1.5');
+        need(S.spoken[S.spoken.length - 1].rate === 1.5, 'the next utterance should use rate 1.5');
+        return JSON.stringify({ rate: S.spoken[S.spoken.length - 1].rate });
+  - click:
+      css: '.listen-bar button[aria-label="Stop listening"]'
+  - javascript:
+      environment: browser
+      saveAs: STOPPED
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        need(!document.querySelector('.listen-bar'), 'player bar should close on stop');
+        need(!CSS.highlights.get('dr-sentence'), 'sentence highlight should clear on stop');
+        need(document.querySelector('.topbar-tools .quiet-button').getAttribute('aria-pressed') === 'false', 'Listen button should no longer be pressed');
+        return 'ok';

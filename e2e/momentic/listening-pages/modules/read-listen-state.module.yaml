@@ -1,0 +1,24 @@
+fileType: momentic/module/v2
+id: listening-read-listen-state
+name: read-listen-state
+steps:
+  - javascript:
+      environment: browser
+      saveAs: LISTEN_STATE
+      code: |-
+        const h = (n) => { const hl = CSS.highlights.get(n); if (!hl) return null; return [...hl].map((r) => r.toString().replace(/\s+/g, ' ').slice(0, 40)).join('|'); };
+        const sr = (() => { const hl = CSS.highlights.get('dr-sentence'); const r = hl && [...hl][0]; if (!r) return null; const b = r.getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom)]; })();
+        const bar = document.querySelector('.listen-bar');
+        const br = bar && bar.getBoundingClientRect();
+        const stub = window.__stub, spy = window.__spy;
+        const spoken = stub ? stub.spoken : spy ? spy.log : [];
+        const last = spoken.length ? spoken[spoken.length - 1] : null;
+        return JSON.stringify({
+          sentence: h('dr-sentence'), word: h('dr-spoken'), lookup: h('dr-word'), sentTB: sr, vh: innerHeight, sy: Math.round(scrollY),
+          play: bar && bar.querySelector('.listen-play') && bar.querySelector('.listen-play').getAttribute('aria-label'),
+          bar: br && [Math.round(br.left), Math.round(br.top), Math.round(br.width), Math.round(br.height)],
+          pressed: (document.querySelector('.topbar-tools .quiet-button') || { getAttribute: () => 'none' }).getAttribute('aria-pressed'),
+          rate: bar && bar.querySelector('select') && bar.querySelector('select').value,
+          n: spoken.length, last: last && String(last.text).slice(0, 30), lastRate: last && last.rate,
+          slog: stub ? stub.log.slice(-8).map((x) => x.join(':')).join(' ') : null, sc: stub ? stub.scrolls.slice(-3) : null, ck: stub ? stub.clicks.slice(-2) : null, err: bar && bar.querySelector('.listen-error') && bar.querySelector('.listen-error').textContent
+        });

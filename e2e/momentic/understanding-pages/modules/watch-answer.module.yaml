@@ -1,0 +1,39 @@
+fileType: momentic/module/v2
+id: dr-und-m-watch-answer
+name: watch-answer
+description: Time the next explanation card from the click on Explain, Example or In Bangla until its text stops growing
+steps:
+  # Read the result later with read-answer.module.yaml (saves ANSWER).
+  - javascript:
+      environment: browser
+      code: |-
+        document.addEventListener("click", (event) => {
+          const button = event.target.closest(".selection-bar button");
+          if (!button) return;
+          const t0 = performance.now();
+          const before = new Set(document.querySelectorAll(".note"));
+          const since = () => Math.round(performance.now() - t0);
+          const rec = { asked: button.textContent.trim(), t0 };
+          window.__drAnswer = rec;
+          let note = null;
+          const observer = new MutationObserver(() => {
+            note ??= [...document.querySelectorAll(".note")].find((n) => !before.has(n)) ?? null;
+            if (!note) return;
+            window.__drAnswerNote = note;
+            rec.card ??= since();
+            if (note.querySelector(".note-wait")) rec.waitingText = note.querySelector(".note-wait").textContent.trim();
+            const rich = note.querySelector(".rich");
+            if (rich && rich.textContent.trim()) {
+              rec.firstText ??= since();
+              rec.lastChange = since();
+              rec.chars = rich.textContent.length;
+            }
+            const error = note.querySelector(".inline-error");
+            if (error) {
+              rec.error ??= since();
+              rec.errorText = error.textContent.trim();
+            }
+          });
+          observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+          setTimeout(() => observer.disconnect(), 180000);
+        }, { capture: true, once: true });

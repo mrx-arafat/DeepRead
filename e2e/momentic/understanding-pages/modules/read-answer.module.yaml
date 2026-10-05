@@ -1,0 +1,27 @@
+fileType: momentic/module/v2
+id: dr-und-m-read-answer
+name: read-answer
+description: Wait until the watched explanation card has stopped growing for 3 seconds (or failed), then save its text and timings as ANSWER
+steps:
+  - javascript:
+      environment: browser
+      saveAs: ANSWER
+      timeout: 170000
+      code: |-
+        // When a streamed answer has finished is not something a page check can express, so wait for it here.
+        const done = (rec) =>
+          rec && (rec.error !== undefined || (rec.lastChange !== undefined && performance.now() - rec.t0 - rec.lastChange > 3000));
+        const started = Date.now();
+        while (!done(window.__drAnswer) && Date.now() - started < 160000) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        const note = window.__drAnswerNote ?? null;
+        const rect = note?.getBoundingClientRect();
+        const { t0, ...times } = window.__drAnswer ?? {};
+        return {
+          times,
+          label: note?.querySelector(".note-label")?.textContent ?? null,
+          sections: [...(note?.querySelectorAll(".rich-label") ?? [])].map((el) => el.textContent),
+          text: note?.innerText ?? null,
+          box: rect ? { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) } : null,
+        };

@@ -1,0 +1,77 @@
+fileType: momentic/test/v2
+id: dr-listening-pages-from-here
+description: Journey 3 - Listen from here in the word card and the headphones button in the selection bar, desktop 1440 (stubbed speech)
+viewport:
+  width: 1440
+  height: 900
+steps:
+  - module: ./modules/pages-prefs.module.yaml
+  - module:
+      path: ./modules/open-chapter.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+  - module: ./modules/stub-speech.module.yaml
+  - javascript:
+      environment: browser
+      code: window.__stub.wordMs = 500; return 'slow words';
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+        PHRASE:
+          string: difficult
+  - click:
+      x: "{{ env.AT.cx }}"
+      y: "{{ env.AT.cy }}"
+  - checkElementVisible:
+      css: '.word-popover'
+      timeout: 5000
+  - click:
+      css: '.word-popover .quiet-button'
+  - wait: 1200
+  - javascript:
+      environment: browser
+      saveAs: FROM_WORD_CARD
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const h = (n) => { const hl = CSS.highlights.get(n); return hl ? [...hl].map((r) => r.toString()).join('|') : null; };
+        need(!document.querySelector('.word-popover'), 'the word card should close when listening starts');
+        need(document.querySelector('.listen-bar'), 'player should open');
+        need(h('dr-sentence').startsWith('This question'), 'should start at the sentence holding the tapped word (difficult), got ' + h('dr-sentence'));
+        need(!h('dr-word'), 'the tapped-word mark should be cleared');
+        return 'ok';
+  - click:
+      css: '.listen-bar button[aria-label="Stop listening"]'
+  - wait: 300
+  - module:
+      path: ./modules/locate-text.module.yaml
+      inputs:
+        CHAPTER_ID:
+          string: c3
+        PHRASE:
+          string: When we have realized the obstacles
+  - dragAndDrop:
+      fromX: "{{ env.AT.sx }}"
+      fromY: "{{ env.AT.sy }}"
+      toX: "{{ env.AT.ex }}"
+      toY: "{{ env.AT.ey }}"
+      steps: 12
+  - checkElementVisible:
+      css: '.selection-bar'
+      timeout: 5000
+  - assert: A small bar over the selected text offers Explain, Example, In Bangla and a headphones icon button
+  - click:
+      css: '.selection-bar button[aria-label="Listen from here"]'
+  - wait: 1200
+  - javascript:
+      environment: browser
+      saveAs: FROM_SELECTION
+      code: |-
+        const need = (ok, msg) => { if (!ok) throw new Error(msg); };
+        const h = (n) => { const hl = CSS.highlights.get(n); return hl ? [...hl].map((r) => r.toString()).join('|') : null; };
+        need(!document.querySelector('.selection-bar'), 'the selection bar should close');
+        need(window.getSelection().toString() === '', 'the selection should be cleared');
+        need(h('dr-sentence').startsWith('When we have realized'), 'should start at the selected sentence, got ' + h('dr-sentence'));
+        return 'ok';

@@ -1,0 +1,29 @@
+fileType: momentic/module/v2
+id: listening-stub-speech
+name: stub-speech
+steps:
+  - javascript:
+      environment: browser
+      saveAs: STUB
+      code: |-
+        if (!window.__stub) {
+          const S = { wordMs: 120, spoken: [], cancels: 0, timers: [], cur: null, scrolls: [], clicks: [] };
+          window.__stub = S;
+          const origScrollTo = window.scrollTo.bind(window);
+          window.scrollTo = (...a) => { S.scrolls.push({ from: Math.round(scrollY), to: a[0] && typeof a[0] === 'object' ? Math.round(a[0].top) : a[1], smooth: !!(a[0] && a[0].behavior === 'smooth') }); return origScrollTo(...a); };
+          S.log = []; let lastLog = 0; const t0 = Date.now();
+          window.addEventListener('scroll', () => { const n = Date.now(); if (n - lastLog > 150) { lastLog = n; S.log.push([n - t0, Math.round(scrollY)]); } }, { passive: true });
+          document.addEventListener('click', (e) => { S.clicks.push({ sy: Math.round(scrollY), target: (e.target.closest('button,a,select') || e.target).getAttribute('aria-label') || e.target.textContent.slice(0, 20) }); }, true);
+          const synth = window.speechSynthesis;
+          synth.cancel = () => { S.timers.forEach(clearTimeout); S.timers = []; S.cur = null; S.cancels++; };
+          synth.speak = (u) => {
+            const words = [...u.text.matchAll(/\S+/g)].map((m) => ({ i: m.index, l: m[0].length }));
+            const rec = { text: u.text.slice(0, 60), rate: u.rate, voice: u.voice ? u.voice.name : null, lang: u.lang };
+            S.spoken.push(rec);
+            S.cur = rec;
+            const per = S.wordMs / (u.rate || 1);
+            words.forEach((w, k) => S.timers.push(setTimeout(() => u.onboundary && u.onboundary({ name: 'word', charIndex: w.i, charLength: w.l }), per * (k + 1))));
+            S.timers.push(setTimeout(() => { S.cur = null; if (u.onend) u.onend({}); }, per * (words.length + 1)));
+          };
+        }
+        return 'stub ready';

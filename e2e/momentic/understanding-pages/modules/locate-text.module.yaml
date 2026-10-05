@@ -1,0 +1,27 @@
+fileType: momentic/module/v2
+id: dr-und-pages-locate-text
+name: Find phrase on a Pages screen
+parameters:
+  - name: CHAPTER_ID
+  - name: PHRASE
+steps:
+  - javascript:
+      environment: browser
+      saveAs: TEXT_AT
+      timeout: 30000
+      code: |-
+        const phrase = env.PHRASE;
+        const root = document.querySelector(`article[data-chapter="${env.CHAPTER_ID}"]`);
+        if (!root) throw new Error(`chapter ${env.CHAPTER_ID} is not loaded`);
+        const block = [...root.querySelectorAll('[data-block]')].find((item) => item.firstChild?.data.includes(phrase));
+        if (!block) throw new Error(`phrase not found: ${phrase}`);
+        const node = block.firstChild;
+        const at = node.data.indexOf(phrase);
+        block.scrollIntoView({ block: 'center' });
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        const range = document.createRange();
+        range.setStart(node, at); range.setEnd(node, at + phrase.length);
+        const rects = [...range.getClientRects()].filter((r) => r.width > 0);
+        const first = rects[0], last = rects.at(-1), box = range.getBoundingClientRect();
+        if (!first || !last || box.top < 80 || box.bottom > innerHeight - 45) throw new Error(`phrase is not fully visible: ${phrase}`);
+        return { block: block.dataset.block, offset: at, cx: Math.round(box.left + box.width / 2), cy: Math.round(box.top + box.height / 2), sx: Math.round(first.left + 2), sy: Math.round(first.top + first.height / 2), ex: Math.round(last.right - 1), ey: Math.round(last.top + last.height / 2), lines: rects.length };

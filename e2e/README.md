@@ -9,6 +9,7 @@ Each journey area has its own Momentic config, so one area's broken file cannot 
 | `momentic/reading` | Whole-book scrolling, the chapter list, resuming, the Aa page settings (theme, font, text size, spacing, margins, alignment), the time-left footer, phone layout |
 | `momentic/understanding` | Word lookups, Explain / Example / translation notes |
 | `momentic/listening` | Read-aloud, keyboard use, screen-reader structure, contrast |
+| `momentic/reading-pages`, `momentic/understanding-pages`, `momentic/listening-pages` | Pages-mode copies of reading, understanding and listening journeys, with independent browser origins and test data |
 
 Tests named `bug-*` describe a known problem and fail until it is fixed.
 
@@ -31,6 +32,8 @@ pnpm exec momentic run -c e2e/momentic/reading/momentic.config.yaml --url-overri
 Give each area its own instance (its own API port, Vite port and data directory, for example `data/e2e-library` for the library journeys).
 The library journeys delete every book in the instance they run against, so they must never share one with another area.
 They also run one at a time (`parallel: 1` in their config), for the same reason.
+
+Pages-mode journeys set `deepread.prefs` to `{"layout":"pages"}` in localStorage before the first app load. They have dedicated configs and use separate API/Vite instances and data folders (reading-pages: 8796/5186, understanding-pages: 8797/5187, listening-pages: 8798/5188). Start each server with `DEEPREAD_API_PORT=<api> DEEPREAD_DATA_DIR=data/e2e-<area>-pages node server/index.ts` and Vite with `DEEPREAD_API_PORT=<api> pnpm exec vite --port <vite> --strictPort`, then upload the fixture book to each instance before running that area's config. For each run, use its `momentic.config.yaml` with the matching `--url-override`. Keep these Pages instances separate from the Scroll areas because saved progress and annotations are instance data.
 
 The test book `fixtures/problems-of-philosophy.pdf` is Bertrand Russell's *The Problems of Philosophy*, from Project Gutenberg, in the public domain.
 

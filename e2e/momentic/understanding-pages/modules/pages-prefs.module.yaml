@@ -1,0 +1,7 @@
+fileType: momentic/module/v2
+id: dr-und-pages-prefs
+name: Set Pages before first app load
+steps:
+  - localStorage:
+      key: deepread.prefs
+      value: '{"layout":"pages"}'

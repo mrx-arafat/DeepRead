@@ -1,0 +1,41 @@
+fileType: momentic/module/v2
+id: dr-und-m-read-word-card
+name: read-word-card
+description: Wait for the open word card to finish filling in (or fail), then save its title, lines and timing as WORD_CARD
+steps:
+  - javascript:
+      environment: browser
+      saveAs: WORD_CARD
+      timeout: 70000
+      code: |-
+        const started = Date.now();
+        // Ready when nothing is still loading and the text has not changed for 1.5 s (the lines stream in).
+        let last = null;
+        let stableSince = Date.now();
+        const ready = () => {
+          const pop = document.querySelector(".word-popover");
+          if (!pop) return true;
+          const text = pop.innerText;
+          if (text !== last) {
+            last = text;
+            stableSince = Date.now();
+          }
+          if (pop.querySelector(".inline-error")) return true;
+          return !pop.querySelector(".skeleton") && Date.now() - stableSince > 1500;
+        };
+        // When the streamed lines are complete is not something a page check can express, so wait for it here.
+        while (!ready() && Date.now() - started < 60000) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        const pop = document.querySelector(".word-popover");
+        return {
+          open: Boolean(pop),
+          cards: document.querySelectorAll(".word-popover").length,
+          title: pop?.querySelector(".word-term")?.textContent ?? null,
+          native: pop?.querySelector(".word-native")?.textContent ?? null,
+          meaning: pop?.querySelectorAll(".word-lines dd")[0]?.textContent ?? null,
+          example: pop?.querySelectorAll(".word-lines dd")[1]?.textContent ?? null,
+          error: pop?.querySelector(".inline-error")?.textContent ?? null,
+          highlighted: typeof CSS !== "undefined" && "highlights" in CSS && CSS.highlights.has("dr-word") ? String(CSS.highlights.get("dr-word").values().next().value) : null,
+          waitedMs: Date.now() - started,
+        };

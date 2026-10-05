@@ -1,0 +1,36 @@
+fileType: momentic/module/v2
+id: dr-listen-pages-locate-text
+name: Find phrase on a Pages screen
+parameters:
+  - name: PHRASE
+steps:
+  - javascript:
+      environment: browser
+      saveAs: AT
+      timeout: 30000
+      code: |-
+        const phrase = env.PHRASE;
+        const word = new RegExp(`(^|[^\\p{L}])(${phrase.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")})(?![\\p{L}])`, "u");
+        const blocks = [...document.querySelectorAll(`article[data-chapter="${location.pathname.split('/').pop()}"] [data-block]`)];
+        const seek = () => {
+          for (const block of blocks) {
+            const node = block.firstChild;
+            const match = node?.data ? word.exec(node.data) : null;
+            if (!match) continue;
+            const at = match.index + match[1].length;
+            const range = document.createRange(); range.setStart(node, at); range.setEnd(node, at + phrase.length);
+            const rects = [...range.getClientRects()].filter((r) => r.width > 0), box = range.getBoundingClientRect();
+            if (rects.length && box.top >= 80 && box.bottom < innerHeight - 45) return { block, rects, box };
+          }
+          return null;
+        };
+        for (let i = 0; i < 100; i += 1) {
+          const hit = seek();
+          if (hit) {
+            const first = hit.rects[0], last = hit.rects.at(-1), round = Math.round;
+            return { block: hit.block.dataset.block, cx: round(hit.box.left + hit.box.width / 2), cy: round(hit.box.top + hit.box.height / 2), sx: round(first.left + 2), sy: round(first.top + first.height / 2), ex: round(last.right - 1), ey: round(last.top + last.height / 2) };
+          }
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        throw new Error(`phrase did not enter the visible page: ${phrase}`);
