@@ -1,4 +1,4 @@
-import { ArrowLeft, Headphones, List } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Headphones, List } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import type { BookDetail, ExplainMode } from "../../shared/types.ts";
@@ -350,6 +350,17 @@ export function ReaderPage({ bookId, chapterId }: Props) {
           </>
         )}
       </main>
+
+      {turning && pages.end !== null && (
+        <nav className="page-turn-controls" aria-label="Page navigation">
+          <button type="button" className="page-turn-button page-turn-previous" aria-label="Previous page" disabled={!pages.canPrevious} onClick={pages.previous}>
+            <ChevronLeft size={22} aria-hidden />
+          </button>
+          <button type="button" className="page-turn-button page-turn-next" aria-label="Next page" disabled={!pages.canNext} onClick={pages.next}>
+            <ChevronRight size={22} aria-hidden />
+          </button>
+        </nav>
+      )}
 
       {/* The e-reader's footer, for the eye: the same progress is the top bar's progress bar for a screen reader.
           The player takes its place while listening. */}

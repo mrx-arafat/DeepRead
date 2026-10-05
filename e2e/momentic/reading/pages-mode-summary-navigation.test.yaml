@@ -1,0 +1,81 @@
+fileType: momentic/test/v2
+id: dr-read-pages-summary-navigation
+description: A streamed chapter summary keeps the next heading off the current Pages view, and the visible arrow buttons turn forward and back.
+viewport: "1280, 800"
+steps:
+  - module: ./modules/open-book.module.yaml
+  - navigate: /book/{{ env.BOOK_ID }}/c3
+  - checkElementVisible:
+      css: article[data-chapter="c3"] section[aria-label="What you just read"] button
+      timeout: 15000
+  - click:
+      css: button[aria-label="Reading settings"]
+  - click:
+      css: '#reading-settings input[value="pages"]'
+  - press: Escape
+  - javascript:
+      environment: browser
+      code: |-
+        const button = document.querySelector('article[data-chapter="c3"] section[aria-label="What you just read"] button');
+        button.scrollIntoView({ block: "center", behavior: "instant" });
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = (input, init) => {
+          const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+          if (!url.endsWith("/api/ai/chapter")) return originalFetch(input, init);
+          const events = [
+            `event: delta\ndata: ${JSON.stringify({ text: "This summary confirms the chapter's main point." })}\n\n`,
+            "event: done\ndata: {}\n\n",
+          ];
+          const body = new ReadableStream({ start(controller) { for (const event of events) controller.enqueue(new TextEncoder().encode(event)); controller.close(); } });
+          return Promise.resolve(new Response(body, { headers: { "content-type": "text/event-stream" } }));
+        };
+        return { pageY: Math.round(scrollY), button: button.getBoundingClientRect().toJSON() };
+  - click:
+      css: article[data-chapter="c3"] section[aria-label="What you just read"] button
+  - checkElementVisible:
+      css: article[data-chapter="c3"] section[aria-label="What you just read"] p
+      timeout: 5000
+  - javascript:
+      environment: browser
+      code: |-
+        const deadline = performance.now() + 5000;
+        let aid = document.querySelector('article[data-chapter="c3"] section[aria-label="What you just read"]');
+        while (!aid?.textContent.includes("main point") && performance.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          aid = document.querySelector('article[data-chapter="c3"] section[aria-label="What you just read"]');
+        }
+        const next = document.querySelector('article[data-chapter="c4"] h2');
+        const mask = document.querySelector('.page-mask-bottom');
+        const footer = document.querySelector('.reading-footer').innerText;
+        if (!aid?.textContent.includes("main point")) throw new Error("the summary did not finish streaming");
+        if (!next || !mask) throw new Error("the next chapter or page boundary has not been loaded");
+        if (next.getBoundingClientRect().top < parseFloat(mask.style.top)) throw new Error(`next chapter heading is visible before the page boundary (heading y=${next.getBoundingClientRect().top}, boundary=${mask.style.top})`);
+        if (!/pages? left in chapter|Last page in chapter/.test(footer)) throw new Error(`unexpected page footer: ${footer}`);
+  - checkElementVisible:
+      css: button[aria-label="Next page"]:not(:disabled)
+  - checkElementVisible:
+      css: button[aria-label="Previous page"]:not(:disabled)
+  - javascript:
+      environment: browser
+      saveAs: BEFORE_NEXT
+      code: return Math.round(scrollY)
+  - click:
+      css: button[aria-label="Next page"]
+  - javascript:
+      environment: browser
+      saveAs: AFTER_NEXT
+      code: |-
+        const deadline = performance.now() + 1000;
+        while (Math.round(scrollY) <= Number(env.BEFORE_NEXT) && performance.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+        if (Math.round(scrollY) <= Number(env.BEFORE_NEXT)) throw new Error("Next page button did not turn forward");
+        return Math.round(scrollY);
+  - click:
+      css: button[aria-label="Previous page"]
+  - javascript:
+      environment: browser
+      code: |-
+        const deadline = performance.now() + 1000;
+        while (Math.round(scrollY) >= Number(env.AFTER_NEXT) && performance.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+        if (Math.round(scrollY) >= Number(env.AFTER_NEXT)) throw new Error(`Previous page button did not turn back from y=${env.AFTER_NEXT}; stayed at y=${Math.round(scrollY)}`);

@@ -18,6 +18,10 @@ export type Pages = {
   left: number | null;
   /** The top bar has slid away while the reader reads. */
   barAway: boolean;
+  canNext: boolean;
+  canPrevious: boolean;
+  next: () => void;
+  previous: () => void;
 };
 
 /** One flick of a wheel or a trackpad turns one page: the events of one gesture come closer together than this. */
@@ -62,6 +66,8 @@ export function usePages(on: boolean, ready: boolean, paused: boolean): Pages {
   const [end, setEnd] = useState<number | null>(null);
   const [left, setLeft] = useState<number | null>(null);
   const [barAway, setBarAway] = useState(false);
+  const [canNext, setCanNext] = useState(false);
+  const [canPrevious, setCanPrevious] = useState(false);
   // The page before ends where the one the reader turned back from began, not wherever the lines would let it.
   const until = useRef<{ scroll: number; end: number } | null>(null);
   // Where the page shown ends, as measured at that scroll position: the next page starts exactly there, even if the
@@ -96,6 +102,9 @@ export function usePages(on: boolean, ready: boolean, paused: boolean): Pages {
     shownAt.current = { scroll: window.scrollY, end: at };
     setEnd(at);
     setShownEnd(at);
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    setCanPrevious(window.scrollY > 0.5);
+    setCanNext(window.scrollY + Math.max(at - frame.top, 1) < max - 0.5);
     // The chapter the page starts in, and how far its text runs on below this page.
     const chapters = [...document.querySelectorAll<HTMLElement>("[data-chapter]")];
     const chapter = chapters.findLast((item) => item.getBoundingClientRect().top <= frame.top + 1) ?? chapters[0];
@@ -157,6 +166,8 @@ export function usePages(on: boolean, ready: boolean, paused: boolean): Pages {
     if (!on || !ready) {
       setEnd(null);
       setLeft(null);
+      setCanNext(false);
+      setCanPrevious(false);
       setShownEnd(null);
       shownAt.current = null;
       turned.current = [];
@@ -252,7 +263,12 @@ export function usePages(on: boolean, ready: boolean, paused: boolean): Pages {
 
     const page = document.querySelector("main.page");
     const resized = new ResizeObserver(schedule);
-    if (page) resized.observe(page);
+    const changed = new MutationObserver(schedule);
+    if (page) {
+      resized.observe(page);
+      // Streamed chapter aids can change the page boundary between ResizeObserver deliveries.
+      changed.observe(page, { subtree: true, childList: true, characterData: true });
+    }
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
     window.addEventListener("keydown", onKey);
@@ -265,6 +281,7 @@ export function usePages(on: boolean, ready: boolean, paused: boolean): Pages {
       if (frame !== undefined) cancelAnimationFrame(frame);
       window.clearTimeout(intro);
       resized.disconnect();
+      changed.disconnect();
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
       window.removeEventListener("keydown", onKey);
@@ -276,5 +293,5 @@ export function usePages(on: boolean, ready: boolean, paused: boolean): Pages {
     };
   }, [on, ready, settle, next, previous]);
 
-  return { end, left, barAway };
+  return { end, left, barAway, canNext, canPrevious, next, previous };
 }
