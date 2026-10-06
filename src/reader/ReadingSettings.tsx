@@ -1,9 +1,10 @@
-import { AlignJustify, AlignLeft, BookOpen, ScrollText } from "lucide-react";
+import { AlignJustify, AlignLeft, AudioWaveform, BookOpen, Monitor, ScrollText } from "lucide-react";
 import { useEffect, useState, type FocusEvent, type ReactNode, type ToggleEvent } from "react";
 import { LANGUAGES, type AiProviderId, type AiStatus, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { FONT_SIZES, setPrefs, type Prefs } from "../prefs.ts";
 import { useSession } from "../profiles/session.tsx";
+import { NATURAL_DOWNLOAD_MB, useNaturalState } from "./natural.ts";
 import { keepingLine } from "./useReadingPosition.ts";
 
 const PANEL = "reading-settings";
@@ -125,6 +126,51 @@ const LAYOUT_OPTIONS: Option<Prefs["layout"]>[] = [
     ),
   },
 ];
+
+const VOICE_OPTIONS: Option<Prefs["voice"]>[] = [
+  {
+    value: "device",
+    label: "This device",
+    content: (
+      <>
+        <Monitor size={18} aria-hidden /> This device
+      </>
+    ),
+  },
+  {
+    value: "natural",
+    label: "Natural",
+    content: (
+      <>
+        <AudioWaveform size={18} aria-hidden /> Natural
+      </>
+    ),
+  },
+];
+
+/** Who reads aloud, and what the natural voice is doing about it: it is downloaded once, and may not suit this computer. */
+function VoiceChoice({ voice }: { voice: Prefs["voice"] }) {
+  const natural = useNaturalState();
+  const percent = Math.round(natural.progress * 100);
+  const hint =
+    voice === "device"
+      ? `The voice built into this computer. Natural is a more human voice that runs on this computer and works offline once it has downloaded (${NATURAL_DOWNLOAD_MB} MB, once).`
+      : natural.status === "ready"
+        ? "The natural voice runs on this computer and works offline."
+        : natural.status === "downloading"
+          ? `Downloading the natural voice: ${percent}%. This device's voice reads until it is ready.`
+          : natural.message
+            ? natural.message
+            : "Getting the natural voice ready...";
+  return (
+    <div className="settings-group">
+      <Choice name="voice" legend="Read-aloud voice" value={voice} options={VOICE_OPTIONS} onChange={(value) => setPrefs({ voice: value })} />
+      <p className="settings-hint" aria-live="polite">
+        {hint}
+      </p>
+    </div>
+  );
+}
 
 /** A change that reflows the book, made so the line being read stays where it is on screen. */
 const reflow = (patch: Partial<Prefs>) => keepingLine(() => setPrefs(patch));
@@ -322,6 +368,8 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
         <Choice name="layout" legend="Layout" value={prefs.layout} options={LAYOUT_OPTIONS} onChange={(layout) => reflow({ layout })} />
 
         <hr className="settings-divider" />
+
+        <VoiceChoice voice={prefs.voice} />
 
         <div className="settings-group">
           <label className="settings-label" htmlFor={`${PANEL}-lang`}>

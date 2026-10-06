@@ -27,8 +27,15 @@ describe("readPrefs", () => {
       margins: "wide",
       align: "justify",
       layout: "pages",
+      voice: "device",
       rate: 1.2,
     });
+  });
+
+  it("should keep the natural voice when it was chosen, and fall back to the device voice for anything else", () => {
+    expect(readPrefs({ voice: "natural" }, false).voice).toBe("natural");
+    expect(readPrefs({ voice: "robot" }, false).voice).toBe("device");
+    expect(readPrefs({}, false).voice).toBe("device");
   });
 
   it("should replace a text size, a speed or a language that is not one DeepRead offers", () => {

@@ -19,6 +19,7 @@ import { setHighlight } from "./textRanges.ts";
 import { UndoToast } from "./UndoToast.tsx";
 import { useChapterFlow } from "./useChapterFlow.ts";
 import { useListen } from "./useListen.ts";
+import { useNaturalVoice } from "./useNaturalVoice.ts";
 import { useNoteMarks } from "./useNoteMarks.ts";
 import { useNotes } from "./useNotes.ts";
 import { usePages } from "./usePages.ts";
@@ -77,6 +78,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     () => ({ coming: flow.hasMore, error: flow.nextError, open: flow.loadNext }),
     [flow.hasMore, flow.nextError, flow.loadNext],
   );
+  useNaturalVoice(prefs.voice);
   const listen = useListen(blocks, prefs.rate, nextChapter);
   const { active: listenActive, stop: stopListen } = listen;
   const listenButton = useRef<HTMLButtonElement>(null);

@@ -12,6 +12,8 @@ export const MARGINS = ["narrow", "normal", "wide"] as const;
 export const ALIGNS = ["left", "justify"] as const;
 /** The book as one long scroll, or turned a page at a time like an e-reader. */
 export const LAYOUTS = ["scroll", "pages"] as const;
+/** Who reads aloud: the voice built into this computer, or the natural one DeepRead runs itself once it is downloaded. */
+export const VOICES = ["device", "natural"] as const;
 
 export type Prefs = {
   lang: LangCode;
@@ -23,6 +25,7 @@ export type Prefs = {
   margins: (typeof MARGINS)[number];
   align: (typeof ALIGNS)[number];
   layout: (typeof LAYOUTS)[number];
+  voice: (typeof VOICES)[number];
   /** Read-aloud speed, 1 = normal. */
   rate: number;
 };
@@ -49,6 +52,7 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
     margins: "normal",
     align: "left",
     layout: "scroll",
+    voice: "device",
     rate: 1,
   };
   const merged = { ...defaults, ...(typeof saved === "object" && saved !== null ? saved : {}) } as Prefs;
@@ -65,6 +69,7 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
   merged.margins = oneOf(MARGINS, merged.margins, defaults.margins);
   merged.align = oneOf(ALIGNS, merged.align, defaults.align);
   merged.layout = oneOf(LAYOUTS, merged.layout, defaults.layout);
+  merged.voice = oneOf(VOICES, merged.voice, defaults.voice);
   return merged;
 }
 

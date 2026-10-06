@@ -98,4 +98,34 @@ describe("speak", () => {
     engine.queue[0]?.onerror?.({ error: "synthesis-failed" });
     expect(events).toEqual(["Reading aloud stopped unexpectedly. Press play to try again."]);
   });
+  it("should read a sentence with the natural voice once it is chosen and ready, and still say a single word with the device's", async () => {
+    const played: string[] = [];
+    let finish = () => {};
+    vi.doMock("./natural.ts", () => ({
+      naturalReady: () => true,
+      synthesize: async (text: string) => ({ text }),
+      play: (clip: { text: string }, _text: string, handlers: { onEnd: () => void }) => {
+        played.push(clip.text);
+        finish = handlers.onEnd;
+        return { stop: () => {} };
+      },
+    }));
+    const { speak, setNaturalVoiceWanted } = await import("./speech.ts");
+    setNaturalVoiceWanted(true);
+    const events: string[] = [];
+
+    speak("A whole sentence.", { onEnd: () => events.push("ended"), onInterrupted: () => events.push("interrupted") });
+    await settle();
+    expect(played).toEqual(["A whole sentence."]);
+    expect(engine.queue).toHaveLength(0);
+    finish();
+    expect(events).toEqual(["ended"]);
+
+    // A word from its card is said at once by the device voice, over the sentence, which is told to wait.
+    speak("Another sentence.", { onEnd: () => events.push("second ended"), onInterrupted: () => events.push("interrupted") });
+    await settle();
+    speak("difficult", { engine: "device" });
+    expect(engine.queue.map((utterance) => utterance.text)).toEqual(["difficult"]);
+    expect(events).toEqual(["ended", "interrupted"]);
+  });
 });

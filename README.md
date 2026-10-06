@@ -226,6 +226,15 @@ If you scroll away, the page stays where you put it, and the player offers a way
 <table><tr><td><img src="docs/images/listen.webp" alt="Reading aloud with the sentence and spoken word highlighted, and the player at the bottom" width="900"></td></tr></table>
 
 Listening uses the voices built into your browser and computer, so it works without an AI helper.
+DeepRead pauses where a person would: a little after each sentence, longer between paragraphs, and longest after a chapter title.
+
+For a more human voice, open the **Aa** menu and choose **Natural** under **Read-aloud voice**.
+It downloads once (326 MB, with a progress figure in the menu), and from then on it runs on your computer's graphics card and works offline.
+It needs a browser with WebGPU, which means a recent Chrome or Edge on a computer from the last few years.
+If your browser or computer cannot run it, or runs it too slowly to keep up with the reading, DeepRead says so in the menu and keeps the voice built into your computer.
+Choosing **This device** again gives the memory back.
+The code for it (kokoro-js, pinned to one version) comes from jsDelivr and the voice model from Hugging Face, and only that download uses the network.
+The book text is never sent anywhere to be read aloud.
 
 ### 8. Jump to a chapter
 
@@ -788,7 +797,8 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 - Scanned PDFs need OCR first.
   OCR is not built in yet.
 - Figures, tables and images from the PDF are not shown in the reading view.
-- Reading aloud uses the voices built into your browser and operating system.
+- Reading aloud uses the voices built into your browser and operating system, unless you choose the natural voice.
+  The natural voice speaks English with one voice, needs WebGPU, and marks the spoken word by estimating where it falls in the sentence, so the green word can be a little early or late.
 - An answer takes a few seconds to start, even for a single word, because accuracy was chosen over speed.
 - Run one DeepRead server for each folder of a bucket.
   When it starts, it removes any book folder that has no `meta.json`, which could be a book another server is adding at that moment.
@@ -808,4 +818,5 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 - [pdf.js](https://github.com/mozilla/pdf.js) reads the PDF text layer.
 - [Read Frog](https://github.com/mengxi-ream/read-frog) inspired the tap-to-translate and select-to-explain interactions.
 - The fonts are [Literata](https://github.com/googlefonts/literata), drawn for long reading on screens, [Atkinson Hyperlegible Next](https://www.brailleinstitute.org/freefont/), drawn so similar letters are hard to confuse, and [Noto Sans Bengali](https://fonts.google.com/noto/specimen/Noto+Sans+Bengali).
+- The natural voice is [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad, run in the browser with [kokoro-js](https://github.com/hexgrad/kokoro).
 - The sample book in the screenshots is Bertrand Russell's *The Problems of Philosophy*, from Project Gutenberg.

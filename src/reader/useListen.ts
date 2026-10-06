@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Block } from "../../shared/types.ts";
 import { inPages, showOnPage } from "./paging.ts";
-import { speak, whenVoiceFree } from "./speech.ts";
+import { prepareSpeech, speak, whenVoiceFree } from "./speech.ts";
 import { placeInView, scrollTopFor, type Place } from "./sentenceView.ts";
 import { rangeInBlock, sentenceIndex, sentencesOf, setHighlight, wordAt, type SentenceAt } from "./textRanges.ts";
 import { isTitleId } from "./listenBlocks.ts";
@@ -185,6 +185,10 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
     let unwait = () => {};
     let cancel = () => {};
     const start = () => {
+      // The natural voice takes a moment to make a sentence, so the next one is made while this one is read.
+      const sentences = latest.current;
+      const index = sentenceIndex(sentences, sentence);
+      const next = index === -1 ? undefined : sentences[index + 1];
       cancel = speak(voiced.text, {
         rate,
         onWord: (offset) => {
@@ -219,6 +223,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
           setError(message);
         },
       });
+      if (next) prepareSpeech(forSpeech(next.text).text, rate);
     };
     const timer = silence > 0 ? window.setTimeout(start, silence) : undefined;
     if (!timer) start();

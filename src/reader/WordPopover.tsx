@@ -188,7 +188,7 @@ export function WordPopover({ lookup, bookId, lang, onListenFromHere, onClose }:
             type="button"
             className="icon-button"
             aria-label={`Say ${lookup.text}`}
-            onClick={() => speak(lookup.text)}
+            onClick={() => speak(lookup.text, { engine: "device" })}
           >
             <Volume2 size={18} aria-hidden />
           </button>
