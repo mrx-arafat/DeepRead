@@ -76,6 +76,20 @@ export function readableBlocks(chapter: Chapter): Block[] {
 }
 
 /**
+ * The tag for each block that is a heading (null for the rest). The book is the page's h1 and the chapter's title an
+ * h2, so headings in the text start at h3, one level per level in the book, but never more than one level below the
+ * heading before them: a screen reader's outline must not skip a level.
+ */
+export function headingTags(blocks: Block[]): Array<"h3" | "h4" | "h5" | null> {
+  let previous = 2;
+  return blocks.map((block) => {
+    if (block.type !== "heading") return null;
+    previous = Math.min(2 + (block.level ?? 1), previous + 1, 5);
+    return `h${previous}` as "h3" | "h4" | "h5";
+  });
+}
+
+/**
  * Of items stacked top to bottom, the one at `line`: the first whose bottom edge is below it. A line above them all
  * gives the first, a line in the gap between two gives the next; `count` when every item ends above the line.
  */

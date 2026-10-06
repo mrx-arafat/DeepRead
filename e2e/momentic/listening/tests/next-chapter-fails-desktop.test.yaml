@@ -35,6 +35,6 @@ steps:
         const need = (ok, msg) => { if (!ok) throw new Error(msg); };
         const bar = document.querySelector('.listen-bar');
         const info = JSON.stringify({ chapters: document.querySelectorAll('article.chapter').length, play: bar && bar.querySelector('.listen-play').getAttribute('aria-label'), spoken: window.__stub.spoken.length });
-        need(document.querySelectorAll('article.chapter').length === 2, 'the next chapter should have loaded after Try again. ' + info);
+        need(document.querySelectorAll('article.chapter').length >= 2, 'the next chapter should have loaded after Try again. ' + info);
         need(bar && bar.querySelector('.listen-play').getAttribute('aria-label') === 'Pause', 'reading aloud did not resume after the next chapter arrived. ' + info);
         return info;

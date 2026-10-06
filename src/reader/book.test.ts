@@ -4,6 +4,7 @@ import {
   bookPercent,
   chapterMinutesLeft,
   chapterPosition,
+  headingTags,
   indexAtLine,
   nextInFlow,
   openingChapter,
@@ -139,5 +140,24 @@ describe("sentenceIndex", () => {
 
   it("should return -1 when the position is no longer on the page", () => {
     expect(sentenceIndex(sentencesOf([second]), { blockId: "c1-b1", start: 5 })).toBe(-1);
+  });
+});
+
+describe("headingTags", () => {
+  const heading = (level: 1 | 2 | 3): Block => ({ id: `h${level}`, type: "heading", level, text: "A heading", page: 1 });
+  const paragraph: Block = { id: "p", type: "paragraph", text: "Some text.", page: 1 };
+
+  it("should put headings inside the text below the chapter's h2, one level per level", () => {
+    expect(headingTags([heading(1), paragraph, heading(2), paragraph, heading(3)])).toEqual(["h3", null, "h4", null, "h5"]);
+  });
+
+  it("should never skip a level: a deeper heading straight under the chapter title is lifted to follow it", () => {
+    // The first thing in a front-matter chapter may already be a level-2 heading.
+    expect(headingTags([heading(2), paragraph, heading(3)])).toEqual(["h3", null, "h4"]);
+    expect(headingTags([heading(1), heading(3)])).toEqual(["h3", "h4"]);
+  });
+
+  it("should let a heading go back up to a shallower level", () => {
+    expect(headingTags([heading(1), heading(2), heading(1)])).toEqual(["h3", "h4", "h3"]);
   });
 });

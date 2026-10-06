@@ -1,5 +1,6 @@
-import { memo, useEffect, useEffectEvent, useRef, type MouseEvent } from "react";
+import { memo, useEffect, useEffectEvent, useMemo, useRef, type MouseEvent } from "react";
 import type { Block, Note } from "../../shared/types.ts";
+import { headingTags } from "./book.ts";
 import { NoteCard } from "./NoteCard.tsx";
 import { blockOf, termSpan, wordRangeAtPoint } from "./textRanges.ts";
 import { useWordCursor } from "./useWordCursor.ts";
@@ -22,17 +23,14 @@ type Props = {
   actions: TextActions;
 };
 
-// The book is the page's h1 and each chapter title an h2, so headings inside the text start at h3.
-const HEADING_TAGS = { 1: "h3", 2: "h4", 3: "h5" } as const;
-
 // How long a touch selection must rest before the bar offers explanations: the handles may still be moving.
 const TOUCH_SETTLE_MS = 400;
 
 /** One block of book text. Must stay a single text node: word and sentence ranges rely on it. */
-const BlockText = memo(function BlockText({ block, tabbable }: { block: Block; tabbable: boolean }) {
+const BlockText = memo(function BlockText({ block, tag, tabbable }: { block: Block; tag: ReturnType<typeof headingTags>[number]; tabbable: boolean }) {
   const tabIndex = tabbable ? 0 : -1;
-  if (block.type === "heading") {
-    const Tag = HEADING_TAGS[block.level ?? 1];
+  if (block.type === "heading" && tag) {
+    const Tag = tag;
     return (
       <Tag data-block={block.id} tabIndex={tabIndex}>
         {block.text}
@@ -51,6 +49,7 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions }: Props
   const { onWord, onSelect, onDismiss, onCloseNote } = actions;
   const container = useRef<HTMLDivElement>(null);
   const cursor = useWordCursor(blocks[0]?.id, (word) => ask(word, "keyboard"));
+  const tags = useMemo(() => headingTags(blocks), [blocks]);
 
   /** Ask about the selected text if there is any, else about `word`; with neither, close what is open. */
   function ask(word: Range | null, via: "mouse" | "keyboard" | "touch") {
@@ -137,14 +136,14 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions }: Props
       onFocus={cursor.onFocus}
       onBlur={cursor.onBlur}
     >
-      {blocks.map((block) => (
+      {blocks.map((block, at) => (
         <div className="row" key={block.id}>
           {notes
             .filter((note) => note.blockId === block.id)
             .map((note) => (
               <NoteCard key={note.id} note={note} bookId={bookId} latest={note.id === notes.at(-1)?.id} onClose={onCloseNote} />
             ))}
-          <BlockText block={block} tabbable={block.id === cursor.tabbable} />
+          <BlockText block={block} tag={tags[at] ?? null} tabbable={block.id === cursor.tabbable} />
         </div>
       ))}
     </div>
