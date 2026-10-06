@@ -14,12 +14,15 @@ steps:
       environment: browser
       saveAs: EYE_LINE
       code: |-
-        window.scrollTo({ top: 1700, behavior: 'instant' });
+        // Put the middle of a long paragraph at the eye line, so the line being read is plainly inside it and not in
+        // a gap between two paragraphs.
+        const long = [...document.querySelectorAll('[data-block]')].find((b) => b.getBoundingClientRect().height > 8 * parseFloat(getComputedStyle(b).lineHeight));
+        window.scrollTo({ top: long.getBoundingClientRect().top + scrollY + 3.5 * parseFloat(getComputedStyle(long).lineHeight) - 100, behavior: 'instant' });
         // Where the reader's eyes are is read at the moment of the click: the click itself may scroll the page.
         document.addEventListener(
           'click',
           () => {
-            const caret = document.caretRangeFromPoint(212, 110);
+            const caret = document.caretRangeFromPoint(212, 100);
             window.__eye = { block: caret.startContainer.parentElement.dataset.block, offset: caret.startOffset };
           },
           { capture: true, once: true },
