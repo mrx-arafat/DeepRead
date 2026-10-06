@@ -284,6 +284,19 @@ function update() {
   good("DeepRead is up to date. To start it, type  deepread  and press Enter.");
 }
 
+/** Where the books and notes are: the data folder, or the R2 bucket that the shell, .env.local or .env names (as the server reads them). */
+function booksPlace() {
+  const r2 = (value) => (value ?? "").trim().replace(/^["']|["']$/g, "").toLowerCase() === "r2";
+  if (process.env.DEEPREAD_STORAGE !== undefined) return r2(process.env.DEEPREAD_STORAGE) ? "in your Cloudflare R2 bucket" : `in ${join(ROOT, "data")}`;
+  for (const name of [".env.local", ".env"]) {
+    const path = join(ROOT, name);
+    if (!existsSync(path)) continue;
+    const setting = /^\s*DEEPREAD_STORAGE\s*=(.*)$/m.exec(readFileSync(path, "utf8"));
+    if (setting) return r2(setting[1]) ? `in your Cloudflare R2 bucket (set in ${name})` : `in ${join(ROOT, "data")}`;
+  }
+  return `in ${join(ROOT, "data")}`;
+}
+
 const HELP = `DeepRead: read hard books in English, with a tutor in the margin.
 
 Type one of these in the terminal and press Enter:
@@ -296,7 +309,7 @@ Type one of these in the terminal and press Enter:
 To stop DeepRead, press Control+C in the window where it is running.
 
 If DeepRead says number ${PORT} is busy, start it with a different number:  DEEPREAD_PORT=8790 deepread
-Your books and notes are kept in ${join(ROOT, "data")}`;
+Your books and notes are kept ${booksPlace()}`;
 
 const command = process.argv[2] ?? "start";
 if (command === "start") await start();

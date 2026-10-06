@@ -14,6 +14,9 @@ Everything below is on `main`, with unit tests and reader-journey tests passing.
 | Chapter openings and footer | Centred small-caps chapter titles; a footer with minutes (Scroll) or pages (Pages) left in the chapter | `src/reader/ChapterSection.tsx`, `src/reader/ReaderPage.tsx`, `chapterMinutesLeft` in `src/reader/book.ts` |
 | Pages mode | Turns a screen at a time by key, wheel, swipe or a press in the margin; never shows a cut line; the top bar hides while reading | `src/reader/paging.ts` (pure maths, unit tested), `src/reader/usePages.ts`, the `data-layout="pages"` rules in `src/styles.css` |
 | Library shelf | Generated cloth covers, a Continue reading card, progress under each book, a More actions menu, an edit dialog, drop a PDF anywhere | `src/LibraryPage.tsx`, `src/library/*` |
+| Storage | Books (PDF, parsed text, cover, answer cache) and notes are kept in an object store: the data folder by default, or a Cloudflare R2 bucket; an optional size limit refuses uploads that would pass it, and the library page shows the space used; `pnpm storage:migrate` copies a local library into R2 | `server/storage.ts`, `server/storage-r2.ts`, `server/storage-config.ts`, `server/env.ts`, `server/library.ts`, `shared/notes.ts`, `src/reader/noteSync.ts`, `scripts/storage-migrate.ts`, `.env.example` |
+
+Notes now live with the book on the server, so they follow the reader to another device (preferences under `deepread.prefs` still live in localStorage).
 
 Preferences live in localStorage under `deepread.prefs` and are applied as `data-*` attributes on `<html>`; the stylesheet does the rest.
 Pages mode is built on the same window scroll as Scroll mode, so resume, Back and Forward, chapter loading, margin notes and read-aloud work the same in both.
@@ -23,14 +26,18 @@ A page turn scrolls so the first line that was not fully shown becomes the next 
 
 1. Install: `pnpm install`.
 2. Run: `pnpm dev`, or run the API and Vite separately with your own ports and data folder:
-   `DEEPREAD_API_PORT=8793 DEEPREAD_DATA_DIR=<scratch folder> node server/index.ts` and `DEEPREAD_API_PORT=8793 pnpm exec vite --port 5183 --strictPort`.
+   `DEEPREAD_STORAGE=local DEEPREAD_API_PORT=8793 DEEPREAD_DATA_DIR=<scratch folder> node server/index.ts` and `DEEPREAD_API_PORT=8793 pnpm exec vite --port 5183 --strictPort`.
+   The separate instance starts with `DEEPREAD_STORAGE=local` because a `.env.local` that points at R2 would otherwise make it use the real bucket.
    Add the test book with `curl -s -X POST http://127.0.0.1:8793/api/books -F 'file=@e2e/fixtures/problems-of-philosophy.pdf;type=application/pdf'`.
 3. Unit tests and types: `npx vitest run` and `pnpm typecheck`; both must be green before every commit.
+   The store contract in `server/storage.test.ts` also runs against the real R2 bucket when you ask for it with `DEEPREAD_TEST_R2=1 pnpm exec vitest run server/storage.test.ts`.
+   That run needs the R2 settings in `.env.local`, and it works in a throwaway folder of the bucket that it removes afterwards.
 4. Reader-journey tests: follow `e2e/README.md`.
    Give each area (reading, understanding, library, listening) its own instance, ports and data folder.
    The library journeys delete every book in their instance and run one at a time.
    Lint the journey files with the lint command in `e2e/README.md` after editing them.
 5. Never commit anything under `data/`; it holds the reader's own books.
+   Never commit `.env.local` either; it holds the R2 secret key.
 
 Conventions: Conventional Commits with a body that says why, no co-author lines, no em dashes anywhere, tests first for logic, at most one test file per production module.
 
@@ -76,8 +83,71 @@ The new coverage includes keyboard page turns, margin/page interactions, phone s
 The visual pass covered light, sepia and dark themes across desktop, tablet and phone-sized viewports.
 The library covers, Continue card, More actions menu, long edit titles, reader starts, Pages boundaries, word cards and phone controls were checked and corrected where needed.
 
-### 5. Known gaps to keep in mind
+### 5. Books and notes in Cloudflare R2 (commit `542e3f7`)
+
+Books and notes can be kept in a Cloudflare R2 bucket instead of the local data folder, with a limit on how much space the books may take.
+Settings come from `.env.local`, then `.env`, in the DeepRead folder (`loadEnvFiles` in `server/env.ts`); a file never overrides a variable that is already set in the shell.
+`.env.example` is the committed template, and `.env.local` is gitignored because it holds the secret key.
+`server/storage-config.ts` parses these variables, and a setting that cannot work stops the server at start-up with a sentence that names it:
+
+| Variable | Meaning |
+| --- | --- |
+| `DEEPREAD_STORAGE` | `local` (the default) or `r2` |
+| `DEEPREAD_STORAGE_LIMIT` | For example `8GB`; decimal units, and `GiB` and the like for binary; empty means no limit |
+| `DEEPREAD_R2_ENDPOINT`, `DEEPREAD_R2_BUCKET`, `DEEPREAD_R2_ACCESS_KEY_ID`, `DEEPREAD_R2_SECRET_ACCESS_KEY` | The bucket and its key; all four are needed when storage is `r2` |
+| `DEEPREAD_R2_PREFIX` | The folder inside the bucket that DeepRead keeps to; `deepread/` by default |
+
+What was built:
+
+- `server/storage.ts` holds the `ObjectStore` interface and `createLocalStore`.
+  `server/storage-r2.ts` holds `openR2Store` (`@aws-sdk/client-s3`, every key under the prefix, a `HeadBucket` check at start); it is loaded only when storage is `r2`.
+- `server/library.ts` was rebuilt on `ObjectStore`.
+  A book is the keys `books/<id>/{source.pdf, book.json, meta.json, notes.json, cover.webp|cover.jpg, cache/<sha256>.json}`.
+  Uploads are parsed from `<data>/tmp` on this computer whatever the store.
+  Adds run one at a time, and also in the book's own queue.
+- `GET /api/storage` returns `{used, limit, where}`.
+  An upload past the limit is refused with 507 `storage_full`.
+  The library page shows "Your books take X of Y, kept in ..." (`.library-storage`).
+- Notes moved from browser localStorage to the server.
+  `shared/notes.ts` holds `applyNoteChange`, which the server and the browser both use.
+  The routes are `GET /api/books/:id/notes`, `PUT /api/books/:id/notes/:noteId` with `{note, before}`, and `DELETE /api/books/:id/notes/:noteId`.
+  `src/reader/noteSync.ts` does the syncing, and `src/reader/useNotes.ts` is a thin hook over it.
+- `pnpm storage:migrate` (`scripts/storage-migrate.ts`, `server/copy-books.ts`) copies local books into R2 and never changes the local copy.
+  Books already in the bucket are left as they are, and a book that would pass the limit is not copied.
+  Run it with DeepRead stopped.
+
+Design decisions:
+
+- A store knows nothing about books: it holds bytes under keys, and `library.ts` gives the keys meaning.
+  That is why one contract test can run against the local store and the real R2 store alike.
+- `meta.json` is written last and removed first, so a book exists exactly while its `meta.json` does.
+  A crash in between leaves files that no listing shows, and the first use after a start clears book folders that have no `meta.json`.
+- Notes travel one change at a time (put or remove), never as a whole list, so one device cannot wipe notes added on another.
+  The server applies each change inside the book's queue.
+- A change the server has not taken yet waits in a localStorage outbox, `deepread.pendingNotes.<bookId>`, and goes with the next change or the next load.
+  A change the server refuses (a 4xx answer) is dropped rather than retried.
+  Notes this browser kept before, under `deepread.notes.<bookId>[.<chapterId>]`, are adopted into the outbox and their old keys cleared.
+- Every reader-journey test server start command begins with `DEEPREAD_STORAGE=local` (`e2e/README.md` says why), and the notes check in the journeys reads the API.
+
+Tests: `server/storage.test.ts` runs one contract against the local store always, and against real R2 only with `DEEPREAD_TEST_R2=1`.
+Besides it there are `server/storage-config.test.ts`, `server/copy-books.test.ts`, `src/reader/noteSync.test.ts`, and the notes, limit and start-up cleanup cases in `server/app.test.ts`.
+
+A review pass found and fixed these:
+
+- Whole-list note saves let one device wipe another's notes; saves are now per change.
+- Notes deleted offline came back on reload; changes now wait in an outbox.
+- Migration temp files piled up on disk.
+- Adding a book wrote outside the book's queue and adopted leftovers of an earlier copy; it now runs in the queue and clears the folder first.
+- Removing a book failed even though the book was already gone; the files left over are now cleared at the next start.
+- PDF streams were not cancelled when the client left.
+
+### 6. Known gaps to keep in mind
 
 - Pages: page counts are estimates; a page can end one line earlier after the window height changes; read-aloud started mid-page first turns to the page where the sentence begins.
 - Library: two books can share a cloth colour (it is a hash of the title); the Continue card repeats the only book when the library holds one.
 - The journey lint warns that the `word-position` module's name does not match its file name.
+- Storage: run one DeepRead server per bucket folder; the start-up cleanup of book folders without a `meta.json` could remove a book that another server is still adding.
+- Notes: a page that was opened earlier sees notes from another device only after a reload.
+- Notes: two tabs of the same browser that are both offline share one outbox key, and can overwrite each other's waiting changes.
+- Storage: the space used is computed by listing the bucket folder on each upload, which is fine for a personal library.
+- Storage: the R2 secret key lives in `.env.local` on the computer.

@@ -398,7 +398,11 @@ main() {
   printf '  1. Start it: type  %s  and press Enter.\n' "$start"
   if [ "$start" != deepread ]; then printf '     (After you %s, just  deepread  works too.)\n' "$reopen"; fi
   printf '  2. Your browser opens DeepRead at http://127.0.0.1:%s. Click "Add a book (PDF)" to begin.\n' "$PORT"
-  printf '     Your books and notes stay on this computer, in %s.\n' "$(pretty "$DIR/data")"
+  if grep -qiE '^[[:space:]]*DEEPREAD_STORAGE[[:space:]]*=[[:space:]]*["'"'"']?r2' "$DIR/.env.local" 2>/dev/null; then
+    printf '     Your books and notes are kept in your Cloudflare R2 bucket (set in %s).\n' "$(pretty "$DIR/.env.local")"
+  else
+    printf '     Your books and notes stay on this computer, in %s.\n' "$(pretty "$DIR/data")"
+  fi
   printf '  3. Keep the terminal window open while you read. To stop DeepRead, click that window and press Control+C.\n'
   printf '  4. To get the latest version later: type  %s update  and press Enter.\n\n' "$start"
 

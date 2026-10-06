@@ -321,7 +321,7 @@ Then your library does not depend on this one computer.
 You can also set the most space your books may take, whether they are kept on your computer or in R2.
 
 What goes into the bucket: each book's PDF, its parsed text, its cover, the AI answers saved for it, and your notes.
-A few small things always stay on your computer: your AI helper choice, saved quick word translations, the folder DeepRead keeps for Codex, the phone key, the logs, and a book's file while it is being added.
+A few small things always stay on your computer: your AI helper choice, saved quick word translations, the folder DeepRead keeps for Codex, the phone key, and a book's file while it is being added.
 
 1. In your Cloudflare account, create an R2 bucket.
 2. Still in Cloudflare, open **R2**, then **Manage API tokens**, then **Create API token**.
@@ -407,12 +407,13 @@ Run it only while DeepRead is stopped.
 ```mermaid
 flowchart LR
     PDF[Book PDF] --> Parser
-    Parser -->|chapters and paragraphs| Library[(Library on disk or in R2)]
+    Parser -->|chapters and paragraphs| Library[(Library in the data folder or an R2 bucket)]
     Library --> Reader[Reader in the browser]
     Reader -->|tap or select| Server
     Server -->|prompt with surrounding paragraphs| AI[Claude Code or Codex]
     AI -->|streamed answer| Reader
-    Server <-->|answers by prompt and model| Cache[(Answer cache)]
+    Server <-->|answers by prompt and model| Library
+    Reader <-->|notes, one change at a time| Server
 ```
 
 ### The parser
@@ -429,6 +430,59 @@ PDFs store positioned glyphs, not paragraphs, so the parser rebuilds the book:
 Checked against the raw text layer of an 86 page novel, the parsed book kept 36,353 of 36,358 words (99.98%).
 Every upload runs the same kind of check, and the book carries a warning naming the pages if text was lost.
 A 527 page book parses in about a second.
+
+### The library
+
+The library keeps its files in an `ObjectStore` ([`server/storage.ts`](server/storage.ts)).
+A store knows only keys and bytes: it can read, size, stream (all of an object, or a byte range of it, for the PDF), write, put a file, download, list, and remove one object or everything under a prefix.
+It knows nothing about books: [`server/library.ts`](server/library.ts) gives the keys their meaning.
+
+There are two stores.
+The local one keeps each object as a file under the data folder, at its key, and writes it atomically through [`server/atomic-write.ts`](server/atomic-write.ts).
+The R2 one ([`server/storage-r2.ts`](server/storage-r2.ts)) uses `@aws-sdk/client-s3` against R2's S3 API.
+It puts every key under the configured prefix (`deepread/` by default), so the bucket can hold other things.
+When DeepRead starts it checks the bucket with `HeadBucket`, and stops with a plain sentence if it cannot use it.
+It is loaded with a dynamic import only when `DEEPREAD_STORAGE=r2`, so a library on your computer never loads the SDK.
+[`server/storage-config.ts`](server/storage-config.ts) turns the settings into a config, or into a sentence that says which setting is wrong.
+[`server/env.ts`](server/env.ts) reads them from `.env.local`, then `.env`, and a file never overrides a variable that is already set.
+
+Each book is a folder of keys:
+
+```text
+books/<id>/source.pdf
+books/<id>/book.json
+books/<id>/meta.json
+books/<id>/notes.json
+books/<id>/cover.webp            (cover.jpg where WebP cannot be written)
+books/<id>/cache/<sha256>.json   (one saved AI answer)
+```
+
+`meta.json` is written last and removed first, so a book exists exactly while its `meta.json` does.
+It holds everything the shelf shows, so listing the library never opens `book.json`.
+If DeepRead stops while a book is being added or removed, what is left has no `meta.json`, so no listing shows it.
+The first time the library is used after a start, it clears every book folder without a `meta.json` (only folders named like a book id), and its local `tmp` folder.
+
+An upload is written to `tmp` in the data folder on this computer and parsed there, whatever the store, because the parser reads a file.
+It is then stored, with `meta.json` last.
+Adding books runs one at a time, so two uploads cannot both fit in the room left for one.
+Each add also runs in its own book's queue, so it never meets a removal of the same book that is still clearing files.
+
+Usage is the sum of the sizes of the objects under `books/`.
+`GET /api/storage` returns `{ used, limit, where }`, which the library page shows under the shelf.
+When an upload would go past `DEEPREAD_STORAGE_LIMIT`, it is refused with HTTP 507 and the code `storage_full`.
+The check runs when the file arrives, before the slow parse, and again just before the book is stored.
+
+Notes are kept one change at a time.
+[`shared/notes.ts`](shared/notes.ts) defines a `NoteChange` (`put` or `remove`) and `applyNoteChange`, and the server and the browser both apply each change with that one function, so what the reader sees is what is kept.
+The API takes them as `GET /api/books/:id/notes`, `PUT /api/books/:id/notes/:noteId` with `{ note, before }`, and `DELETE /api/books/:id/notes/:noteId`.
+The server applies each change inside the book's queue, so two devices never overwrite each other.
+In the browser, [`src/reader/noteSync.ts`](src/reader/noteSync.ts) (`createNoteSync`) shows a change at once and keeps it in a `localStorage` outbox, `deepread.pendingNotes.<bookId>`, until the server has taken it.
+It sends the outbox in order.
+It drops a change the server refuses with a 4xx, and retries the others on the next change or load.
+It also adopts notes from the old `localStorage` keys, `deepread.notes.<bookId>` and `deepread.notes.<bookId>.<chapterId>`.
+[`src/reader/useNotes.ts`](src/reader/useNotes.ts) is a thin React hook around it.
+
+Whatever the store, a few small things stay in the data folder on this computer: `tmp/`, `settings.json` (your AI helper choice), `translate-cache.json` (quick word translations), `codex-home/`, and the phone key `remote-key`.
 
 ### The tutor
 
@@ -455,7 +509,8 @@ Explanations sit in the margin beside their paragraph on wide screens and direct
 
 ## Privacy
 
-- By default, your PDFs, locally rendered covers, the parsed books, your notes and the answer cache stay in `data/` on your computer. Cover rendering sends nothing to another service.
+- By default, your PDFs, locally rendered covers, the parsed books, your notes and the answer cache stay in `data/` on your computer.
+  Cover rendering sends nothing to another service.
   If you choose Cloudflare R2, those go to your own bucket instead (see [Keep your books in Cloudflare R2](#keep-your-books-in-cloudflare-r2)).
 - The server listens on `127.0.0.1` only and rejects requests from other websites.
   With `pnpm phone`, remote devices are refused until they open the link with the secret key.
@@ -485,14 +540,22 @@ You need [Node.js](https://nodejs.org) 24 or newer and [pnpm](https://pnpm.io).
 | `pnpm test` | Unit and functional tests |
 | `pnpm typecheck` | TypeScript check |
 
+The server reads `.env.local` too, so once it points at your R2 bucket, `pnpm dev` and `pnpm start` use that bucket.
+To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, for example `DEEPREAD_STORAGE=local pnpm dev`: a value set in the shell wins over the file.
+
 | Path | What lives there |
 | --- | --- |
 | `shared/types.ts` | The contract between the server and the web app |
+| `shared/notes.ts`, `src/reader/noteSync.ts`, `src/reader/useNotes.ts` | A note change and the one function that applies it, used by the server and the browser; the browser's outbox that sends changes in order; the React hook around it |
+| `shared/bytes.ts` | Sizes as text, such as `1.2 GB`, the same in server messages and on the library page |
 | `server/parser/` | PDF to chapters and paragraphs |
 | `server/prompts.ts` | Every prompt sent to the model |
 | `server/ai.ts` | Which AI helper answers: detection and the reader's choice |
 | `server/llm.ts` | Running Claude Code or Codex: streaming, timeouts, concurrency |
-| `server/library.ts` | The books, kept on disk or in R2 |
+| `server/library.ts` | The books on top of a store: key layout, adding and removing, usage and the limit, notes |
+| `server/storage*.ts`, `server/atomic-write.ts` | The `ObjectStore` interface and the local store (`storage.ts`), the R2 store (`storage-r2.ts`), reading the storage settings (`storage-config.ts`), atomic file writes |
+| `server/env.ts`, `.env.example` | Loading `.env.local`, then `.env`; the template for the settings |
+| `server/copy-books.ts`, `scripts/storage-migrate.ts` | Copying books from one store into another, and `pnpm storage:migrate`, which uses it |
 | `server/routes-*.ts` | HTTP routes |
 | `src/` | The web app: library and reader |
 | `scripts/install.sh`, `scripts/deepread.mjs` | The one-line installer and the `deepread` command |
@@ -500,10 +563,15 @@ You need [Node.js](https://nodejs.org) 24 or newer and [pnpm](https://pnpm.io).
 
 ## Limits
 
-- Scanned PDFs need OCR first. OCR is not built in yet.
+- Scanned PDFs need OCR first.
+  OCR is not built in yet.
 - Figures, tables and images from the PDF are not shown in the reading view.
 - Reading aloud uses the voices built into your browser and operating system.
 - An answer takes a few seconds to start, even for a single word, because accuracy was chosen over speed.
+- Run one DeepRead server for each folder of a bucket.
+  When it starts, it removes any book folder that has no `meta.json`, which could be a book another server is adding at that moment.
+- A page you opened earlier shows notes added on another device only after you reload it.
+- With R2, the secret key sits in `.env.local` on this computer.
 
 ## License
 

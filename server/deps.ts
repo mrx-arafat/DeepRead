@@ -11,7 +11,7 @@ export type ParsePdf = (filePath: string) => Promise<ParsedBook>;
 export type RenderCover = (pdfPath: string) => Promise<CoverImage | null>;
 
 export type AppDeps = {
-  /** The books on disk. Made by the caller, which also looks for the covers of books stored before covers were kept. */
+  /** The books, in the data folder or an R2 bucket. Made by the caller, which also looks for the covers of books stored before covers were kept. */
   library: Library;
   parsePdf: ParsePdf;
   renderCover: RenderCover;
