@@ -8,7 +8,6 @@ import type {
   Chapter,
   ChapterAid,
   ChapterAidKind,
-  ExplainMode,
   ParsedBook,
   QuizQuestion,
 } from "../shared/types.ts";
@@ -18,8 +17,10 @@ import {
   blockNotFound,
   bookNotFound,
   chapterNotFound,
+  EXPLAIN_MODES,
   invalidBody,
   invalidId,
+  isExplainMode,
   isLangCode,
   isRecord,
   LANG_HELP,
@@ -45,12 +46,9 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const QUIZ_RETRY_HINT =
   "\n\nYour last reply could not be read. Reply with only the JSON array: no code fences, no other text.";
 
-// Record types make these lists exhaustive: adding a mode or kind to the contract fails to compile until handled here.
-const EXPLAIN_MODES: Record<ExplainMode, true> = { word: true, simple: true, example: true, native: true };
+// A Record type makes this list exhaustive: adding a kind to the contract fails to compile until handled here.
 const AID_KINDS: Record<ChapterAidKind, true> = { preview: true, recap: true, quiz: true };
 
-const isExplainMode = (value: unknown): value is ExplainMode =>
-  typeof value === "string" && Object.hasOwn(EXPLAIN_MODES, value);
 const isAidKind = (value: unknown): value is ChapterAidKind =>
   typeof value === "string" && Object.hasOwn(AID_KINDS, value);
 

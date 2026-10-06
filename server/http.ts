@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { LANGUAGES } from "../shared/types.ts";
-import type { ApiError, LangCode } from "../shared/types.ts";
+import type { ApiError, ExplainMode, LangCode } from "../shared/types.ts";
 
 /** Every non-2xx answer goes through here so the client always gets the same `ApiError` shape. */
 export function apiError(c: Context, status: ContentfulStatusCode, error: string, message: string): Response {
@@ -18,6 +18,13 @@ export function isLangCode(value: unknown): value is LangCode {
 }
 
 export const LANG_HELP = `Pick one of: ${Object.keys(LANGUAGES).join(", ")}.`;
+
+// A Record type makes this list exhaustive: adding a mode to the contract fails to compile until handled here.
+export const EXPLAIN_MODES: Record<ExplainMode, true> = { word: true, simple: true, example: true, native: true };
+
+export function isExplainMode(value: unknown): value is ExplainMode {
+  return typeof value === "string" && Object.hasOwn(EXPLAIN_MODES, value);
+}
 
 export async function readJsonObject(c: Context): Promise<Record<string, unknown> | null> {
   try {

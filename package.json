@@ -11,10 +11,12 @@
     "phone": "node scripts/phone.mjs",
     "build": "vite build",
     "start": "NODE_ENV=production node server/index.ts",
+    "storage:migrate": "node scripts/storage-migrate.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1146.0",
     "@floating-ui/react": "^0.27.20",
     "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
     "@fontsource-variable/literata": "^5.3.0",

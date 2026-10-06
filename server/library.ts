@@ -1,24 +1,33 @@
-// Disk storage: <dataDir>/books/<id>/{source.pdf, book.json, meta.json, cache/} and cover.webp when page 1 is a cover.
-// A book becomes visible only when its whole directory is renamed into place, so a crash can never
-// leave a half-written book; meta.json carries everything the list view needs so listing never opens book.json.
+// The books, kept in an ObjectStore (storage.ts): the data folder on this computer, or an R2 bucket.
+// Each book is books/<id>/{source.pdf, book.json, meta.json, notes.json, cache/<key>.json}, plus cover.webp when page 1
+// is a cover. meta.json is written last and removed first, so a book exists exactly while its meta.json does: a crash
+// in between leaves files no listing shows, and the next start clears them away. meta.json carries everything the
+// list view needs, so listing never opens book.json.
+// Uploads are parsed from <dataDir>/tmp on this computer whatever the store, because the parser reads a file.
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { formatBytes } from "../shared/bytes.ts";
+import { applyNoteChange } from "../shared/notes.ts";
+import type { NoteChange } from "../shared/notes.ts";
 import type {
   BookDetail,
   BookSummary,
   BookUpdate,
   Chapter,
   ChapterSummary,
+  Note,
   ParsedBook,
   ReadingProgress,
+  StorageUsage,
 } from "../shared/types.ts";
-import { writeFileAtomic } from "./atomic-write.ts";
 import type { CoverImage } from "./cover.ts";
 import type { RenderCover } from "./deps.ts";
 import { describePosition } from "./progress.ts";
+import { createLocalStore } from "./storage.ts";
+import type { ByteRange, ObjectStore } from "./storage.ts";
 
-// Ids are a lowercase slug plus a hash. Anything else cannot be a book, so it never reaches the filesystem.
+// Ids are a lowercase slug plus a hash. Anything else cannot be a book, so it never reaches the store.
 const BOOK_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const CACHE_KEY = /^[0-9a-f]{64}$/;
 const MAX_SLUG = 48;
@@ -27,6 +36,9 @@ const LONG_HASH_CHARS = 16;
 const PARSED_BOOKS_KEPT = 4;
 // The cover is WebP; JPEG only where this computer's image library cannot write WebP.
 const COVER_FILES: Record<CoverImage["type"], string> = { "image/webp": "cover.webp", "image/jpeg": "cover.jpg" };
+// Not a book id (ids have no spaces), so adding books queues apart from any one book's work.
+const ADDING = "adding books";
+const META_KEY = /^books\/([^/]+)\/meta\.json$/;
 
 export function isBookId(id: string): boolean {
   return id.length <= 96 && BOOK_ID.test(id);
@@ -75,8 +87,23 @@ function withDetails(meta: BookMeta, book: ParsedBook): BookMeta {
   return { ...meta, progress: where && { ...progress, ...where } };
 }
 
+/** Adding a book would take the library past its storage limit. The message says how full it is. */
+export class StorageFullError extends Error {
+  readonly usage: StorageUsage;
+  readonly needed: number;
+
+  constructor(usage: StorageUsage, needed: number) {
+    super(
+      `There is no room for it: your books take ${formatBytes(usage.used)} of the ${formatBytes(usage.limit ?? 0)} they may use, and this one needs ${formatBytes(needed)}. Remove a book to make room.`,
+    );
+    this.name = "StorageFullError";
+    this.usage = usage;
+    this.needed = needed;
+  }
+}
+
 export type NewBook = {
-  /** A finished upload on disk; it is moved into the library. */
+  /** A finished upload on this computer; it is moved or copied into the store. */
   uploadPath: string;
   sha256: string;
   parsed: ParsedBook;
@@ -84,9 +111,22 @@ export type NewBook = {
   cover: CoverImage | null;
 };
 
+/** A book's PDF: its size, and its bytes when asked for. `stream` is null if the book went in the meantime. */
+export type StoredPdf = {
+  size: number;
+  stream(range?: ByteRange): Promise<ReadableStream<Uint8Array> | null>;
+};
+
+export type LibraryOptions = {
+  /** Where the books are kept. The data folder when not given. */
+  store?: ObjectStore;
+  /** The most bytes the books may take; null or absent for no limit. */
+  limit?: number | null;
+};
+
 export type Library = {
   /**
-   * Where the next upload should be written; same filesystem as the library so moving it is atomic.
+   * Where the next upload should be written, on this computer.
    * The file is named `title`, which is what the parser calls a book whose PDF has no title of its own.
    */
   newUploadPath(title: string): Promise<string>;
@@ -94,11 +134,14 @@ export type Library = {
   discardUpload(uploadPath: string): Promise<void>;
   list(): Promise<BookSummary[]>;
   findBySha(sha256: string): Promise<string | null>;
+  /** Throws StorageFullError when `bytes` more would take the books past their limit. */
+  assertRoom(bytes: number): Promise<void>;
+  /** Throws StorageFullError when there is no room for it. */
   add(book: NewBook): Promise<{ id: string; created: boolean }>;
   detail(id: string): Promise<BookDetail | null>;
   /** The parsed book as the reader sees it: with the title and author the reader last set. */
   book(id: string): Promise<ParsedBook | null>;
-  pdf(id: string): Promise<{ path: string; size: number } | null>;
+  pdf(id: string): Promise<StoredPdf | null>;
   /** Null when the book has no cover of its own, or has not been looked at yet. */
   cover(id: string): Promise<CoverImage | null>;
   /**
@@ -110,44 +153,50 @@ export type Library = {
   /** The caller has validated and trimmed `patch`. False when the book does not exist. */
   update(id: string, patch: BookUpdate): Promise<boolean>;
   remove(id: string): Promise<boolean>;
+  /** Null when the book does not exist. */
+  notes(id: string): Promise<Note[] | null>;
+  /** The caller has validated `change`. False when the book does not exist. */
+  changeNotes(id: string, change: NoteChange): Promise<boolean>;
+  usage(): Promise<StorageUsage>;
   readCache(id: string, key: string): Promise<unknown>;
   writeCache(id: string, key: string, value: unknown): Promise<void>;
 };
 
-function isMissing(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
-}
-
-async function readJson(path: string): Promise<unknown> {
-  try {
-    return JSON.parse(await readFile(path, "utf8"));
-  } catch (error) {
-    if (isMissing(error)) return null;
-    throw error;
-  }
-}
-
-export function createLibrary(dataDir: string): Library {
-  const booksDir = join(dataDir, "books");
+export function createLibrary(dataDir: string, options: LibraryOptions = {}): Library {
+  const store = options.store ?? createLocalStore(dataDir);
+  const limit = options.limit ?? null;
   const tempDir = join(dataDir, "tmp");
 
-  // Anything left in tmp/ is debris from a crash, and nothing is in flight before the first call.
-  // Done on first use rather than at construction, so an unused library never touches the disk.
+  const keyOf = (id: string, name: string): string => {
+    if (!isBookId(id)) throw new Error(`invalid book id: ${JSON.stringify(id)}`);
+    return `books/${id}/${name}`;
+  };
+  const folderOf = (id: string): string => keyOf(id, "");
+
+  async function readJson(key: string): Promise<unknown> {
+    const data = await store.read(key);
+    return data && JSON.parse(data.toString("utf8"));
+  }
+
+  // Before the first call nothing is in flight, so anything left in tmp/ is debris from a crash, and so is a book
+  // folder without its meta.json: a book that was being added or removed when DeepRead stopped.
+  // Done on first use rather than at construction, so an unused library never touches the disk or the bucket.
   let initialized: Promise<void> | null = null;
   const ready = (): Promise<void> =>
     (initialized ??= (async () => {
       await rm(tempDir, { recursive: true, force: true });
       await mkdir(tempDir, { recursive: true });
-      await mkdir(booksDir, { recursive: true });
+      const objects = await store.list("books/");
+      const complete = new Set(objects.map((object) => META_KEY.exec(object.key)?.[1]));
+      // Only folders named like a book: anything else in there was not put there by DeepRead.
+      const folders = objects.map((object) => /^books\/([^/]+)\//.exec(object.key)?.[1]).filter((id) => id !== undefined);
+      for (const id of new Set(folders)) {
+        if (isBookId(id) && !complete.has(id)) await store.removeAll(folderOf(id));
+      }
     })().catch((error: unknown) => {
       initialized = null;
       throw error;
     }));
-
-  const dirOf = (id: string): string => {
-    if (!isBookId(id)) throw new Error(`invalid book id: ${JSON.stringify(id)}`);
-    return join(booksDir, id);
-  };
 
   // Progress saves, deletes and adds on one book must not interleave their read-modify-write.
   const tails = new Map<string, Promise<unknown>>();
@@ -174,7 +223,14 @@ export function createLibrary(dataDir: string): Library {
 
   async function readMeta(id: string): Promise<BookMeta | null> {
     await ready();
-    return (await readJson(join(dirOf(id), "meta.json"))) as BookMeta | null;
+    return (await readJson(keyOf(id, "meta.json"))) as BookMeta | null;
+  }
+
+  const writeMeta = (meta: BookMeta): Promise<void> => store.write(keyOf(meta.id, "meta.json"), JSON.stringify(meta));
+
+  async function exists(id: string): Promise<boolean> {
+    await ready();
+    return (await store.size(keyOf(id, "meta.json"))) !== null;
   }
 
   function toSummary(meta: BookMeta): BookSummary {
@@ -199,24 +255,49 @@ export function createLibrary(dataDir: string): Library {
       const book = fresh && (await loadBook(meta.id));
       if (!fresh || !book) return meta;
       const next = withDetails(fresh, book);
-      if (next.progress) await writeFileAtomic(join(dirOf(meta.id), "meta.json"), JSON.stringify(next));
+      if (next.progress) await writeMeta(next);
       return next;
     });
   }
 
   async function bookIds(): Promise<string[]> {
     await ready();
-    const entries = await readdir(booksDir, { withFileTypes: true });
-    return entries.filter((entry) => entry.isDirectory() && isBookId(entry.name)).map((entry) => entry.name);
+    const objects = await store.list("books/");
+    return objects.map((object) => META_KEY.exec(object.key)?.[1]).filter((id): id is string => id !== undefined && isBookId(id));
   }
 
   async function loadBook(id: string): Promise<ParsedBook | null> {
     await ready();
     const cached = parsedBooks.get(id);
     if (cached) return cached;
-    const book = (await readJson(join(dirOf(id), "book.json"))) as ParsedBook | null;
+    const book = (await readJson(keyOf(id, "book.json"))) as ParsedBook | null;
     if (book) remember(id, book);
     return book;
+  }
+
+  async function usage(): Promise<StorageUsage> {
+    await ready();
+    const objects = await store.list("books/");
+    return { used: objects.reduce((sum, object) => sum + object.size, 0), limit, where: store.kind };
+  }
+
+  async function assertRoom(bytes: number): Promise<void> {
+    if (limit === null) return;
+    const now = await usage();
+    if (now.used + bytes > limit) throw new StorageFullError(now, bytes);
+  }
+
+  /** The book's PDF as a file on this computer (tmp/<random>/<id>/source.pdf) while `work` runs. Null when it has none. */
+  async function withLocalPdf<T>(id: string, work: (path: string) => Promise<T>): Promise<T | null> {
+    await ready();
+    const folder = join(tempDir, randomUUID());
+    try {
+      const path = join(folder, id, "source.pdf");
+      await mkdir(dirname(path), { recursive: true });
+      return (await store.download(keyOf(id, "source.pdf"), path)) ? await work(path) : null;
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
   }
 
   return {
@@ -233,17 +314,20 @@ export function createLibrary(dataDir: string): Library {
     },
 
     async list() {
-      const metas: BookMeta[] = [];
-      for (const id of await bookIds()) {
-        try {
-          const meta = await readMeta(id);
-          if (meta) metas.push(await completed(meta));
-        } catch (error) {
-          console.warn(`skipping unreadable book ${id}:`, error);
-        }
-      }
-      metas.sort((a, b) => b.addedAt.localeCompare(a.addedAt) || a.id.localeCompare(b.id));
-      return metas.map(toSummary);
+      const metas = await Promise.all(
+        (await bookIds()).map(async (id) => {
+          try {
+            const meta = await readMeta(id);
+            return meta && (await completed(meta));
+          } catch (error) {
+            console.warn(`skipping unreadable book ${id}:`, error);
+            return null;
+          }
+        }),
+      );
+      const found = metas.filter((meta) => meta !== null);
+      found.sort((a, b) => b.addedAt.localeCompare(a.addedAt) || a.id.localeCompare(b.id));
+      return found.map(toSummary);
     },
 
     async findBySha(sha256) {
@@ -256,15 +340,13 @@ export function createLibrary(dataDir: string): Library {
       return null;
     },
 
-    async add({ uploadPath, sha256, parsed, cover }) {
-      await ready();
-      const staging = join(tempDir, `book-${randomUUID()}`);
-      try {
-        await mkdir(join(staging, "cache"), { recursive: true });
-        await rename(uploadPath, join(staging, "source.pdf"));
-        await writeFileAtomic(join(staging, "book.json"), JSON.stringify(parsed));
-        if (cover) await writeFile(join(staging, COVER_FILES[cover.type]), cover.data);
+    assertRoom,
 
+    add({ uploadPath, sha256, parsed, cover }) {
+      // One at a time, so two uploads cannot both fit in the room that is left for one.
+      return serialized(ADDING, async () => {
+        await ready();
+        const bookJson = JSON.stringify(parsed);
         const chapterWordCounts = Object.fromEntries(parsed.chapters.map((c) => [c.id, chapterWords(c)]));
         // Reading time is the book's own text: a title page, an index or a licence is not reading.
         const bodyWords = parsed.chapters
@@ -274,33 +356,48 @@ export function createLibrary(dataDir: string): Library {
         // 8 hash characters make a collision between two different files vanishingly rare, but never overwrite one.
         for (const chars of [HASH_CHARS, LONG_HASH_CHARS]) {
           const id = `${slug}-${sha256.slice(0, chars)}`;
-          const meta: BookMeta = {
-            id,
-            title: parsed.title,
-            author: parsed.author,
-            pageCount: parsed.pageCount,
-            chapterCount: parsed.chapters.length,
-            wordCount: bodyWords,
-            addedAt: new Date().toISOString(),
-            progress: null,
-            sha256,
-            chapterWordCounts,
-            cover: cover !== null,
-          };
-          await writeFileAtomic(join(staging, "meta.json"), JSON.stringify(meta));
-          try {
-            await rename(staging, dirOf(id));
+          // In the book's own queue as well, so a removal of the same book still clearing its files cannot meet the new ones.
+          const added = await serialized(id, async () => {
+            const existing = await readMeta(id);
+            if (existing?.sha256 === sha256) return { id, created: false };
+            if (existing) return null;
+
+            const meta: BookMeta = {
+              id,
+              title: parsed.title,
+              author: parsed.author,
+              pageCount: parsed.pageCount,
+              chapterCount: parsed.chapters.length,
+              wordCount: bodyWords,
+              addedAt: new Date().toISOString(),
+              progress: null,
+              sha256,
+              chapterWordCounts,
+              cover: cover !== null,
+            };
+            const metaJson = JSON.stringify(meta);
+            const pdfBytes = (await stat(uploadPath)).size;
+            await assertRoom(pdfBytes + Buffer.byteLength(bookJson) + (cover?.data.byteLength ?? 0) + Buffer.byteLength(metaJson));
+
+            try {
+              // Whatever an earlier copy of this book left behind (old notes, old answers) must not become part of this one.
+              await store.removeAll(folderOf(id));
+              await store.putFile(keyOf(id, "source.pdf"), uploadPath);
+              await store.write(keyOf(id, "book.json"), bookJson);
+              if (cover) await store.write(keyOf(id, COVER_FILES[cover.type]), cover.data);
+              // Last: the book is in the library from this moment, with everything it needs already stored.
+              await store.write(keyOf(id, "meta.json"), metaJson);
+            } catch (error) {
+              // Whatever this leaves is cleared at the next start.
+              await store.removeAll(folderOf(id)).catch(() => {});
+              throw error;
+            }
             return { id, created: true };
-          } catch (error) {
-            const taken = error instanceof Error && "code" in error && (error.code === "ENOTEMPTY" || error.code === "EEXIST");
-            if (!taken) throw error;
-            if ((await readMeta(id))?.sha256 === sha256) return { id, created: false };
-          }
+          });
+          if (added) return added;
         }
         throw new Error("could not find a free book id");
-      } finally {
-        await rm(staging, { recursive: true, force: true });
-      }
+      });
     },
 
     async detail(id) {
@@ -327,23 +424,16 @@ export function createLibrary(dataDir: string): Library {
 
     async pdf(id) {
       await ready();
-      const path = join(dirOf(id), "source.pdf");
-      try {
-        return { path, size: (await stat(path)).size };
-      } catch (error) {
-        if (isMissing(error)) return null;
-        throw error;
-      }
+      const key = keyOf(id, "source.pdf");
+      const size = await store.size(key);
+      return size === null ? null : { size, stream: (range) => store.stream(key, range) };
     },
 
     async cover(id) {
       await ready();
       for (const [type, name] of Object.entries(COVER_FILES) as Array<[CoverImage["type"], string]>) {
-        try {
-          return { data: await readFile(join(dirOf(id), name)), type };
-        } catch (error) {
-          if (!isMissing(error)) throw error;
-        }
+        const data = await store.read(keyOf(id, name));
+        if (data) return { data: new Uint8Array(data), type };
       }
       return null;
     },
@@ -354,14 +444,14 @@ export function createLibrary(dataDir: string): Library {
           try {
             if ((await readMeta(id))?.cover !== undefined) continue;
             // Drawn outside the queue: a reader saving their place in this book does not wait for the drawing.
-            const cover = await renderCover(join(dirOf(id), "source.pdf"));
+            const cover = await withLocalPdf(id, renderCover);
             await serialized(id, async () => {
               const meta = await readMeta(id);
               // Removed while its cover was being drawn: writing now would bring part of it back.
               if (!meta) return;
               // The image first, so meta.json never promises a cover that is not there.
-              if (cover) await writeFileAtomic(join(dirOf(id), COVER_FILES[cover.type]), cover.data);
-              await writeFileAtomic(join(dirOf(id), "meta.json"), JSON.stringify({ ...meta, cover: cover !== null }));
+              if (cover) await store.write(keyOf(id, COVER_FILES[cover.type]), cover.data);
+              await writeMeta({ ...meta, cover: cover !== null });
             });
           } catch (error) {
             console.warn(`could not look for the cover of ${id}:`, error);
@@ -374,13 +464,12 @@ export function createLibrary(dataDir: string): Library {
 
     setProgress(id, chapterId, blockId, offset) {
       return serialized(id, async () => {
-        await ready();
         const meta = await readMeta(id);
         const book = meta && (await loadBook(id));
         const where = meta && book && describePosition(book, meta.chapterWordCounts, chapterId, blockId);
         if (!meta || !where) return null;
         const progress: ReadingProgress = { chapterId, blockId, offset, updatedAt: new Date().toISOString(), ...where };
-        await writeFileAtomic(join(dirOf(id), "meta.json"), JSON.stringify({ ...meta, progress }));
+        await writeMeta({ ...meta, progress });
         return progress;
       });
     },
@@ -389,39 +478,57 @@ export function createLibrary(dataDir: string): Library {
       return serialized(id, async () => {
         const meta = await readMeta(id);
         if (!meta) return false;
-        const next: BookMeta = {
+        await writeMeta({
           ...meta,
           title: patch.title ?? meta.title,
           author: patch.author === undefined ? meta.author : patch.author,
-        };
-        await writeFileAtomic(join(dirOf(id), "meta.json"), JSON.stringify(next));
+        });
         return true;
       });
     },
 
     remove(id) {
       return serialized(id, async () => {
-        await ready();
-        const doomed = join(tempDir, `deleted-${randomUUID()}`);
-        try {
-          // Rename first: the book disappears in one atomic step, and the slow recursive delete happens after.
-          await rename(dirOf(id), doomed);
-        } catch (error) {
-          if (isMissing(error)) return false;
-          throw error;
-        }
+        if (!(await exists(id))) return false;
+        // meta.json first: the book leaves the library in one step, and the rest of its files go after it.
+        await store.remove([keyOf(id, "meta.json")]);
         parsedBooks.delete(id);
-        await rm(doomed, { recursive: true, force: true });
+        try {
+          await store.removeAll(folderOf(id));
+        } catch (error) {
+          // The book is gone already; what is left of its files is cleared at the next start.
+          console.warn(`could not clear away all the files of removed book ${id}:`, error);
+        }
         return true;
       });
     },
 
+    async notes(id) {
+      if (!(await exists(id))) return null;
+      return ((await readJson(keyOf(id, "notes.json"))) as Note[] | null) ?? [];
+    },
+
+    changeNotes(id, change) {
+      // In the book's queue: two devices changing notes at once each keep their change.
+      return serialized(id, async () => {
+        // Checked in the queue, so a note saved as the book is removed cannot outlive it.
+        if (!(await exists(id))) return false;
+        const key = keyOf(id, "notes.json");
+        const notes = applyNoteChange(((await readJson(key)) as Note[] | null) ?? [], change);
+        if (notes.length === 0) await store.remove([key]);
+        else await store.write(key, JSON.stringify(notes));
+        return true;
+      });
+    },
+
+    usage,
+
     async readCache(id, key) {
       if (!CACHE_KEY.test(key)) return null;
       try {
-        return await readJson(join(dirOf(id), "cache", `${key}.json`));
+        return await readJson(keyOf(id, `cache/${key}.json`));
       } catch (error) {
-        // A damaged cache file is just a miss; the next answer overwrites it.
+        // A damaged cache entry is just a miss; the next answer overwrites it.
         console.warn(`ignoring unreadable cache entry for ${id}:`, error);
         return null;
       }
@@ -430,11 +537,13 @@ export function createLibrary(dataDir: string): Library {
     async writeCache(id, key, value) {
       if (!CACHE_KEY.test(key)) return;
       try {
-        // No mkdir: if the book was deleted while the answer was generating, this must fail, not resurrect it.
-        await writeFileAtomic(join(dirOf(id), "cache", `${key}.json`), JSON.stringify(value));
+        await serialized(id, async () => {
+          // If the book was removed while the answer was generating, its answer must not bring part of it back.
+          if (await exists(id)) await store.write(keyOf(id, `cache/${key}.json`), JSON.stringify(value));
+        });
       } catch (error) {
         // A cache that cannot be written only costs a regeneration next time.
-        if (!isMissing(error)) console.warn(`could not cache answer for ${id}:`, error);
+        console.warn(`could not cache answer for ${id}:`, error);
       }
     },
   };

@@ -17,6 +17,7 @@ export function createApp(deps: AppDeps): Hono {
 
   app.use("/api/*", accessGuard(deps.remoteKey));
   app.get("/api/health", (c) => c.json({ ok: true }));
+  app.get("/api/storage", async (c) => c.json(await library.usage()));
 
   app.get("/api/translate", async (c) => {
     const text = (c.req.query("q") ?? "").trim();

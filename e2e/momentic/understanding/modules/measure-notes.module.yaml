@@ -33,9 +33,12 @@ steps:
         }
         let saved = null;
         try {
-          saved = Object.entries(localStorage)
-            .filter(([key]) => key.startsWith("deepread.notes."))
-            .map(([key, value]) => ({ key, count: JSON.parse(value).length }));
+          // Read saved notes from the server; bookId is the first segment after "/book/"
+          const bookId = location.pathname.split('/')[2];
+          const res = await fetch(`/api/books/${bookId}/notes`);
+          if (!res.ok) throw new Error(`failed to fetch notes: ${res.status}`);
+          const serverNotes = await res.json();
+          saved = [{ count: serverNotes.length }];
         } catch {
           saved = "unreadable";
         }

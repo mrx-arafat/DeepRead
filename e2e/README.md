@@ -18,10 +18,13 @@ Tests named `bug-*` describe a known problem and fail until it is fixed.
 Use a separate instance so the tests never touch your own library:
 
 ```bash
-DEEPREAD_API_PORT=8792 DEEPREAD_DATA_DIR=data/e2e-reading node server/index.ts
+DEEPREAD_STORAGE=local DEEPREAD_API_PORT=8792 DEEPREAD_DATA_DIR=data/e2e-reading node server/index.ts
 DEEPREAD_API_PORT=8792 pnpm exec vite --port 5182 --strictPort
 curl -s -X POST http://127.0.0.1:8792/api/books -F 'file=@e2e/fixtures/problems-of-philosophy.pdf;type=application/pdf'
 ```
+
+Every server start command here begins with `DEEPREAD_STORAGE=local`.
+A `.env.local` that points at R2 would otherwise make the test instance use the real bucket, and the library journeys delete every book in their instance.
 
 Then, with `MOMENTIC_API_KEY` set (and `MOMENTIC_SERVER` if your account is not on production):
 
@@ -33,7 +36,11 @@ Give each area its own instance (its own API port, Vite port and data directory,
 The library journeys delete every book in the instance they run against, so they must never share one with another area.
 They also run one at a time (`parallel: 1` in their config), for the same reason.
 
-Pages-mode journeys set `deepread.prefs` to `{"layout":"pages"}` in localStorage before the first app load. They have dedicated configs and use separate API/Vite instances and data folders (reading-pages: 8796/5186, understanding-pages: 8797/5187, listening-pages: 8798/5188). Start each server with `DEEPREAD_API_PORT=<api> DEEPREAD_DATA_DIR=data/e2e-<area>-pages node server/index.ts` and Vite with `DEEPREAD_API_PORT=<api> pnpm exec vite --port <vite> --strictPort`, then upload the fixture book to each instance before running that area's config. For each run, use its `momentic.config.yaml` with the matching `--url-override`. Keep these Pages instances separate from the Scroll areas because saved progress and annotations are instance data.
+Pages-mode journeys set `deepread.prefs` to `{"layout":"pages"}` in localStorage before the first app load.
+They have dedicated configs and use separate API/Vite instances and data folders (reading-pages: 8796/5186, understanding-pages: 8797/5187, listening-pages: 8798/5188).
+Start each server with `DEEPREAD_STORAGE=local DEEPREAD_API_PORT=<api> DEEPREAD_DATA_DIR=data/e2e-<area>-pages node server/index.ts` and Vite with `DEEPREAD_API_PORT=<api> pnpm exec vite --port <vite> --strictPort`, then upload the fixture book to each instance before running that area's config.
+For each run, use its `momentic.config.yaml` with the matching `--url-override`.
+Keep these Pages instances separate from the Scroll areas because saved progress and notes are instance data.
 
 The test book `fixtures/problems-of-philosophy.pdf` is Bertrand Russell's *The Problems of Philosophy*, from Project Gutenberg, in the public domain.
 

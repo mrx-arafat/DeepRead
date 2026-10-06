@@ -140,6 +140,25 @@ export type ExplainMode =
   /** Explain in the reader's own language. */
   | "native";
 
+/** A question the reader asked about a passage. Kept with the book; the server caches the answer. */
+export type Note = {
+  id: string;
+  chapterId: string;
+  blockId: string;
+  /** The text the reader selected. */
+  quote: string;
+  mode: ExplainMode;
+  /** The language it was asked in. A card keeps it: picking another language later must not ask again. */
+  lang: LangCode;
+};
+
+/** How much room the books take, where they are kept, and the most they may take (null: no limit). */
+export type StorageUsage = {
+  used: number;
+  limit: number | null;
+  where: "local" | "r2";
+};
+
 export type ExplainRequest = {
   bookId: string;
   chapterId: string;

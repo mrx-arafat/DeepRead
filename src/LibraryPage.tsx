@@ -1,8 +1,9 @@
 import { FileUp, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
+import { formatBytes } from "../shared/bytes.ts";
 import { LANGUAGES } from "../shared/types.ts";
-import type { BookSummary, BookUpdate } from "../shared/types.ts";
+import type { BookSummary, BookUpdate, StorageUsage } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
@@ -11,34 +12,19 @@ import { ContinueCard } from "./library/ContinueCard.tsx";
 import { useFileDrop } from "./library/useFileDrop.ts";
 import { APP_NAME, useDocumentTitle } from "./pageTitle.ts";
 import { usePrefs } from "./prefs.ts";
+import { forgetHeldNotes } from "./reader/noteSync.ts";
 
 const ADD_BUTTON = "add";
 
 /** The one row that is being edited or asked to confirm its removal. */
 type Active = { kind: "edit"; id: string } | { kind: "delete"; id: string; error: string | null };
 
-/** The reader saves a book's notes in this browser, under deepread.notes.<bookId>.<chapterId>. */
-function forgetNotes(bookId: string): void {
-  const prefix = `deepread.notes.${bookId}`;
-  try {
-    // Collected first: removing a key while counting would make the next one slip past.
-    const keys: string[] = [];
-    for (let at = 0; at < localStorage.length; at += 1) {
-      const key = localStorage.key(at);
-      if (key?.startsWith(prefix)) keys.push(key);
-    }
-    for (const key of keys) localStorage.removeItem(key);
-  } catch (error) {
-    // The book is already gone; notes that could not be cleared are only wasted space.
-    console.warn("could not remove the notes of a deleted book:", error);
-  }
-}
-
 export function LibraryPage() {
   const [, navigate] = useLocation();
   useDocumentTitle(`Your books - ${APP_NAME}`);
   const { lang } = usePrefs();
   const [books, setBooks] = useState<BookSummary[] | null>(null);
+  const [storage, setStorage] = useState<StorageUsage | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +48,11 @@ export function LibraryPage() {
       .listBooks()
       .then((list) => current && setBooks(list))
       .catch((err: Error) => current && setLoadError(err.message));
+    // Only a line under the shelf: the shelf does not wait for it, and without it the shelf works the same.
+    api
+      .storage()
+      .then((usage) => current && setStorage(usage))
+      .catch(() => {});
     return () => {
       current = false;
     };
@@ -134,12 +125,13 @@ export function LibraryPage() {
     try {
       await api.deleteBook(id);
       // Only now: if the request failed the book is still here, and so are its notes.
-      forgetNotes(id);
+      forgetHeldNotes(id);
       // The row the reader was on is about to vanish, and focus would fall to the page: hand it to a neighbour.
       const at = books?.findIndex((book) => book.id === id) ?? -1;
       setFocusAfterRemoval(books?.[at + 1]?.id ?? books?.[at - 1]?.id ?? ADD_BUTTON);
       setBooks((all) => all?.filter((book) => book.id !== id) ?? null);
       setActive(null);
+      api.storage().then(setStorage, () => {});
     } catch (err) {
       const message = err instanceof Error ? err.message : "That book could not be removed. Please try again.";
       setActive({ kind: "delete", id, error: message });
@@ -265,6 +257,13 @@ export function LibraryPage() {
               );
             })}
           </ul>
+          {storage && (
+            <p className="library-storage">
+              Your books take {formatBytes(storage.used)}
+              {storage.limit !== null && ` of ${formatBytes(storage.limit)}`},{" "}
+              {storage.where === "r2" ? "kept in Cloudflare R2" : "kept on this computer"}.
+            </p>
+          )}
         </section>
       )}
     </main>

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Chapter } from "../../shared/types.ts";
+import type { Chapter, Note } from "../../shared/types.ts";
 import { readableBlocks } from "./book.ts";
-import type { Note } from "./NoteCard.tsx";
 import { quoteSpans, rangeInBlock, setHighlight } from "./textRanges.ts";
 
 /** The note a pointer or focus event is about: the card it happened in, if any. */

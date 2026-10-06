@@ -1,19 +1,8 @@
 import { X } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { LANGUAGES, type ExplainMode, type ExplainRequest, type LangCode } from "../../shared/types.ts";
+import { LANGUAGES, type ExplainMode, type ExplainRequest, type LangCode, type Note } from "../../shared/types.ts";
 import { parseSections, RichText } from "./RichText.tsx";
 import { useAiStream } from "./useAiStream.ts";
-
-export type Note = {
-  id: string;
-  chapterId: string;
-  blockId: string;
-  /** The text the reader selected. */
-  quote: string;
-  mode: ExplainMode;
-  /** The language it was asked in. A card keeps it: picking another language later must not ask again. */
-  lang: LangCode;
-};
 
 type Props = {
   note: Note;

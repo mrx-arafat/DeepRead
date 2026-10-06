@@ -1,6 +1,6 @@
 import { memo, useEffect, useEffectEvent, useRef, type MouseEvent } from "react";
-import type { Block } from "../../shared/types.ts";
-import { NoteCard, type Note } from "./NoteCard.tsx";
+import type { Block, Note } from "../../shared/types.ts";
+import { NoteCard } from "./NoteCard.tsx";
 import { blockOf, termSpan, wordRangeAtPoint } from "./textRanges.ts";
 import { useWordCursor } from "./useWordCursor.ts";
 import type { Lookup } from "./WordPopover.tsx";

@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createWriteStream } from "node:fs";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { BookUpdate, ParsedBook, ReadingProgress } from "../shared/types.ts";
+import type { BookUpdate, Note, ParsedBook, ReadingProgress } from "../shared/types.ts";
 import type { ParsePdf, RenderCover } from "./deps.ts";
 import {
   apiError,
@@ -15,11 +15,14 @@ import {
   chapterNotFound,
   invalidBody,
   invalidId,
+  isExplainMode,
+  isLangCode,
+  isRecord,
   readJsonObject,
   readString,
 } from "./http.ts";
-import { isBookId } from "./library.ts";
-import type { Library } from "./library.ts";
+import { isBookId, StorageFullError } from "./library.ts";
+import type { Library, StoredPdf } from "./library.ts";
 import { ParseError } from "./parser/errors.ts";
 import { titleFromFileName } from "./upload-name.ts";
 
@@ -31,6 +34,8 @@ const MAX_ID_FIELD = 200;
 // Counted in UTF-16 units, the same way the edit form's maxLength counts, so the form never allows what the server refuses.
 const MAX_TITLE_CHARS = 200;
 const MAX_AUTHOR_CHARS = 120;
+// The longest passage the reader can ask about (routes-ai.ts takes the same).
+const MAX_QUOTE_CHARS = 5_000;
 
 /** Checks a PATCH body field by field; the Response is the 400 to send instead. */
 function readBookUpdate(c: Context, body: Record<string, unknown>): BookUpdate | Response {
@@ -81,6 +86,20 @@ async function saveUpload(file: File, destination: string): Promise<string> {
   return hash.digest("hex");
 }
 
+/** A note in a request body, or null when it is not one. */
+function readNote(value: unknown): Note | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value, "id", MAX_ID_FIELD);
+  const chapterId = readString(value, "chapterId", MAX_ID_FIELD);
+  const blockId = readString(value, "blockId", MAX_ID_FIELD);
+  const { quote, mode, lang } = value;
+  if (!id || !chapterId || !blockId || typeof quote !== "string" || quote.length > MAX_QUOTE_CHARS) return null;
+  if (!isExplainMode(mode) || !isLangCode(lang)) return null;
+  return { id, chapterId, blockId, quote, mode, lang };
+}
+
+const storageFull = (c: Context, error: StorageFullError): Response => apiError(c, 507, "storage_full", error.message);
+
 type ByteRange = { start: number; end: number };
 
 /** "unsatisfiable" is a valid range that lies outside the file; null means no usable Range header. */
@@ -98,7 +117,8 @@ function parseRange(header: string | undefined, size: number): ByteRange | "unsa
   return start >= size || start > end ? "unsatisfiable" : { start, end };
 }
 
-function sendPdf(c: Context, path: string, size: number): Response {
+async function sendPdf(c: Context, pdf: StoredPdf): Promise<Response> {
+  const { size } = pdf;
   const headers = {
     "Content-Type": "application/pdf",
     "Accept-Ranges": "bytes",
@@ -117,7 +137,15 @@ function sendPdf(c: Context, path: string, size: number): Response {
   };
   const status = range ? 206 : 200;
   if (c.req.method === "HEAD") return c.body(null, status, partial);
-  const body = Readable.toWeb(createReadStream(path, { start, end })) as unknown as ReadableStream;
+  const body = await pdf.stream({ start, end });
+  // Removed since its size was looked up.
+  if (!body) return bookNotFound(c);
+  // The reader went away while it was being opened: nothing will read it, so it must not hold the file or connection.
+  if (c.req.raw.signal.aborted) {
+    await body.cancel();
+    // 499, "client closed request": nobody is there to read it.
+    return new Response(null, { status: 499 });
+  }
   return c.body(body, status, partial);
 }
 
@@ -163,6 +191,8 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
           const existing = await library.detail(existingId);
           if (existing) return c.json(existing, 200);
         }
+        // Before parsing, which can take a minute for a long book: a library with no room says so at once.
+        await library.assertRoom(file.size);
 
         // Drawn while the book is parsed, each in a thread of its own, so looking for the cover adds nothing to the wait.
         // It never rejects, so a parse that fails can leave it to finish on its own.
@@ -180,6 +210,9 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
         const detail = await library.detail(id);
         if (!detail) throw new Error(`book ${id} vanished right after it was added`);
         return c.json(detail, created ? 201 : 200);
+      } catch (error) {
+        if (error instanceof StorageFullError) return storageFull(c, error);
+        throw error;
       } finally {
         // The upload is moved into the library on success; this removes what is left of it on every path.
         await library.discardUpload(uploadPath);
@@ -233,7 +266,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
     const id = c.req.param("id");
     if (!isBookId(id)) return invalidId(c);
     const pdf = await library.pdf(id);
-    return pdf ? sendPdf(c, pdf.path, pdf.size) : bookNotFound(c);
+    return pdf ? sendPdf(c, pdf) : bookNotFound(c);
   });
 
   routes.get("/:id/cover", async (c) => {
@@ -249,6 +282,41 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
     };
     if (c.req.header("if-none-match") === headers.ETag) return c.body(null, 304, headers);
     return c.body(cover.data, 200, headers);
+  });
+
+  routes.get("/:id/notes", async (c) => {
+    const id = c.req.param("id");
+    if (!isBookId(id)) return invalidId(c);
+    const notes = await library.notes(id);
+    return notes ? c.json(notes) : bookNotFound(c);
+  });
+
+  // One note at a time, never the whole list: a list sent from one device would wipe notes added on another.
+  routes.put(
+    "/:id/notes/:noteId",
+    bodyLimit({
+      maxSize: 64 * 1024,
+      onError: (c) => invalidBody(c, "the body is too large."),
+    }),
+    async (c) => {
+      const id = c.req.param("id");
+      if (!isBookId(id)) return invalidId(c);
+      const body = await readJsonObject(c);
+      const note = body && readNote(body.note);
+      const before = body?.before ?? null;
+      if (!note || note.id !== c.req.param("noteId") || (before !== null && typeof before !== "string")) {
+        return invalidBody(c, "send JSON like {\"note\": {...}, \"before\": null}, with the note's id in the address.");
+      }
+      return (await library.changeNotes(id, { kind: "put", note, before })) ? c.body(null, 204) : bookNotFound(c);
+    },
+  );
+
+  routes.delete("/:id/notes/:noteId", async (c) => {
+    const id = c.req.param("id");
+    if (!isBookId(id)) return invalidId(c);
+    const noteId = c.req.param("noteId");
+    if (noteId.length > MAX_ID_FIELD) return invalidBody(c, "that note id is too long.");
+    return (await library.changeNotes(id, { kind: "remove", id: noteId })) ? c.body(null, 204) : bookNotFound(c);
   });
 
   routes.put(

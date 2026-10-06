@@ -1,3 +1,4 @@
+import type { NoteChange } from "../shared/notes.ts";
 import type {
   AiProviderId,
   AiStatus,
@@ -7,8 +8,10 @@ import type {
   BookUpdate,
   Chapter,
   LangCode,
+  Note,
   QuickTranslation,
   ReadingProgress,
+  StorageUsage,
 } from "../shared/types.ts";
 
 export class ApiFailure extends Error {
@@ -77,6 +80,12 @@ export const api = {
   },
   saveProgress: (bookId: string, chapterId: string, blockId: string, offset: number) =>
     request<ReadingProgress>(`/api/books/${bookId}/progress`, json("PUT", { chapterId, blockId, offset })),
+  getNotes: (bookId: string) => request<Note[]>(`/api/books/${bookId}/notes`),
+  changeNote: (bookId: string, change: NoteChange) =>
+    change.kind === "put"
+      ? request<void>(`/api/books/${bookId}/notes/${encodeURIComponent(change.note.id)}`, json("PUT", { note: change.note, before: change.before }))
+      : request<void>(`/api/books/${bookId}/notes/${encodeURIComponent(change.id)}`, { method: "DELETE" }),
+  storage: () => request<StorageUsage>("/api/storage"),
   translate: (text: string, lang: LangCode, signal?: AbortSignal) =>
     request<QuickTranslation>(
       `/api/translate?q=${encodeURIComponent(text)}&lang=${lang}`,

@@ -1,11 +1,10 @@
 import { memo, useMemo } from "react";
-import type { BookDetail, Chapter, LangCode } from "../../shared/types.ts";
+import type { BookDetail, Chapter, LangCode, Note } from "../../shared/types.ts";
 import { chapterPosition, kindOf, minutes, readableBlocks } from "./book.ts";
 import { ChapterAid } from "./ChapterAid.tsx";
 import { ChapterText, type TextActions } from "./ChapterText.tsx";
 import { titleId } from "./listenBlocks.ts";
 import { LookupTip } from "./LookupTip.tsx";
-import type { Note } from "./NoteCard.tsx";
 
 type Props = {
   chapter: Chapter;

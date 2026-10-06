@@ -1,11 +1,11 @@
 // Functional test of the HTTP API: real routes and real disk storage in a temp dir,
 // with the PDF parser, the cover renderer, the model and the translator replaced by fakes (no network, no model process).
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiProviderId, AiStatus, ApiError, BookDetail, BookSummary, ParsedBook } from "../shared/types.ts";
+import type { AiProviderId, AiStatus, ApiError, BookDetail, BookSummary, Note, ParsedBook, StorageUsage } from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
 import { createApp } from "./app.ts";
 import type { ParsePdf, RenderCover } from "./deps.ts";
@@ -129,12 +129,9 @@ describe("DeepRead API", () => {
   let app: Hono;
   let llm: ReturnType<typeof fakeLlm>;
 
-  beforeEach(async () => {
-    dataDir = await mkdtemp(join(tmpdir(), "deepread-test-"));
-    library = createLibrary(dataDir);
-    llm = fakeLlm();
-    app = createApp({
-      library,
+  const appFor = (books: Library) =>
+    createApp({
+      library: books,
       parsePdf: fakeParsePdf,
       renderCover: fakeRenderCover,
       llm: llm.llm,
@@ -143,6 +140,16 @@ describe("DeepRead API", () => {
         return `${lang}:${text}`;
       },
     });
+  /** DeepRead starting again on the same data folder, with `limit` set. */
+  const restart = (limit: number | null = null) => {
+    library = createLibrary(dataDir, { limit });
+    app = appFor(library);
+  };
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "deepread-test-"));
+    llm = fakeLlm();
+    restart();
   });
 
   afterEach(async () => {
@@ -417,6 +424,91 @@ describe("DeepRead API", () => {
       expect(await (await app.request("/api/books")).json()).toEqual([]);
       expect(await entries(join(dataDir, "books"))).toEqual([]);
       expect(await entries(join(dataDir, "tmp"))).toEqual([]);
+    });
+  });
+
+  describe("storage and notes", () => {
+    const storage = async () => (await (await app.request("/api/storage")).json()) as StorageUsage;
+    const bookIds = async () => ((await (await app.request("/api/books")).json()) as BookSummary[]).map((b) => b.id);
+    const notesOf = async (id: string) => (await (await app.request(`/api/books/${id}/notes`)).json()) as Note[];
+
+    it("should say how much room the books take, and refuse a book that would take them past the limit", async () => {
+      expect(await storage()).toEqual({ used: 0, limit: null, where: "local" });
+      const id = await addBook();
+      const files = await readdir(join(dataDir, "books", id), { recursive: true, withFileTypes: true });
+      const onDisk = await Promise.all(files.filter((f) => f.isFile()).map(async (f) => (await stat(join(f.parentPath, f.name))).size));
+      const { used } = await storage();
+      expect(used).toBe(onDisk.reduce((sum, size) => sum + size, 0));
+
+      const second = sampleBook("Second Book");
+      // Too little room for the PDF itself: refused before the book is read.
+      restart(used + 100);
+      const early = await upload(second);
+      expect(early.status).toBe(507);
+      expect(await early.json()).toMatchObject({ error: "storage_full", message: expect.stringContaining("Remove a book to make room.") });
+
+      // Room for the PDF but not for the parsed book that comes with it: refused before anything is stored.
+      restart(used + pdfBytes(second).length + 10);
+      expect((await upload(second)).status).toBe(507);
+      expect(await bookIds()).toEqual([id]);
+      expect(await storage()).toEqual({ used, limit: used + pdfBytes(second).length + 10, where: "local" });
+      expect(await entries(join(dataDir, "tmp"))).toEqual([]);
+
+      restart(used * 3);
+      expect((await upload(second)).status).toBe(201);
+    });
+
+    it("should keep a book's notes with it one change at a time, and remove them with it", async () => {
+      const id = await addBook();
+      const note = (n: string, blockId = "c1-b2", quote = n): Note => ({ id: n, chapterId: "c1", blockId, quote, mode: "word", lang: "bn" });
+      const put = (n: Note, before: string | null = null) => send("PUT", `/api/books/${id}/notes/${n.id}`, { note: n, before });
+      expect(await notesOf(id)).toEqual([]);
+
+      // Two devices add a note each, neither knowing the other's: both are kept.
+      expect((await Promise.all([put(note("phone")), put(note("desk"))])).map((r) => r.status)).toEqual([204, 204]);
+      expect((await notesOf(id)).map((n) => n.id).sort()).toEqual(["desk", "phone"]);
+
+      // Asking the same thing about the same text again replaces the old note; a note put back goes where it was.
+      expect((await put({ ...note("again"), quote: "phone" })).status).toBe(204);
+      expect((await notesOf(id)).map((n) => n.id).sort()).toEqual(["again", "desk"]);
+      expect((await send("DELETE", `/api/books/${id}/notes/desk`)).status).toBe(204);
+      expect((await send("DELETE", `/api/books/${id}/notes/desk`)).status).toBe(204);
+      expect((await put(note("desk"), "again")).status).toBe(204);
+      expect((await notesOf(id)).map((n) => n.id)).toEqual(["desk", "again"]);
+
+      expect((await send("PUT", `/api/books/${id}/notes/x`, { note: { ...note("x"), mode: "shout" } })).status).toBe(400);
+      expect((await send("PUT", `/api/books/${id}/notes/other`, { note: note("x") })).status).toBe(400);
+      expect((await send("PUT", `/api/books/${id}/notes/x`, [note("x")])).status).toBe(400);
+
+      expect((await send("DELETE", `/api/books/${id}`)).status).toBe(204);
+      expect((await app.request(`/api/books/${id}/notes`)).status).toBe(404);
+      expect((await put(note("late"))).status).toBe(404);
+      expect(await entries(join(dataDir, "books"))).toEqual([]);
+    });
+
+    it("should not give a book added again what an earlier copy of it left behind", async () => {
+      const id = await addBook();
+      const note: Note = { id: "old", chapterId: "c1", blockId: "c1-b2", quote: "reader", mode: "word", lang: "bn" };
+      await send("PUT", `/api/books/${id}/notes/old`, { note, before: null });
+      // Removed, but its files could not all be cleared away before the same book was added again.
+      await rm(join(dataDir, "books", id, "meta.json"));
+
+      expect((await upload(sampleBook())).status).toBe(201);
+      expect(await notesOf(id)).toEqual([]);
+    });
+
+    it("should clear away a book that was half added or half removed when DeepRead stopped", async () => {
+      const id = await addBook();
+      // Stopped after the PDF was stored, before meta.json: a book that never was.
+      const unfinished = join(dataDir, "books", "half-added-0123abcd");
+      await mkdir(join(unfinished, "cache"), { recursive: true });
+      await writeFile(join(unfinished, "source.pdf"), "%PDF-1.4");
+      const before = (await storage()).used;
+
+      restart();
+      expect(await bookIds()).toEqual([id]);
+      expect(await readdir(join(dataDir, "books"))).toEqual([id]);
+      expect((await storage()).used).toBe(before - "%PDF-1.4".length);
     });
   });
 

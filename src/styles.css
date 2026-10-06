@@ -827,6 +827,13 @@ select {
   margin-top: 1.75rem;
 }
 
+/* How much room the books take: a quiet line under the shelf, for the reader who keeps an eye on it. */
+.library-storage {
+  margin-top: 3rem;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
 .shelf-item {
   position: relative;
   display: flex;

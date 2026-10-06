@@ -99,7 +99,8 @@ To uninstall, delete the folder, the command, and the private Node.js copy if th
 rm -rf ~/DeepRead ~/.local/bin/deepread ~/.local/share/deepread
 ```
 
-This also deletes your books and notes, which live in `~/DeepRead/data`.
+This also deletes your books and notes, which live in `~/DeepRead/data` unless you keep them in Cloudflare R2.
+Books and notes kept in R2 stay in your bucket, so this does not remove them (see [Keep your books in Cloudflare R2](#keep-your-books-in-cloudflare-r2)).
 The installer may have added a line mentioning `.local/bin` to `~/.zshrc`, `~/.bashrc` or `~/.bash_profile`; you can delete it too.
 
 </details>
@@ -185,6 +186,10 @@ Select a sentence or a paragraph, then choose what you want:
 <table><tr><td><img src="docs/images/select-passage.webp" alt="A selected passage with the Explain, Example, In Bangla and Listen buttons" width="900"></td></tr></table>
 
 The answer is pinned beside the paragraph like a teacher's note, and it stays there when you come back to the book.
+DeepRead keeps these notes with the book, not in the browser, so clearing your browser does not lose them and they show on your phone too.
+Notes that were saved in a browser before are moved up automatically the next time you open that book.
+If DeepRead cannot be reached when you make a note, your browser holds it until it can.
+Your reading settings under **Aa** are different: they stay in each browser, so a phone has its own.
 
 <table><tr><td><img src="docs/images/explain.webp" alt="An explanation note in the margin beside the passage" width="900"></td></tr></table>
 
@@ -286,9 +291,11 @@ Find a version of the book whose text you can select, or run it through OCR firs
 <details>
 <summary><b>Where are my books and notes?</b></summary>
 
-In `~/DeepRead/data`.
+By default, in `~/DeepRead/data`.
 Copy that folder to back them up.
 `deepread update` never touches it.
+If you chose Cloudflare R2, they are in your bucket instead (see [Keep your books in Cloudflare R2](#keep-your-books-in-cloudflare-r2)).
+The `data` folder then holds only a few small things, such as your AI helper choice.
 
 </details>
 
@@ -306,12 +313,101 @@ The link carries a secret key, kept in `data/remote-key`, that unlocks DeepRead 
 Without the key, the tunnel answers nothing but the empty page shell.
 Anyone who has the link can use DeepRead and your AI helper's usage, so do not share it.
 
+## Keep your books in Cloudflare R2
+
+By default your books stay in the `data` folder on your computer.
+If you would rather keep them online, DeepRead can keep them in a [Cloudflare R2](https://developers.cloudflare.com/r2/) bucket, which is a storage folder in your own Cloudflare account.
+Then your library does not depend on this one computer.
+You can also set the most space your books may take, whether they are kept on your computer or in R2.
+
+What goes into the bucket: each book's PDF, its parsed text, its cover, the AI answers saved for it, and your notes.
+A few small things always stay on your computer: your AI helper choice, saved quick word translations, the folder DeepRead keeps for Codex, the phone key, the logs, and a book's file while it is being added.
+
+1. In your Cloudflare account, create an R2 bucket.
+2. Still in Cloudflare, open **R2**, then **Manage API tokens**, then **Create API token**.
+   Give the token **Object Read & Write** on your bucket.
+   Cloudflare then shows an access key id, a secret access key and an endpoint (a web address ending in `r2.cloudflarestorage.com`).
+3. Open Terminal and make your settings file from the template that comes with DeepRead:
+
+   ```bash
+   cd ~/DeepRead
+   cp .env.example .env.local
+   ```
+
+   If you installed DeepRead into another folder, use that folder instead of `~/DeepRead`.
+4. Open `.env.local` in a text editor (on a Mac, `open -e .env.local` does it) and fill it in.
+   It looks like this, with your own values in place of the `<...>` parts:
+
+   ```bash
+   DEEPREAD_STORAGE=r2
+   DEEPREAD_STORAGE_LIMIT=8GB
+   DEEPREAD_R2_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com
+   DEEPREAD_R2_BUCKET=<bucket-name>
+   DEEPREAD_R2_ACCESS_KEY_ID=<access-key-id>
+   DEEPREAD_R2_SECRET_ACCESS_KEY=<secret-access-key>
+   DEEPREAD_R2_PREFIX=deepread/
+   ```
+
+5. Stop DeepRead (press `Control` and `C` in its Terminal window) and start it again with `deepread`.
+
+What each setting means:
+
+- `DEEPREAD_STORAGE` is `local` (the default, your computer's `data` folder) or `r2`.
+- `DEEPREAD_STORAGE_LIMIT` is the most space your books may take, for example `8GB`, `500MB` or `1.5TB`.
+  Here 1 GB is 1000 MB.
+  Write `GiB` or `MiB` to count in 1024s instead.
+  Leave it empty for no limit.
+- `DEEPREAD_R2_ENDPOINT` is the endpoint Cloudflare showed you.
+  If your bucket belongs to a region group such as the EU, use the endpoint that has it, like `https://<account_id>.eu.r2.cloudflarestorage.com`.
+- `DEEPREAD_R2_BUCKET` is your bucket's name.
+- `DEEPREAD_R2_ACCESS_KEY_ID` and `DEEPREAD_R2_SECRET_ACCESS_KEY` are the two keys Cloudflare showed you.
+- `DEEPREAD_R2_PREFIX` is the folder inside the bucket that DeepRead uses, `deepread/` unless you change it.
+  The bucket can hold other things too: DeepRead does not list, count or remove anything outside that folder.
+
+DeepRead reads `.env.local` first, then a file called `.env` in the same folder.
+A value in `.env.local` wins over `.env`, and a value you already set in Terminal wins over both.
+`.env.local` holds your secret key, and Git ignores it.
+Do not share it.
+
+When DeepRead starts it checks the bucket.
+If a setting is wrong, such as a bad key, a missing bucket or no way to reach Cloudflare, it stops and says what is wrong in a plain sentence.
+Otherwise the start-up message says where your books are kept and what the limit is.
+Under the shelf, the library shows a quiet line such as "Your books take 1.2 GB of 8 GB, kept in Cloudflare R2." (or "kept on this computer"; with no limit there is no "of ..." part).
+
+When adding a book would go past the limit, DeepRead does not add it.
+The library says the book could not be added because there is no room, how much your books take of what they may use, and how much the new book needs.
+Remove a book to make room.
+
+To go back to your computer, set `DEEPREAD_STORAGE=local` and restart.
+Books already in the bucket stay there, and the library shows the books in the place you chose.
+
+### Move the books you already have
+
+If you already have books on your computer, copy them into the bucket once:
+
+1. Stop DeepRead.
+2. Check that `.env.local` is filled in with `DEEPREAD_STORAGE=r2`.
+3. In Terminal, run:
+
+   ```bash
+   cd ~/DeepRead
+   pnpm storage:migrate
+   ```
+
+   If Terminal does not know `pnpm`, `npm run storage:migrate` does the same.
+4. Start DeepRead again.
+
+It copies every book the bucket does not have yet, with its notes and saved AI answers.
+It skips books that are already in the bucket, and books that would not fit under your limit.
+It never changes or removes anything on your computer, so your `data` folder stays as it was.
+Run it only while DeepRead is stopped.
+
 ## How it works
 
 ```mermaid
 flowchart LR
     PDF[Book PDF] --> Parser
-    Parser -->|chapters and paragraphs| Library[(Library on disk)]
+    Parser -->|chapters and paragraphs| Library[(Library on disk or in R2)]
     Library --> Reader[Reader in the browser]
     Reader -->|tap or select| Server
     Server -->|prompt with surrounding paragraphs| AI[Claude Code or Codex]
@@ -349,7 +445,7 @@ Notes, your own questions, previews and summaries run at "medium", so their firs
 With Codex, answers come from Codex's default model at low reasoning effort; its own coding instructions are replaced by DeepRead's.
 Codex runs in a Codex home of DeepRead's own, `data/codex-home`, signed in through a link to your own sign-in, so your personal `~/.codex/AGENTS.md`, skills and settings stay out of its answers.
 
-Answers stream as they are written and are cached on disk, keyed by the prompt and the model, so asking again is instant and editing a prompt never serves a stale answer.
+Answers stream as they are written and are cached with the book (on disk, or in your R2 bucket), keyed by the prompt and the model, so asking again is instant and editing a prompt never serves a stale answer.
 
 ### The reader
 
@@ -359,7 +455,8 @@ Explanations sit in the margin beside their paragraph on wide screens and direct
 
 ## Privacy
 
-- Your PDFs, locally rendered covers, the parsed books and the answer cache stay in `data/` on your computer. Cover rendering sends nothing to another service.
+- By default, your PDFs, locally rendered covers, the parsed books, your notes and the answer cache stay in `data/` on your computer. Cover rendering sends nothing to another service.
+  If you choose Cloudflare R2, those go to your own bucket instead (see [Keep your books in Cloudflare R2](#keep-your-books-in-cloudflare-r2)).
 - The server listens on `127.0.0.1` only and rejects requests from other websites.
   With `pnpm phone`, remote devices are refused until they open the link with the secret key.
 - The text you ask about goes to Anthropic (Claude Code) or OpenAI (Codex) through your own sign-in, the same as any session you start yourself.
@@ -384,6 +481,7 @@ You need [Node.js](https://nodejs.org) 24 or newer and [pnpm](https://pnpm.io).
 | `pnpm dev` | Server on 8787 and web app on 5173, with reload |
 | `pnpm phone` | The same, plus a locked tunnel link for reading on your phone |
 | `pnpm build` then `pnpm start` | Production build, served by the server on 8787 (what `deepread` runs) |
+| `pnpm storage:migrate` | Copies the books in your data folder into your R2 bucket (see [Keep your books in Cloudflare R2](#keep-your-books-in-cloudflare-r2)) |
 | `pnpm test` | Unit and functional tests |
 | `pnpm typecheck` | TypeScript check |
 
@@ -394,7 +492,7 @@ You need [Node.js](https://nodejs.org) 24 or newer and [pnpm](https://pnpm.io).
 | `server/prompts.ts` | Every prompt sent to the model |
 | `server/ai.ts` | Which AI helper answers: detection and the reader's choice |
 | `server/llm.ts` | Running Claude Code or Codex: streaming, timeouts, concurrency |
-| `server/library.ts` | Books on disk |
+| `server/library.ts` | The books, kept on disk or in R2 |
 | `server/routes-*.ts` | HTTP routes |
 | `src/` | The web app: library and reader |
 | `scripts/install.sh`, `scripts/deepread.mjs` | The one-line installer and the `deepread` command |
