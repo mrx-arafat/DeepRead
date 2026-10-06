@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <title>DeepRead</title>
+  <defs>
+    <clipPath id="tile"><rect width="32" height="32" rx="6.5"/></clipPath>
+  </defs>
+  <g clip-path="url(#tile)">
+    <!-- The cloth of the library's first cover, and the shade its spine lies in. -->
+    <rect width="32" height="32" fill="#7a2e2b"/>
+    <rect width="7" height="32" fill="#000" opacity="0.24"/>
+    <!-- The hinge: a thread of cream where the cover bends. -->
+    <rect x="7" width="1.4" height="32" fill="#fbf5e6" opacity="0.4"/>
+    <!-- A ribbon marking the place, and two lines of the text it is in. -->
+    <path d="M18 0h7.5v17.5l-3.75-3.2-3.75 3.2z" fill="#fbf5e6"/>
+    <path d="M12.5 23h13M12.5 27.5h8" fill="none" stroke="#fbf5e6" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+</svg>

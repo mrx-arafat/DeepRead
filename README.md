@@ -2,18 +2,20 @@
 
 # DeepRead
 
-**Read hard books in English without leaving the page.**
+**Your own reading library for hard books in English, with an AI tutor beside every page.**
 
 Tap a word for its meaning in your own language.
 Select a passage and get it explained in simple words.
-Listen to the book read aloud.
+Listen to the book read aloud, in a natural voice if you like.
+Come back to the exact line you left, on any device.
+Share a book with the people you read with, and each of you keeps your own place and notes.
 Your books stay on your computer, and AI help uses your own Claude Code or Codex sign-in.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-1d3bb8)](LICENSE)
 [![Node.js 24+](https://img.shields.io/badge/node-24%2B-1d3bb8)](https://nodejs.org)
 [![macOS, Linux, Windows (WSL)](https://img.shields.io/badge/runs%20on-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows%20(WSL)-1d3bb8)](#install-in-one-line)
 
-[Install](#install-in-one-line) · [AI helpers](#ai-helpers) · [How to use it](#how-to-use-deepread) · [Troubleshooting](#troubleshooting) · [How it works](#how-it-works)
+[Install](#install-in-one-line) · [AI helpers](#ai-helpers) · [How to use it](#how-to-use-deepread) · [Read together](#read-together-profiles-and-sharing) · [Troubleshooting](#troubleshooting) · [How it works](#how-it-works)
 
 <table><tr><td><img src="docs/images/explain.webp" alt="DeepRead explaining a selected passage in the margin beside the book" width="900"></td></tr></table>
 
@@ -29,6 +31,21 @@ By the time you come back, you have lost your place and your focus.
 
 DeepRead keeps all of that inside the book.
 The explanation appears beside the paragraph you are reading, and you keep going.
+
+## What you can do
+
+| You want to | DeepRead gives you |
+| --- | --- |
+| Know a word | A card in your language with a simple English meaning and an example, chosen for the sentence you are in ([Tap a word](#4-tap-a-word)) |
+| Understand a passage | The passage in simple words, in context, with its deeper meaning and hard words, pinned beside the paragraph like a teacher's note ([Explain a passage](#5-explain-a-passage)) |
+| Listen instead of read | The book read aloud with the sentence and word marked, in your browser's voice or an optional natural voice that works offline ([Listen](#7-listen), [A more natural voice](#8-a-more-natural-voice)) |
+| Never lose your place | Every book opens on the line you stopped at, on any device, and the shelf shows how far you are ([Your library](#2-your-library)) |
+| Read with other people | A profile for each reader, and books you can share with them, read only, each with their own place and notes ([Read together](#read-together-profiles-and-sharing)) |
+| Read the way you like | Light, sepia or dark, two fonts, text size, margins, and scrolling or pages ([Make it yours](#10-make-it-yours)) |
+| Keep it your own | Your books on your computer or in your own Cloudflare R2 bucket, and AI help through your own Claude Code or Codex sign-in ([AI helpers](#ai-helpers), [Cloudflare R2](#keep-your-books-in-cloudflare-r2)) |
+
+It suits one person on one computer.
+If a family, a class or a book club reads on the same DeepRead, turn on profiles: everyone gets a library of their own, and anyone can share a book with the others.
 
 ## Install in one line
 
@@ -120,7 +137,7 @@ With profiles on, only the admin can change it, because it is the same helper fo
 DeepRead remembers your choice.
 If you install one later, it shows up there the next time you open the menu.
 
-<table><tr><td><img src="docs/images/settings.webp" alt="The Aa menu with theme, font, text size, line spacing, margins, alignment, layout, explanation language and the AI helper picker" width="900"></td></tr></table>
+<table><tr><td><img src="docs/images/settings.webp" alt="The Aa menu with theme, font, text size, line spacing, margins, alignment, layout, read-aloud voice, explanation language and the AI helper picker" width="900"></td></tr></table>
 
 **With no AI helper at all**, you can still read, listen, change settings, and tap a word to see a quick translation in your language.
 Only the explanations (the meaning, the example sentence and the passage notes) need an AI helper, and DeepRead tells you how to add one.
@@ -132,16 +149,8 @@ Only the explanations (the meaning, the example sentence and the passage notes) 
 
 ## How to use DeepRead
 
-DeepRead opens straight to your library, with no sign-in, unless the person who set it up turned on profiles (see [Profiles and the admin dashboard](#profiles-and-the-admin-dashboard)).
-With profiles on, DeepRead opens on **Who's reading?** first.
-Click your picture and name, then type your code to open your own library.
-You stay signed in on that browser for 30 days, so next time DeepRead opens straight to your books.
-Sign in as the same profile on another device and the same books and notes are there.
-To read as someone else, open the profile menu at the top of the library (your picture and name) and choose **Switch profile**.
-The profiles appear again, and the one you are signed in as has a green check on its picture.
-Choose it and you are back in your books at once, with no code.
-Choose someone else and type their code; coming back to yours later asks for yours again.
-To leave a shared computer, choose **Sign out** in the same menu.
+DeepRead opens straight to your library, with no sign-in, unless the person who set it up turned on profiles (see [Read together](#read-together-profiles-and-sharing)).
+With profiles on, DeepRead opens on **Who's reading?** first: click your picture, type your code, and you are in your own library for the next 30 days on that browser.
 Your books, your place in each book, your notes and your saved answers belong to your profile, and other profiles cannot see them.
 The steps below are the same for every profile.
 
@@ -155,16 +164,22 @@ Scanned books, where each page is a photo, need OCR first.
 
 ### 2. Your library
 
-Your books stand on a shelf with their own covers when the PDF has a cover on its first page. Otherwise DeepRead makes a cloth cover from the title. A slow or broken cover image also shows the cloth cover.
+Your books stand on a shelf with their own covers when the PDF has a cover on its first page.
+Otherwise DeepRead makes a cloth cover from the title, and shows it too when a cover image is slow or broken.
 The book you read last waits at the top in a **Continue reading** card, with the chapter you stopped in and how much of the book is left.
 Click **Continue**, or the card, to open it right there.
 Under each cover a thin line shows how far you are, with the time left, or **New** and the time it takes to read for a book you have not opened.
+
+**Where you stopped.**
 Click a cover, or the title, to open that book on the very line you stopped at.
 DeepRead keeps that place for every book, as you read and again the moment you leave, so the next visit starts there, on any device that opens this DeepRead.
 The percentage counts the text above that line over the whole book, by length, so a long paragraph counts for more than a short one.
 Contents, notes and index pages do not count.
 Jumping ahead from the chapter list moves your place, and the percentage with it: it says where you are in the book, not how much you have read.
-The **...** button under a cover lets you edit the book's title and author, or remove it.
+
+**More actions.**
+The **...** button under a cover lets you edit the book's title and author, share it with other profiles (see [Share a book](#11-share-a-book)), or remove it.
+A book someone shared with you has "From" and their name under it, and only lets you take it off your shelf.
 
 <table><tr><td><img src="docs/images/library.webp" alt="The library with a Continue reading card and a shelf of book covers" width="900"></td></tr></table>
 
@@ -228,15 +243,19 @@ If you scroll away, the page stays where you put it, and the player offers a way
 Listening uses the voices built into your browser and computer, so it works without an AI helper.
 DeepRead pauses where a person would: a little after each sentence, longer between paragraphs, and longest after a chapter title.
 
-For a more human voice, open the **Aa** menu and choose **Natural** under **Read-aloud voice**.
+### 8. A more natural voice
+
+By default DeepRead reads with the voice built into your browser and computer.
+For a more human one, open the **Aa** menu and choose **Natural** under **Read-aloud voice** (pictured in [AI helpers](#ai-helpers)).
 It downloads once (326 MB, with a progress figure in the menu), and from then on it runs on your computer's graphics card and works offline.
 It needs a browser with WebGPU, which means a recent Chrome or Edge on a computer from the last few years.
 If your browser or computer cannot run it, or runs it too slowly to keep up with the reading, DeepRead says so in the menu and keeps the voice built into your computer.
-Choosing **This device** again gives the memory back.
+While it downloads, reading aloud carries on with that voice, and a single word said from its card always uses it.
+Choosing **This device** again lets go of the natural voice and its memory.
 The code for it (kokoro-js, pinned to one version) comes from jsDelivr and the voice model from Hugging Face, and only that download uses the network.
 The book text is never sent anywhere to be read aloud.
 
-### 8. Jump to a chapter
+### 9. Jump to a chapter
 
 The list button at the top left shows every chapter with its reading time.
 Front and back matter (contents, notes, index, licences) are listed but do not count toward your progress.
@@ -244,10 +263,10 @@ After a jump, the browser's Back button returns you to the paragraph you were re
 
 <table><tr><td><img src="docs/images/chapters.webp" alt="The chapter list" width="900"></td></tr></table>
 
-### 9. Make it yours
+### 10. Make it yours
 
 Open **Aa** at the top right to set the page the way an e-reader does: a light, sepia or dark theme, the book's font (Literata or Atkinson), text size, line spacing, margins and justified text.
-Below those are the language explanations come in and your AI helper (pictured in [AI helpers](#ai-helpers)).
+Below those are the read-aloud voice (see [A more natural voice](#8-a-more-natural-voice)), the language explanations come in and your AI helper, all pictured in [AI helpers](#ai-helpers).
 The footer under the text tells you how many minutes of the chapter are left, then marks the end of the book when you reach its closing panel.
 
 **Layout** chooses how you move through the book: **Scroll** (the default) reads it as one long page, and **Pages** turns it a page at a time like an e-reader.
@@ -262,7 +281,27 @@ DeepRead also fits a phone screen, here in the dark theme:
 
 <table><tr><td><img src="docs/images/phone-dark.webp" alt="DeepRead on a phone in the dark theme, with a word card under the sentence" width="320"></td></tr></table>
 
-### 10. By keyboard
+### 11. Share a book
+
+With profiles on (see [Read together](#read-together-profiles-and-sharing)), you can lend a book to the people you read with.
+Open the **...** menu under its cover, choose **Share**, and turn on the switch beside each person.
+
+<table><tr><td><img src="docs/images/share-dialog.webp" alt="The Share dialog for a book, with a switch for each other profile: one is on and says Can read it, the other is off" width="900"></td></tr></table>
+
+The book appears on their shelf marked "From" your name, and they read it with their own place, notes and saved answers.
+Nothing is copied, and they cannot change it, rename it or pass it on.
+
+<table><tr><td><img src="docs/images/shared-shelf.webp" alt="Another profile's library: the shared book on the shelf with its own progress, marked From Arafat" width="900"></td></tr></table>
+
+Turn the switch off, or press the cross beside their name on the **Sharing** page, and the book leaves their shelf at once.
+What they kept of it waits out of sight, so sharing it again lets them carry on where they were.
+The **Sharing** page, in the profile menu, lists the books you share and with whom, and the books shared with you.
+
+<table><tr><td><img src="docs/images/sharing.webp" alt="The Sharing page: a book shared with Nadia, with a cross to stop sharing and a button to share with more people" width="900"></td></tr></table>
+
+The rules behind sharing are under [Sharing a book](#sharing-a-book).
+
+### 12. By keyboard
 
 | Key | Does |
 | --- | --- |
@@ -331,7 +370,7 @@ With profiles on, each profile's books are in a folder of their own, under `prof
 <summary><b>I forgot a profile's code</b></summary>
 
 The admin can set a new one.
-Open http://127.0.0.1:8787/admin, sign in with the admin passkey, choose **Edit** on that profile, and type a new code (see [Profiles and the admin dashboard](#profiles-and-the-admin-dashboard)).
+Open http://127.0.0.1:8787/admin, sign in with the admin passkey, choose **Edit** on that profile, and type a new code (see [Read together](#read-together-profiles-and-sharing)).
 That profile is signed out everywhere, and it opens again with the new code.
 DeepRead keeps each code only in a scrambled form, so the old one cannot be read back.
 
@@ -374,6 +413,25 @@ Restarting DeepRead also clears the lock.
 
 </details>
 
+<details>
+<summary><b>The natural voice will not turn on</b></summary>
+
+Open **Aa** and read the line under **Read-aloud voice**: it says why.
+A message about the graphics card means this browser has no WebGPU, so try a recent Chrome or Edge.
+A message about speed means this computer could not make speech as fast as it is read, so DeepRead keeps the voice built into it.
+If the download stopped partway, check your connection, then choose **This device** and **Natural** again to start it once more.
+
+</details>
+
+<details>
+<summary><b>A shared book is gone from my shelf</b></summary>
+
+Its owner stopped sharing it, removed it, or the profile it came from was deleted.
+If the owner shares it again, it comes back with your place and notes as you left them.
+If the book or the profile was removed, what you kept of it went with it.
+
+</details>
+
 ## Read on your phone
 
 With a developer setup (see [For developers](#for-developers)), run:
@@ -396,7 +454,7 @@ Then your library does not depend on this one computer.
 You can also set the most space your books may take, whether they are kept on your computer or in R2.
 
 What goes into the bucket: each book's PDF, its parsed text, its cover, the AI answers saved for it, and your notes.
-With profiles on (see [Profiles and the admin dashboard](#profiles-and-the-admin-dashboard)), the list of profiles goes there too.
+With profiles on (see [Read together](#read-together-profiles-and-sharing)), the list of profiles and the shares go there too.
 A few small things always stay on your computer: your AI helper choice, saved quick word translations, the folder DeepRead keeps for Codex, the phone key, the sign-in secret that profiles use, and a book's file while it is being added.
 
 1. In your Cloudflare account, create an R2 bucket.
@@ -482,12 +540,12 @@ It skips books that are already in the bucket, and books that would not fit unde
 It never changes or removes anything on your computer, so your `data` folder stays as it was.
 Run it only while DeepRead is stopped.
 
-## Profiles and the admin dashboard
+## Read together: profiles and sharing
 
 By default DeepRead has one library and no sign-in.
 That suits one person on one computer, and it stays that way until you turn profiles on.
-If several people read on the same DeepRead, you can give each of them a profile, like "Who's watching?" on a streaming service.
-Everyone picks their own picture, types their own code, and reads in their own library.
+If several people read on the same DeepRead, such as a family, a class or a book club, you can give each of them a profile, like "Who's watching?" on a streaming service.
+Everyone picks their own picture, types their own code, and reads in their own library, and anyone can [share a book](#11-share-a-book) with the others.
 
 ### Turn profiles on
 
@@ -529,6 +587,11 @@ You stay signed in on that browser for 30 days.
 To read as someone else, open the profile menu at the top of the library and choose **Switch profile**.
 Your own profile, marked with a green check, opens without a code; anyone else's asks for theirs.
 **Sign out** in the same menu ends your sign-in on that browser.
+Coming back to your own profile after reading as someone else asks for your code again.
+
+<table><tr><td><img src="docs/images/whos-reading.webp" alt="The Who's reading page: a picture and name for each profile, with the badges Admin, Editor and Kid" width="900"></td></tr></table>
+
+A profile can carry a small badge beside its name, such as **Editor** or **Kid**, which the admin chooses.
 
 ### What each profile gets
 
@@ -536,26 +599,25 @@ Your own profile, marked with a green check, opens without a code; anyone else's
   Other profiles cannot see them.
 - Its own picture: one of the built-in ones, or a photo the admin uploads.
 - Its own code, which it types to sign in.
+- The books other profiles share with it, to read (see [Sharing a book](#sharing-a-book)).
 - The same storage limit as everyone else.
   `DEEPREAD_STORAGE_LIMIT` is shared by all profiles, so the books of every profile count toward it together.
   The line under the shelf shows both numbers, such as "Your books take 1.2 GB; everyone's together take 3.4 GB, kept on this computer."
 
 ### Sharing a book
 
-A profile can share its own books with the other profiles.
-Open the **...** menu under a cover and choose **Share**.
-Each person who reads here has a switch: turn it on and the book appears on their shelf, marked "From" your name.
-They read the same book, but with their own place, notes and saved answers, and they cannot change it, rename it or pass it on.
-Nothing is copied, so a shared book takes no extra room.
+How to share a book is in [Share a book](#11-share-a-book).
+These are the rules behind it:
 
-To stop, turn the switch off, or press the cross beside their name on the **Sharing** page (in the profile menu).
-The book leaves their shelf at once.
-Their notes and place are kept out of sight, so if you share the book again they carry on where they were.
-They can also take a shared book off their own shelf (**Remove from my shelf**), which ends that share and leaves your book alone.
-The **Sharing** page lists the books you share and with whom, and the books shared with you.
-If you remove a book, or the admin removes a profile, the shares that go with it end and what others kept of that book is removed too.
-The admin sees every share on the dashboard under **Shared books**, and can stop any of them.
-Sharing needs profiles; without them there is nobody to share with.
+- Only a book's owner can change it, rename it or share it.
+  Everyone it is shared with reads it.
+- A shared book is read from its owner's copy, so it takes no extra room, and it shows the owner's name on the reader's shelf.
+- Each reader keeps their own place, notes and saved answers for it, in their own profile.
+- Stopping a share hides the book and keeps what the reader made, so sharing it again brings it back as they left it.
+- A reader can take a shared book off their own shelf, which ends that share and leaves the owner's book alone.
+- If the owner removes the book, or the admin removes a profile, the shares that go with it end and what others kept of that book is removed too.
+- The admin sees every share on the dashboard under **Shared books**, and can stop any of them.
+- Sharing needs profiles: without them there is nobody to share with.
 
 ### The admin dashboard
 
@@ -577,9 +639,13 @@ From there you can:
 - **Delete a profile.**
   Its books, notes and saved answers are removed for good, so DeepRead asks you to confirm first.
   The admin's own profile cannot be deleted.
+- **See and stop shared books.**
+  Under the profiles, **Shared books** lists every book one profile shares with another, with a **Stop sharing** button on each.
 - **Read as a profile.**
   You see DeepRead the way that person does, with a banner at the top that says who you are reading as.
   Press **Back to** and your own name in the banner (for example **Back to Admin**) to return to your own library.
+
+<table><tr><td><img src="docs/images/admin.webp" alt="The admin page: each profile with its badge, how many books it has and its buttons, and the list of shared books below" width="900"></td></tr></table>
 
 DeepRead keeps each code only in a scrambled form, so nobody, the admin included, can read one back.
 If someone forgets theirs, give that profile a new one.
@@ -600,6 +666,9 @@ That signs everyone out, so they type their codes again.
 - `profiles.json` is the list of profiles.
   It sits next to the books: in the `data` folder, or in your R2 bucket folder.
 - Each profile's books are under `profiles/<id>/books/`, in the same place.
+- `shares.json` says who shares which book with whom, in the same place.
+- What a profile keeps of a book shared with it (its place, notes and saved answers) is under `profiles/<id>/shared/`.
+  The book itself stays in its owner's folder.
 - The sign-in secret is a file named `session-secret` in the `data` folder, on this computer even when your books are in R2.
   Deleting it signs everyone out.
 
@@ -607,7 +676,7 @@ That signs everyone out, so they type their codes again.
 
 Remove the `ADMIN_PASSKEY` line from `.env.local` or `.env` and restart DeepRead.
 It then works exactly as before: one library, no sign-in.
-Nothing is deleted by this: `profiles.json` and the profiles' books stay where they are, and setting `ADMIN_PASSKEY` again brings the profiles back.
+Nothing is deleted by this: `profiles.json`, `shares.json` and the profiles' books stay where they are, and setting `ADMIN_PASSKEY` again brings the profiles back.
 The one library you see without profiles does not include the books kept in profiles.
 
 ## How it works
@@ -685,7 +754,9 @@ With profiles on (`ADMIN_PASSKEY` is set), the store holds a list of the profile
 
 ```text
 profiles.json
+shares.json
 profiles/<id>/books/<book id>/...    (the same keys as books/<id>/ above)
+profiles/<id>/shared/<owner id>--<book id>/{progress.json, notes.json, cache/<sha256>.json}
 ```
 
 Each profile has its own `Library`, which sees the store only through its own `profiles/<id>/` folder, and its own `tmp` folder for uploads.
@@ -707,9 +778,16 @@ The server counts wrong codes for each profile and device (the tunnel's `cf-conn
 **Switch profile** keeps the session until another profile's code is accepted, which then replaces it.
 
 The admin is a profile like the others, named `ADMIN_NAME`, whose code is `ADMIN_PASSKEY` and which cannot be deleted.
-Its routes are under `/api/admin/` and need an admin session: `GET` and `POST /api/admin/profiles`, `PATCH` and `DELETE /api/admin/profiles/:id`, `PUT` and `DELETE /api/admin/profiles/:id/photo`, and `POST /api/admin/profiles/:id/sign-out`.
+Its routes are under `/api/admin/` and need an admin session: `GET` and `POST /api/admin/profiles`, `PATCH` and `DELETE /api/admin/profiles/:id` (a profile's name, code, picture and badge), `PUT` and `DELETE /api/admin/profiles/:id/photo`, `POST /api/admin/profiles/:id/sign-out`, and `GET /api/admin/shares` with `DELETE /api/admin/shares/:owner/:book/:recipient`.
 Changing the AI helper (`PUT /api/ai/provider`) also needs the admin when profiles are on.
 **Read as** is a session for the profile being read, with `impersonatedBy` set to the admin: `POST /api/admin/impersonate/:id` starts it and `DELETE /api/admin/impersonate` goes back.
+
+A profile shares one of its books with `PUT /api/books/:id/shares/:profileId`, stops with `DELETE` on the same address, and lists who has it with `GET /api/books/:id/shares`; `GET /api/shares` feeds the Sharing page.
+[`server/shares.ts`](server/shares.ts) keeps the list in `shares.json` and builds each profile's shelf: its own `Library` with the books shared with it alongside.
+A shared book goes by `<owner id>--<book id>` on that shelf, which no ordinary book id can look like, and every address of it works on that id.
+Reading it goes through the owner's `Library`, while the reader's own place, notes and cached answers are written under `profiles/<reader id>/shared/<that id>/`, so nobody else ever writes to the owner's book.
+Anything that would change the book (rename, share) is refused with `shared_read_only`, and removing it only ends that share.
+Removing a book, or a profile, ends the shares that go with it and clears what other readers kept of it.
 
 Notes are kept one change at a time.
 [`shared/notes.ts`](shared/notes.ts) defines a `NoteChange` (`put` or `remove`) and `applyNoteChange`, and the server and the browser both apply each change with that one function, so what the reader sees is what is kept.
@@ -746,6 +824,15 @@ The reading view is plain React and CSS.
 Each paragraph is a single text node, and word and sentence highlights are painted with the CSS Custom Highlight API, so the book's DOM stays light even for long books.
 Explanations sit in the margin beside their paragraph on wide screens and directly under it on narrow ones.
 
+Where the reader is comes from the line at the top of the window.
+`PUT /api/books/:id/progress` takes its chapter, block and character offset, and the server turns that into a percentage with `textFraction` ([`src/reader/book.ts`](src/reader/book.ts)): the characters above the line over the characters of the chapter, then the words of the earlier chapters plus that share of this one, over the words of the book's own text.
+The top bar and the library use the same functions, so they agree.
+The place is saved a second after the reader stops scrolling, and again as they leave the book or hide the tab, and the library waits for a save on its way before it lists the books.
+
+Reading aloud goes through `speak` in [`src/reader/speech.ts`](src/reader/speech.ts), which uses the browser's voices, or the natural voice ([`src/reader/natural.ts`](src/reader/natural.ts)) once it is chosen and ready.
+The natural voice is Kokoro-82M run on the graphics card.
+Each sentence is made while the one before it is read, the silence the voice leaves round a sentence is trimmed so the pauses are DeepRead's own ([`src/reader/voicing.ts`](src/reader/voicing.ts)), and the spoken word is marked by estimating where it falls in the sentence, because the voice reports no word positions.
+
 ## Privacy
 
 - By default, your PDFs, locally rendered covers, the parsed books, your notes and the answer cache stay in `data/` on your computer.
@@ -755,8 +842,10 @@ Explanations sit in the margin beside their paragraph on wide screens and direct
   With `pnpm phone`, remote devices are refused until they open the link with the secret key.
 - With profiles on, each profile's code is stored in a scrambled (hashed) form, never as it was typed.
   The admin passkey lives only in `.env` or `.env.local` on this computer, which Git ignores, and is never committed.
-- With profiles on, other profiles cannot see your books, notes or saved answers.
-  The admin can, by choosing **Read as** your profile.
+- With profiles on, other profiles cannot see your books, notes or saved answers, except a book you choose to share, which they read from your copy for as long as you share it.
+  The admin can see everything, by choosing **Read as** your profile.
+- The natural voice, if you choose it, downloads its code from jsDelivr and its model from Hugging Face once.
+  The book text is never sent to either.
 - The text you ask about goes to Anthropic (Claude Code) or OpenAI (Codex) through your own sign-in, the same as any session you start yourself.
 - A fallback word translation uses an unofficial Google endpoint, and only if the AI answer fails or there is no AI helper.
 
@@ -804,7 +893,11 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 | `server/profiles.ts`, `server/codes.ts`, `server/throttle.ts`, `server/avatar.ts` | The list of profiles (`profiles.json`) and each one's library, hashed codes, the lock after wrong codes, profile photos, and moving the books from before profiles into the admin's |
 | `server/sessions.ts`, `server/session-token.ts`, `server/app-env.ts` | The signed 30-day session cookie, and the middleware that picks each request's library |
 | `server/routes-session.ts`, `server/routes-admin.ts` | The routes under `/api/session`, `/api/profiles` and `/api/admin` |
+| `server/shares.ts`, `server/routes-shares.ts` | Who shares which book with whom (`shares.json`), each profile's shelf with the shared books on it, and the sharing routes |
 | `src/` | The web app: library and reader |
+| `src/library/` | The shelf: covers, the book menu, the Share dialog and the Sharing page |
+| `src/reader/speech.ts`, `natural*.ts`, `voicing.ts` | Reading aloud: the device voice, the natural voice, and where the pauses fall |
+| `public/`, `scripts/make-icons.mjs` | The icon: `favicon.svg` is the source, and the script draws the PNG sizes from it |
 | `src/profiles/`, `src/admin/` | The **Who's reading?** page, the profile menu and the pictures; the `/admin` page where the admin adds, edits, deletes and reads as profiles |
 | `scripts/install.sh`, `scripts/deepread.mjs` | The one-line installer and the `deepread` command |
 | `e2e/` | End-to-end browser tests of reader journeys |
