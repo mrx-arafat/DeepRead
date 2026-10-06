@@ -21,10 +21,12 @@ import {
   isRecord,
   readJsonObject,
   readString,
+  sharedReadOnly,
 } from "./http.ts";
-import { isBookId, StorageFullError } from "./library.ts";
+import { StorageFullError } from "./library.ts";
 import type { StoredPdf } from "./library.ts";
 import { ParseError } from "./parser/errors.ts";
+import { isReadableBookId, parseSharedBookId } from "./shares.ts";
 import { titleFromFileName } from "./upload-name.ts";
 
 export const MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
@@ -226,7 +228,7 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
   routes.get("/:id", async (c) => {
     const { library } = c.var;
     const id = c.req.param("id");
-    if (!isBookId(id)) return invalidId(c);
+    if (!isReadableBookId(id)) return invalidId(c);
     const detail = await library.detail(id);
     return detail ? c.json(detail) : bookNotFound(c);
   });
@@ -240,7 +242,11 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     async (c) => {
       const { library } = c.var;
       const id = c.req.param("id");
-      if (!isBookId(id)) return invalidId(c);
+      if (!isReadableBookId(id)) return invalidId(c);
+      if (parseSharedBookId(id)) {
+        const shared = await library.detail(id);
+        return shared ? sharedReadOnly(c, shared.sharedBy?.name) : bookNotFound(c);
+      }
       const body = await readJsonObject(c);
       if (!body) return invalidBody(c, "send JSON like {\"title\": \"...\", \"author\": \"...\"}.");
       const update = readBookUpdate(c, body);
@@ -255,14 +261,14 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
   routes.delete("/:id", async (c) => {
     const { library } = c.var;
     const id = c.req.param("id");
-    if (!isBookId(id)) return invalidId(c);
+    if (!isReadableBookId(id)) return invalidId(c);
     return (await library.remove(id)) ? c.body(null, 204) : bookNotFound(c);
   });
 
   routes.get("/:id/chapters/:chapterId", async (c) => {
     const { library } = c.var;
     const id = c.req.param("id");
-    if (!isBookId(id)) return invalidId(c);
+    if (!isReadableBookId(id)) return invalidId(c);
     const book = await library.book(id);
     if (!book) return bookNotFound(c);
     const chapter = book.chapters.find((candidate) => candidate.id === c.req.param("chapterId"));
@@ -272,7 +278,7 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
   routes.get("/:id/pdf", async (c) => {
     const { library } = c.var;
     const id = c.req.param("id");
-    if (!isBookId(id)) return invalidId(c);
+    if (!isReadableBookId(id)) return invalidId(c);
     const pdf = await library.pdf(id);
     return pdf ? sendPdf(c, pdf) : bookNotFound(c);
   });
@@ -280,7 +286,7 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
   routes.get("/:id/cover", async (c) => {
     const { library } = c.var;
     const id = c.req.param("id");
-    if (!isBookId(id)) return invalidId(c);
+    if (!isReadableBookId(id)) return invalidId(c);
     const cover = await library.cover(id);
     if (!cover) return apiError(c, 404, "cover_not_found", "This book has no cover of its own.");
     const headers = {
@@ -296,7 +302,7 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
   routes.get("/:id/notes", async (c) => {
     const { library } = c.var;
     const id = c.req.param("id");
-    if (!isBookId(id)) return invalidId(c);
+    if (!isReadableBookId(id)) return invalidId(c);
     const notes = await library.notes(id);
     return notes ? c.json(notes) : bookNotFound(c);
   });
@@ -311,7 +317,7 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     async (c) => {
       const { library } = c.var;
       const id = c.req.param("id");
-      if (!isBookId(id)) return invalidId(c);
+      if (!isReadableBookId(id)) return invalidId(c);
       const body = await readJsonObject(c);
       const note = body && readNote(body.note);
       const before = body?.before ?? null;
@@ -325,7 +331,7 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
   routes.delete("/:id/notes/:noteId", async (c) => {
     const { library } = c.var;
     const id = c.req.param("id");
-    if (!isBookId(id)) return invalidId(c);
+    if (!isReadableBookId(id)) return invalidId(c);
     const noteId = c.req.param("noteId");
     if (noteId.length > MAX_ID_FIELD) return invalidBody(c, "that note id is too long.");
     return (await library.changeNotes(id, { kind: "remove", id: noteId })) ? c.body(null, 204) : bookNotFound(c);
@@ -340,7 +346,7 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     async (c) => {
       const { library } = c.var;
       const id = c.req.param("id");
-      if (!isBookId(id)) return invalidId(c);
+      if (!isReadableBookId(id)) return invalidId(c);
       const body = await readJsonObject(c);
       const chapterId = body && readString(body, "chapterId", MAX_ID_FIELD);
       const blockId = body && readString(body, "blockId", MAX_ID_FIELD);

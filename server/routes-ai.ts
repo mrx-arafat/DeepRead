@@ -29,7 +29,7 @@ import {
   readJsonObject,
   readString,
 } from "./http.ts";
-import { isBookId } from "./library.ts";
+import { isReadableBookId } from "./shares.ts";
 import type { Library } from "./library.ts";
 import type { Ai } from "./ai.ts";
 import { isAiProviderId } from "./ai.ts";
@@ -141,7 +141,7 @@ type Located = { book: ParsedBook; chapter: Chapter };
 
 /** Finds the book and chapter named in a request body, or the 4xx response to send instead. */
 async function locate(c: Context, library: Library, bookId: string, chapterId: string): Promise<Located | Response> {
-  if (!isBookId(bookId)) return invalidId(c);
+  if (!isReadableBookId(bookId)) return invalidId(c);
   const book = await library.book(bookId);
   if (!book) return bookNotFound(c);
   const chapter = book.chapters.find((candidate) => candidate.id === chapterId);

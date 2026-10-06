@@ -147,6 +147,9 @@ Setting `ADMIN_PASSKEY` (and `ADMIN_NAME`) in `.env` turns profiles on; without 
 Everyone picks a profile on **Who's reading?** and types its code, and the browser stays signed in for 30 days.
 Each profile has its own library under `profiles/<id>/` in the store; `profiles.json` lists them; the storage limit is shared.
 The admin's profile signs in with `ADMIN_PASSKEY` and opens `/admin`: add, edit and delete profiles, upload photos, **Read as** a profile, and **Sign out everywhere**.
+Sharing: a book is shared by its owner with other profiles in `shares.json` at the root of the store, and read through the owner's library (`server/shares.ts`, `routes-shares.ts`, `/api/books/:id/shares/:profileId`, `/api/shares`, `/api/admin/shares`).
+A shared book goes by `<owner id>--<book id>` on the reader's shelf; their place, notes and cached answers for it are their own, in `profiles/<reader>/shared/<that id>/`, kept when the share stops and removed when the book or a profile is.
+Client: `src/library/ShareDialog.tsx`, `SharingPage.tsx`, `src/admin/AdminShares.tsx`.
 Server: `server/profiles.ts`, `sessions.ts`, `session-token.ts`, `codes.ts`, `throttle.ts`, `avatar.ts`, `routes-session.ts`, `routes-admin.ts`, `app-env.ts`.
 Client: `src/profiles/`, `src/admin/`, and `src/reader/noteSync.ts` (the notes outbox is kept per profile).
 Tests: `server/profiles-app.test.ts`, `server/codes.test.ts`, `server/session-token.test.ts`, `server/throttle.test.ts`, `server/avatar.test.ts`, `src/admin/profileText.test.ts`, and the profile cases in `src/reader/noteSync.test.ts`.

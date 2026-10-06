@@ -3,12 +3,12 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { AVATAR_PRESETS } from "../shared/types.ts";
-import type { AdminProfile, NewProfile, ProfileUpdate, Session } from "../shared/types.ts";
+import type { AdminProfile, AdminShare, BookSummary, NewProfile, ProfileUpdate, Session } from "../shared/types.ts";
 import type { AppEnv } from "./app-env.ts";
 import { isPhotoFile, MAX_PHOTO_BYTES, squarePhoto } from "./avatar.ts";
 import type { Accounts } from "./deps.ts";
 import { adminOnly, apiError, invalidBody, readJsonObject } from "./http.ts";
-import { isAvatarPreset, isProfileId, MAX_BADGE_CHARS, MAX_CODE_CHARS, MAX_NAME_CHARS, MIN_CODE_CHARS, ProfileError } from "./profiles.ts";
+import { isAvatarPreset, isProfileId, publicProfile, MAX_BADGE_CHARS, MAX_CODE_CHARS, MAX_NAME_CHARS, MIN_CODE_CHARS, ProfileError } from "./profiles.ts";
 import type { StoredProfile } from "./profiles.ts";
 import { profileNotFound } from "./routes-session.ts";
 import { startSession, toSession } from "./sessions.ts";
@@ -176,6 +176,30 @@ export function adminRoutes(accounts: Accounts): Hono<AppEnv> {
     const viewing: SignedIn = { profile: target, actor: session.actor, expiresAt: session.expiresAt };
     startSession(c, sessionKey, viewing);
     return c.json(toSession(viewing) satisfies Session);
+  });
+
+  // Every book shared between profiles, so the admin can see what goes where and stop any of it.
+  routes.get("/shares", async (c) => {
+    const people = new Map((await profiles.list()).map((profile) => [profile.id, publicProfile(profile)]));
+    const shelves = new Map<string, Promise<BookSummary[]>>();
+    const titleOf = async (ownerId: string, bookId: string) => {
+      if (!shelves.has(ownerId)) shelves.set(ownerId, profiles.library(ownerId).list());
+      return (await shelves.get(ownerId))?.find((book) => book.id === bookId)?.title;
+    };
+    const list: AdminShare[] = [];
+    for (const share of await profiles.shares.list()) {
+      const owner = people.get(share.ownerId);
+      const recipient = people.get(share.recipientId);
+      const title = owner && recipient ? await titleOf(share.ownerId, share.bookId) : undefined;
+      if (owner && recipient && title !== undefined) list.push({ owner, recipient, bookId: share.bookId, title, sharedAt: share.sharedAt });
+    }
+    return c.json(list.sort((a, b) => b.sharedAt.localeCompare(a.sharedAt)));
+  });
+
+  routes.delete("/shares/:ownerId/:bookId/:recipientId", async (c) => {
+    const { ownerId, bookId, recipientId } = c.req.param();
+    const stopped = await profiles.shares.remove(ownerId, bookId, recipientId);
+    return stopped ? c.body(null, 204) : apiError(c, 404, "share_not_found", "That book is not shared with them any more.");
   });
 
   routes.delete("/impersonate", (c) => {

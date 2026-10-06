@@ -933,7 +933,7 @@ select {
 /* Laid over the shelf under the book it belongs to, as wide as that book. */
 .shelf-menu-panel {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 0.25rem);
   right: 0;
   left: 0;
   z-index: 10;
@@ -955,6 +955,7 @@ select {
   align-items: center;
   gap: 0.625rem;
   min-height: 2.75rem;
+  line-height: 1.25;
   padding: 0 0.75rem;
   border: 0;
   border-radius: 3px;
@@ -3865,4 +3866,272 @@ h5[data-block] {
   width: 1.25rem;
   height: 1.25rem;
   accent-color: var(--pen);
+}
+
+/* Sharing: a book one profile shares with another. */
+
+/* Under a shared book on the reader's shelf: who it is from, as small as the words above it. */
+.shelf-from {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  min-width: 0;
+}
+
+.shelf-from > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-intro {
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.share-quiet {
+  margin-top: 1.25rem;
+  color: var(--ink-soft);
+}
+
+.share-people {
+  margin: 1.25rem 0 0.5rem;
+  border-top: 1px solid var(--rule);
+}
+
+/* Picture, name and the switch on one line; the switch keeps its place however long the name. */
+.share-person {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.share-who {
+  display: grid;
+  min-width: 0;
+}
+
+.share-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-state {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+.share-person:has([aria-checked="true"]) .share-state {
+  color: var(--pen);
+}
+
+/* A switch: 44px tall to touch, the track drawn inside it, inked in pen blue when on. */
+.switch {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+}
+
+.switch:disabled {
+  cursor: progress;
+}
+
+.switch-track {
+  position: relative;
+  width: 2.75rem;
+  height: 1.5rem;
+  border: 1px solid var(--ink-faint);
+  border-radius: 999px;
+  background: var(--wash);
+  transition: background-color 0.15s ease-out, border-color 0.15s ease-out;
+}
+
+.switch-track::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0.1875rem;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--ink-soft);
+  transform: translateY(-50%);
+  transition: transform 0.15s ease-out, background-color 0.15s ease-out;
+}
+
+.switch[aria-checked="true"] .switch-track {
+  border-color: var(--pen);
+  background: var(--pen);
+}
+
+.switch[aria-checked="true"] .switch-track::after {
+  background: var(--pen-ink);
+  transform: translate(1.25rem, -50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-track,
+  .switch-track::after {
+    transition: none;
+  }
+}
+
+/* The sharing page, laid out like the admin's. */
+.sharing-intro {
+  max-width: 34rem;
+  margin-top: 1rem;
+  color: var(--ink-soft);
+}
+
+.sharing-section {
+  margin-top: 2.5rem;
+}
+
+.sharing-heading {
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--ink);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.admin-shares {
+  margin-top: 3rem;
+}
+
+/* The cover small at the left, what can be done beside it. */
+.sharing-row {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.sharing-cover {
+  display: block;
+  border-radius: 2px 5px 5px 2px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.sharing-body {
+  display: grid;
+  justify-items: start;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.sharing-title {
+  max-width: 100%;
+  font-family: var(--font-book);
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.sharing-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* A person the book is shared with: picture, name, and the cross that stops it. */
+.sharing-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.25rem 0.25rem 0.375rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--raised);
+}
+
+.sharing-chip .avatar {
+  border-radius: 50%;
+}
+
+.sharing-stop {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.sharing-stop:hover:not(:disabled) {
+  background: var(--wash);
+  color: var(--danger);
+}
+
+.sharing-from {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink-soft);
+}
+
+.admin-share-list {
+  border-top: 1px solid var(--rule);
+}
+
+/* Who shares with whom, the book, and the button: on one line where there is room, stacked where there is not. */
+.admin-share {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0.875rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.admin-share .quiet-button {
+  justify-self: start;
+  min-height: 2.75rem;
+}
+
+@media (min-width: 40rem) {
+  .admin-share {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 1rem;
+  }
+}
+
+.admin-share-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.admin-share-who svg {
+  color: var(--ink-soft);
+}
+
+.admin-share-book {
+  display: grid;
+  overflow-wrap: anywhere;
+}
+
+.share-dialog .shelf-edit-actions {
+  margin-top: 1.25rem;
 }

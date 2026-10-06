@@ -5,9 +5,11 @@ import type { BookSummary, BookUpdate } from "../../shared/types.ts";
 import { BookEditDialog } from "./BookEditDialog.tsx";
 import { BookMenu } from "./BookMenu.tsx";
 import { readingNote, shortTitle } from "./bookText.ts";
+import { Avatar } from "../profiles/Avatar.tsx";
 import { Cover } from "./Cover.tsx";
+import { ShareDialog } from "./ShareDialog.tsx";
 
-export type Mode = "view" | "edit" | "delete";
+export type Mode = "view" | "edit" | "delete" | "share";
 
 type Props = {
   book: BookSummary;
@@ -17,13 +19,15 @@ type Props = {
   deleteError: string | null;
   /** True once, right after the book next to this one was removed: focus lands on this book's link. */
   focusLink: boolean;
+  /** Who is reading, with profiles on: they may share their own books with the others. Null without profiles. */
+  readerId: string | null;
   onMode: (mode: Mode) => void;
   onSave: (id: string, update: BookUpdate) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 };
 
 /** One book on the shelf: its cover (a link to the book), how far the reader is, and what else can be done to it. */
-export function BookRow({ book, mode, pending, deleteError, focusLink, onMode, onSave, onRemove }: Props) {
+export function BookRow({ book, mode, pending, deleteError, focusLink, readerId, onMode, onSave, onRemove }: Props) {
   const questionId = useId();
   const link = useRef<HTMLAnchorElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -58,6 +62,7 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, onMode, o
   }
 
   const note = readingNote(book);
+  const { sharedBy } = book;
   return (
     <li className="shelf-item" data-state={note.state} onKeyDown={handleKeyDown}>
       {/* The tooltip carries the whole title: a long one is cut short on the cover. */}
@@ -70,7 +75,11 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, onMode, o
       </span>
       {mode === "delete" ? (
         <div className="shelf-confirm" role="group" aria-labelledby={questionId}>
-          <p id={questionId}>Remove “{shortTitle(book.title)}” and the notes you made in it? This cannot be undone.</p>
+          <p id={questionId}>
+            {sharedBy
+              ? `Take “${shortTitle(book.title)}” off your shelf? ${sharedBy.name} keeps the book, and if they share it again your notes and place come back.`
+              : `Remove “${shortTitle(book.title)}” and the notes you made in it? This cannot be undone.`}
+          </p>
           <div className="shelf-confirm-actions">
             <button type="button" className="link-button danger" disabled={busy} onClick={() => void onRemove(book.id)}>
               {busy ? "Removing..." : "Remove"}
@@ -87,12 +96,23 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, onMode, o
             {note.detail && <span>{note.detail}</span>}
             {/* The chapter is on the Continue card for the book read last; every book tells a screen reader where it stopped. */}
             {note.state === "reading" && book.progress && <span className="visually-hidden">Stopped in {book.progress.chapterTitle}</span>}
+            {sharedBy && (
+              <span className="shelf-from">
+                <Avatar profile={sharedBy} size={18} />
+                <span>
+                  <span className="visually-hidden">{sharedBy.name} shared this book with you. </span>
+                  <span aria-hidden>From {sharedBy.name}</span>
+                </span>
+              </span>
+            )}
           </p>
           <BookMenu
             title={book.title}
             disabled={pending !== null}
             triggerRef={menuButton}
-            onEdit={() => onMode("edit")}
+            shared={sharedBy !== undefined}
+            onEdit={sharedBy ? undefined : () => onMode("edit")}
+            onShare={sharedBy || readerId === null ? undefined : () => onMode("share")}
             onRemove={() => onMode("delete")}
           />
         </div>
@@ -105,6 +125,7 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, onMode, o
       {mode === "edit" && (
         <BookEditDialog book={book} saving={busy} onSave={(update) => onSave(book.id, update)} onClose={close} />
       )}
+      {mode === "share" && readerId !== null && <ShareDialog book={book} readerId={readerId} onClose={close} />}
     </li>
   );
 }

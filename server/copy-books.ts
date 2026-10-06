@@ -80,6 +80,7 @@ export async function copyBooks(from: ObjectStore, to: ObjectStore, options: Cop
 
 /** Where profiles.ts keeps the list of profiles, and the names it gives a profile's photo (one or the other at a time). */
 const PROFILES_KEY = "profiles.json";
+const SHARES_KEY = "shares.json";
 const PHOTO_FILES = ["avatar.webp", "avatar.jpg"];
 
 export type ProfileRef = { id: string; name: string };
@@ -174,6 +175,14 @@ export async function copyLibrary(from: ObjectStore, to: ObjectStore, options: L
     });
   }
 
+  /** Small files (a place, notes, answers): copied whole and not counted against the limit, like a photo. */
+  async function copyKept(source: ObjectStore, target: ObjectStore, prefix: string): Promise<void> {
+    for (const { key } of await source.list(prefix)) {
+      const data = await source.read(key);
+      if (data) await target.write(key, data);
+    }
+  }
+
   const books = await copyShelf(from, to, null);
   if (listed === null) return { books, profiles: { outcome: "none", list: [] } };
   if (refused) return { books, profiles: { outcome: "refused", list: [] } };
@@ -186,9 +195,16 @@ export async function copyLibrary(from: ObjectStore, to: ObjectStore, options: L
     // A photo is small and its profile is no use without it, so it is not held to the limit, only counted in it.
     const photo = await copyPhoto(source, target, profile.id, options.tempDir);
     used += photo ?? 0;
+    // What this reader kept of the books other profiles share with them.
+    await copyKept(source, target, "shared/");
     list.push({ ...profile, books: shelf, photo: photo !== null });
   }
   const complete = list.every((profile) => profile.books.noRoom.length === 0);
-  if (complete) await to.write(PROFILES_KEY, listed);
+  if (complete) {
+    // Before profiles.json, which is what makes the profiles exist: the shares are there by the time they are.
+    const shares = await from.read(SHARES_KEY);
+    if (shares) await to.write(SHARES_KEY, shares);
+    await to.write(PROFILES_KEY, listed);
+  }
   return { books, profiles: { outcome: complete ? "copied" : "unfinished", list } };
 }

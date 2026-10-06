@@ -11,6 +11,7 @@ import { accessGuard } from "./local-only.ts";
 import { adminRoutes } from "./routes-admin.ts";
 import { aiRoutes } from "./routes-ai.ts";
 import { booksRoutes } from "./routes-books.ts";
+import { sharesRoutes } from "./routes-shares.ts";
 import { sessionRoutes } from "./routes-session.ts";
 import { readerGuard } from "./sessions.ts";
 
@@ -47,6 +48,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     }
   });
 
+  // Sharing is between profiles, so without them these addresses are unknown like any other.
+  if (deps.accounts) app.route("/api", sharesRoutes(deps.accounts));
   app.route("/api/books", booksRoutes({ parsePdf: deps.parsePdf, renderCover: deps.renderCover }));
   app.route("/api/ai", aiRoutes({ llm: deps.llm }));
 

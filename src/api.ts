@@ -1,10 +1,12 @@
 import type { NoteChange } from "../shared/notes.ts";
 import type {
   AdminProfile,
+  AdminShare,
   AiProviderId,
   AiStatus,
   ApiError,
   BookDetail,
+  BookShare,
   BookSummary,
   BookUpdate,
   Chapter,
@@ -17,6 +19,7 @@ import type {
   ReadingProgress,
   Session,
   SessionInfo,
+  SharingOverview,
   StorageUsage,
 } from "../shared/types.ts";
 
@@ -121,6 +124,13 @@ export const api = {
       : request<void>(`/api/books/${bookId}/notes/${encodeURIComponent(change.id)}`, { method: "DELETE" }),
   storage: () => request<StorageUsage>("/api/storage"),
 
+  /** Who one of the reader's own books is shared with. */
+  bookShares: (bookId: string) => request<BookShare[]>(`/api/books/${bookId}/shares`),
+  shareBook: (bookId: string, profileId: string) => request<void>(`/api/books/${bookId}/shares/${profileId}`, { method: "PUT" }),
+  /** Their notes and place in it are kept, hidden, in case it is shared with them again. */
+  unshareBook: (bookId: string, profileId: string) => request<void>(`/api/books/${bookId}/shares/${profileId}`, { method: "DELETE" }),
+  sharing: () => request<SharingOverview>("/api/shares"),
+
   session: () => request<SessionInfo>("/api/session"),
   profiles: () => request<PublicProfile[]>("/api/profiles"),
   /** Signs in for 30 days. Rejects with code "wrong_code" (401) or "too_many_tries" (429). */
@@ -144,6 +154,9 @@ export const api = {
   /** The admin reads as `id` until stopImpersonating. */
   impersonate: (id: string) => request<Session>(`/api/admin/impersonate/${id}`, { method: "POST" }),
   stopImpersonating: () => request<Session>("/api/admin/impersonate", { method: "DELETE" }),
+  adminShares: () => request<AdminShare[]>("/api/admin/shares"),
+  adminStopShare: (share: AdminShare) =>
+    request<void>(`/api/admin/shares/${share.owner.id}/${share.bookId}/${share.recipient.id}`, { method: "DELETE" }),
   translate: (text: string, lang: LangCode, signal?: AbortSignal) =>
     request<QuickTranslation>(
       `/api/translate?q=${encodeURIComponent(text)}&lang=${lang}`,

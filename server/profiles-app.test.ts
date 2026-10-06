@@ -6,7 +6,21 @@ import { join } from "node:path";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AdminProfile, ApiError, BookSummary, ParsedBook, PublicProfile, Session, SessionInfo, StorageUsage } from "../shared/types.ts";
+import type {
+  AdminProfile,
+  AdminShare,
+  ApiError,
+  BookDetail,
+  BookShare,
+  BookSummary,
+  Note,
+  ParsedBook,
+  PublicProfile,
+  Session,
+  SessionInfo,
+  SharingOverview,
+  StorageUsage,
+} from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
 import type { AppEnv } from "./app-env.ts";
 import { createApp } from "./app.ts";
@@ -35,7 +49,10 @@ const pdfBytes = (title: string, padding = 0) => `%PDF-1.4\n${JSON.stringify(boo
 const fakeParsePdf: ParsePdf = async (path) => JSON.parse((await readFile(path, "utf8")).split("\n")[1] ?? "") as ParsedBook;
 
 const fakeLlm: Ai = {
-  streamText: () => (async function* () {})(),
+  streamText: () =>
+    (async function* () {
+      yield "An answer.";
+    })(),
   model: () => "fake-model",
   status: async () => ({ active: null, providers: [] }),
   choose: async () => ({ active: null, providers: [] }),
@@ -534,5 +551,158 @@ describe("DeepRead with profiles", () => {
     expect(await response.json()).toEqual({ error: "sign_in_required", message: "Choose your profile to keep reading." });
     expect(await readdir(join(dataDir, "profiles")).catch(() => [])).not.toContain(mina.id);
     expect((await json<StorageUsage>(call("GET", "/api/storage", adminCookie))).total).toBe(0);
+  });
+  describe("sharing a book", () => {
+    const note = (id: string): Note => ({ id, chapterId: "c1", blockId: "c1-b0", quote: "text", mode: "simple", lang: "bn" });
+    const share = (cookie: string, bookId: string, profileId: string) => call("PUT", `/api/books/${bookId}/shares/${profileId}`, cookie);
+    const unshare = (cookie: string, bookId: string, profileId: string) => call("DELETE", `/api/books/${bookId}/shares/${profileId}`, cookie);
+    const shelf = (cookie: string) => json<BookSummary[]>(call("GET", "/api/books", cookie));
+
+    it("should put a shared book on the other reader's shelf, read with their own place and notes, until it is unshared", async () => {
+      const adminCookie = await signIn(admin, PASSKEY);
+      const mina = await addProfile(adminCookie, "Mina", "246810");
+      const minaCookie = await signIn(mina.id, "246810");
+      const bookId = await upload(adminCookie, "No Longer Human");
+
+      expect((await share(adminCookie, bookId, mina.id)).status).toBe(204);
+      const [shared, ...rest] = await shelf(minaCookie);
+      expect(rest).toEqual([]);
+      expect(shared).toMatchObject({ title: "No Longer Human", progress: null, sharedBy: { id: admin, name: "Arafat" } });
+      // Its own id on her shelf: the same book id may well be one of her own books.
+      expect(shared!.id).not.toBe(bookId);
+      const id = shared!.id;
+
+      expect(await json<BookDetail>(call("GET", `/api/books/${id}`, minaCookie))).toMatchObject({ title: "No Longer Human", sharedBy: { name: "Arafat" } });
+      expect((await call("GET", `/api/books/${id}/chapters/c1`, minaCookie)).status).toBe(200);
+      expect((await call("GET", `/api/books/${id}/pdf`, minaCookie)).status).toBe(200);
+
+      // Her place and her notes are hers: the owner's copy of the book is not touched.
+      expect((await call("PUT", `/api/books/${id}/progress`, minaCookie, { chapterId: "c1", blockId: "c1-b0", offset: 4 })).status).toBe(200);
+      expect((await call("PUT", `/api/books/${id}/notes/n1`, minaCookie, { note: note("n1"), before: null })).status).toBe(204);
+      expect((await shelf(minaCookie))[0]?.progress).toMatchObject({ chapterId: "c1", blockId: "c1-b0", offset: 4 });
+      expect(await json<Note[]>(call("GET", `/api/books/${id}/notes`, minaCookie))).toEqual([note("n1")]);
+      expect((await shelf(adminCookie))[0]?.progress).toBeNull();
+      expect(await json<Note[]>(call("GET", `/api/books/${bookId}/notes`, adminCookie))).toEqual([]);
+
+      // Read only: she can neither change the book nor pass it on.
+      const rename = await call("PATCH", `/api/books/${id}`, minaCookie, { title: "Mine now" });
+      expect(rename.status).toBe(403);
+      expect(await json<ApiError>(rename)).toMatchObject({ error: "shared_read_only", message: expect.stringContaining("Arafat") });
+      expect((await share(minaCookie, id, admin)).status).toBe(403);
+
+      expect(await json<BookShare[]>(call("GET", `/api/books/${bookId}/shares`, adminCookie))).toEqual([
+        { profile: expect.objectContaining({ id: mina.id, name: "Mina" }), sharedAt: expect.any(String) },
+      ]);
+
+      expect((await unshare(adminCookie, bookId, mina.id)).status).toBe(204);
+      expect(await shelf(minaCookie)).toEqual([]);
+      expect((await call("GET", `/api/books/${id}`, minaCookie)).status).toBe(404);
+      expect((await call("GET", `/api/books/${id}/chapters/c1`, minaCookie)).status).toBe(404);
+
+      // Shared again, she finds her place and her notes where she left them.
+      await share(adminCookie, bookId, mina.id);
+      expect((await shelf(minaCookie))[0]?.progress).toMatchObject({ blockId: "c1-b0", offset: 4 });
+      expect(await json<Note[]>(call("GET", `/api/books/${id}/notes`, minaCookie))).toEqual([note("n1")]);
+    });
+
+    it("should let the reader take a shared book off their shelf, and share only one's own books with someone else who exists", async () => {
+      const adminCookie = await signIn(admin, PASSKEY);
+      const mina = await addProfile(adminCookie, "Mina", "246810");
+      const zed = await addProfile(adminCookie, "Zed", "135790");
+      const minaCookie = await signIn(mina.id, "246810");
+      const zedCookie = await signIn(zed.id, "135790");
+      const bookId = await upload(adminCookie, "No Longer Human");
+      await share(adminCookie, bookId, mina.id);
+      const id = (await shelf(minaCookie))[0]!.id;
+
+      // Shared with Mina, not with Zed: to him the book is not there.
+      expect((await call("GET", `/api/books/${id}`, zedCookie)).status).toBe(404);
+      expect((await call("GET", `/api/books/${id}/pdf`, zedCookie)).status).toBe(404);
+      expect((await share(minaCookie, bookId, zed.id)).status).toBe(404);
+
+      const self = await share(adminCookie, bookId, admin);
+      expect(self.status).toBe(400);
+      expect(await json<ApiError>(self)).toMatchObject({ error: "invalid_recipient" });
+      expect((await share(adminCookie, bookId, "nobody-123456")).status).toBe(404);
+      expect((await share(adminCookie, "no-such-book-12345678", zed.id)).status).toBe(404);
+
+      expect((await call("DELETE", `/api/books/${id}`, minaCookie)).status).toBe(204);
+      expect(await shelf(minaCookie)).toEqual([]);
+      expect(await titles(adminCookie)).toEqual(["No Longer Human"]);
+      expect(await json<BookShare[]>(call("GET", `/api/books/${bookId}/shares`, adminCookie))).toEqual([]);
+    });
+
+    it("should explain a passage of a shared book, keeping the answers with the reader who asked", async () => {
+      const adminCookie = await signIn(admin, PASSKEY);
+      const mina = await addProfile(adminCookie, "Mina", "246810");
+      const minaCookie = await signIn(mina.id, "246810");
+      const bookId = await upload(adminCookie, "No Longer Human");
+      await share(adminCookie, bookId, mina.id);
+      const id = (await shelf(minaCookie))[0]!.id;
+      const ask = (cookie: string, book: string) =>
+        call("POST", "/api/ai/explain", cookie, { bookId: book, chapterId: "c1", blockId: "c1-b0", selection: "text", mode: "word", lang: "bn" });
+
+      const first = await ask(minaCookie, id);
+      expect(first.status).toBe(200);
+      expect(await first.text()).toContain("An answer.");
+      expect(await (await ask(minaCookie, id)).text()).toContain('"cached":true');
+      // The owner's own copy of the book has not been asked about: her answers are hers.
+      expect(await (await ask(adminCookie, bookId)).text()).toContain('"cached":false');
+
+      await unshare(adminCookie, bookId, mina.id);
+      expect((await ask(minaCookie, id)).status).toBe(404);
+    });
+
+    it("should end a book's shares when its owner removes it, so adding the same PDF again shares nothing", async () => {
+      const adminCookie = await signIn(admin, PASSKEY);
+      const mina = await addProfile(adminCookie, "Mina", "246810");
+      const minaCookie = await signIn(mina.id, "246810");
+      const bookId = await upload(adminCookie, "No Longer Human");
+      await share(adminCookie, bookId, mina.id);
+
+      expect((await call("DELETE", `/api/books/${bookId}`, adminCookie)).status).toBe(204);
+      expect(await shelf(minaCookie)).toEqual([]);
+      expect(await upload(adminCookie, "No Longer Human")).toBe(bookId);
+      expect(await shelf(minaCookie)).toEqual([]);
+
+      // A removed profile takes its shares with it, both ways.
+      await share(adminCookie, bookId, mina.id);
+      expect((await call("DELETE", `/api/admin/profiles/${mina.id}`, adminCookie)).status).toBe(204);
+      expect(await json<BookShare[]>(call("GET", `/api/books/${bookId}/shares`, adminCookie))).toEqual([]);
+    });
+
+    it("should list what each reader shares and is shared, and show the admin every share with a way to stop it", async () => {
+      const adminCookie = await signIn(admin, PASSKEY);
+      const mina = await addProfile(adminCookie, "Mina", "246810");
+      const minaCookie = await signIn(mina.id, "246810");
+      const hers = await upload(minaCookie, "Mina's Book");
+      const mine = await upload(adminCookie, "No Longer Human");
+      await share(minaCookie, hers, admin);
+      await share(adminCookie, mine, mina.id);
+
+      const overview = await json<SharingOverview>(call("GET", "/api/shares", minaCookie));
+      expect(overview.given).toEqual([{ bookId: hers, title: "Mina's Book", author: null, hasCover: false, with: [{ profile: expect.objectContaining({ name: "Arafat" }), sharedAt: expect.any(String) }] }]);
+      expect(overview.received).toEqual([
+        {
+          bookId: expect.any(String),
+          title: "No Longer Human",
+          author: null,
+          hasCover: false,
+          from: expect.objectContaining({ name: "Arafat" }),
+          sharedAt: expect.any(String),
+        },
+      ]);
+
+      const all = await json<AdminShare[]>(call("GET", "/api/admin/shares", adminCookie));
+      expect(all.map((one) => [one.owner.name, one.title, one.recipient.name]).sort()).toEqual([
+        ["Arafat", "No Longer Human", "Mina"],
+        ["Mina", "Mina's Book", "Arafat"],
+      ]);
+      expect((await call("GET", "/api/admin/shares", minaCookie)).status).toBe(403);
+
+      expect((await call("DELETE", `/api/admin/shares/${mina.id}/${hers}/${admin}`, adminCookie)).status).toBe(204);
+      expect((await shelf(adminCookie)).map((b) => b.title)).toEqual(["No Longer Human"]);
+      expect((await call("DELETE", `/api/admin/shares/${mina.id}/${hers}/${admin}`, adminCookie)).status).toBe(404);
+    });
   });
 });

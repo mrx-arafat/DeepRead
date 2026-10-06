@@ -57,6 +57,10 @@ export const chapterNotFound = (c: Context): Response =>
 export const blockNotFound = (c: Context): Response =>
   apiError(c, 404, "block_not_found", "That paragraph was not found in this chapter.");
 
+/** A book another profile shared with the reader: only its owner changes it, or passes it on. */
+export const sharedReadOnly = (c: Context, owner: string | undefined): Response =>
+  apiError(c, 403, "shared_read_only", `${owner ?? "Its owner"} shared this book with you, so only they can change or share it.`);
+
 /** With profiles: nobody signed in, or the profile signed in as has been removed. */
 export const signInRequired = (c: Context): Response =>
   apiError(c, 401, "sign_in_required", "Choose your profile to keep reading.");

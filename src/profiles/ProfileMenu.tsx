@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ChevronDown, LogOut, ShieldCheck } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, HandHeart, LogOut, ShieldCheck } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { FocusEvent, KeyboardEvent } from "react";
 import { Link } from "wouter";
@@ -83,6 +83,9 @@ export function ProfileMenu({ session }: { session: Session }) {
           <button type="button" disabled={leaving} onClick={() => void leave()}>
             <LogOut size={18} aria-hidden /> Sign out
           </button>
+          <Link href="/sharing" onClick={() => setOpen(false)}>
+            <HandHeart size={18} aria-hidden /> Sharing
+          </Link>
           {session.admin && (
             <Link href="/admin" onClick={() => setOpen(false)}>
               <ShieldCheck size={18} aria-hidden /> Admin

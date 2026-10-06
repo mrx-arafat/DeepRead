@@ -476,7 +476,7 @@ If you already have books on your computer, copy them into the bucket once:
 4. Start DeepRead again.
 
 It copies every book the bucket does not have yet, with its notes and saved AI answers.
-With profiles on, it also copies the profiles, each with its books and photo, and the list of profiles last.
+With profiles on, it also copies the profiles, each with its books and photo, the books shared between them with what readers kept of them, and the list of profiles last.
 If the bucket already has profiles of its own, it copies none from your computer: the two lists are not merged.
 It skips books that are already in the bucket, and books that would not fit under your limit.
 It never changes or removes anything on your computer, so your `data` folder stays as it was.
@@ -539,6 +539,23 @@ Your own profile, marked with a green check, opens without a code; anyone else's
 - The same storage limit as everyone else.
   `DEEPREAD_STORAGE_LIMIT` is shared by all profiles, so the books of every profile count toward it together.
   The line under the shelf shows both numbers, such as "Your books take 1.2 GB; everyone's together take 3.4 GB, kept on this computer."
+
+### Sharing a book
+
+A profile can share its own books with the other profiles.
+Open the **...** menu under a cover and choose **Share**.
+Each person who reads here has a switch: turn it on and the book appears on their shelf, marked "From" your name.
+They read the same book, but with their own place, notes and saved answers, and they cannot change it, rename it or pass it on.
+Nothing is copied, so a shared book takes no extra room.
+
+To stop, turn the switch off, or press the cross beside their name on the **Sharing** page (in the profile menu).
+The book leaves their shelf at once.
+Their notes and place are kept out of sight, so if you share the book again they carry on where they were.
+They can also take a shared book off their own shelf (**Remove from my shelf**), which ends that share and leaves your book alone.
+The **Sharing** page lists the books you share and with whom, and the books shared with you.
+If you remove a book, or the admin removes a profile, the shares that go with it end and what others kept of that book is removed too.
+The admin sees every share on the dashboard under **Shared books**, and can stop any of them.
+Sharing needs profiles; without them there is nobody to share with.
 
 ### The admin dashboard
 
@@ -806,6 +823,7 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 - With R2, the secret key sits in `.env.local` on this computer.
 - With profiles on, the lock after wrong codes is kept by the running server, so it starts over when DeepRead restarts.
   Each DeepRead server keeps its own count.
+- A book shared with a profile is read from its owner's copy, so the owner's PDF is open to whoever it is shared with, for as long as the share lasts.
 - Profiles keep readers apart inside DeepRead.
   They do not encrypt anything, so anyone who can open the `data` folder or the R2 bucket can read the books in it.
 

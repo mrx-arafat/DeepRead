@@ -1,5 +1,6 @@
 import { Route, Switch } from "wouter";
 import { AdminPage } from "./admin/AdminPage.tsx";
+import { SharingPage } from "./library/SharingPage.tsx";
 import { LibraryPage } from "./LibraryPage.tsx";
 import { ProfilesPage } from "./profiles/ProfilesPage.tsx";
 import { useSession } from "./profiles/session.tsx";
@@ -30,6 +31,7 @@ function Shelf() {
   return (
     <Switch>
       <Route path="/" component={LibraryPage} />
+      <Route path="/sharing" component={SharingPage} />
       {/* One reader per book: its notes, chapters and position all belong to that book. */}
       <Route path="/book/:bookId/:chapterId?">
         {(params) => <ReaderPage key={params.bookId} bookId={params.bookId} chapterId={params.chapterId ?? null} />}

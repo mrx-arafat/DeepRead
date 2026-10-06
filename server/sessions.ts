@@ -104,7 +104,7 @@ export function readerGuard(deps: AppDeps): MiddlewareHandler<AppEnv> {
     const session = await currentSession(c, deps.accounts);
     if (!session) return signInRequired(c);
     c.set("session", session);
-    c.set("library", deps.accounts.profiles.library(session.profile.id));
+    c.set("library", deps.accounts.profiles.shelf(session.profile.id));
     return next();
   };
 }

@@ -4,6 +4,7 @@ import { Link, useLocation } from "wouter";
 import type { AdminProfile, ProfileUpdate, Session } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { useSession } from "../profiles/session.tsx";
+import { AdminShares } from "./AdminShares.tsx";
 import { ProfileDialog } from "./ProfileDialog.tsx";
 import type { ProfileInput } from "./ProfileForm.tsx";
 import { reason } from "./profileText.ts";
@@ -226,6 +227,7 @@ export function AdminDashboard({ session }: { session: Session }) {
               reading?” page.
             </p>
           )}
+          {!onlyAdmin && <AdminShares changed={profiles} />}
         </>
       )}
 

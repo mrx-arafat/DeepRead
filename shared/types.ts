@@ -77,6 +77,11 @@ export type BookSummary = {
   progress: ReadingProgress | null;
   /** Page 1 of the PDF is the book's cover, served at /api/books/<id>/cover. Without one the library draws a cover. */
   hasCover: boolean;
+  /**
+   * Who shared this book with the reader; absent for their own books. A shared book is read only, its `addedAt` is when
+   * it was shared, and its `progress` is the reader's own.
+   */
+  sharedBy?: PublicProfile;
 };
 
 export type BookDetail = BookSummary & {
@@ -193,6 +198,22 @@ export type PublicProfile = {
   /** The small label shown beside the name: whatever the admin gave this profile, "Admin" for the admin's until then, else none. */
   badge: string | null;
 };
+
+/** Someone a book is shared with, and since when. */
+export type BookShare = { profile: PublicProfile; sharedAt: string };
+
+/** The reader's sharing page: the books they share and with whom, and the books shared with them. */
+export type SharingOverview = {
+  given: Array<SharedBookInfo & { with: BookShare[] }>;
+  /** `bookId` is the id the book goes by on the reader's shelf. */
+  received: Array<SharedBookInfo & { from: PublicProfile; sharedAt: string }>;
+};
+
+/** Enough of a book to show its cover and name it. */
+type SharedBookInfo = { bookId: string; title: string; author: string | null; hasCover: boolean };
+
+/** One share as the admin dashboard lists it. */
+export type AdminShare = { owner: PublicProfile; recipient: PublicProfile; bookId: string; title: string; sharedAt: string };
 
 /** A profile as the admin dashboard shows it. */
 export type AdminProfile = PublicProfile & {

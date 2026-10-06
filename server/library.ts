@@ -40,6 +40,9 @@ const COVER_FILES: Record<CoverImage["type"], string> = { "image/webp": "cover.w
 const ADDING = "adding books";
 const META_KEY = /^books\/([^/]+)\/meta\.json$/;
 
+/** The key an answer is cached under: a SHA-256 in hex. */
+export const isCacheKey = (key: string): boolean => CACHE_KEY.test(key);
+
 export function isBookId(id: string): boolean {
   return id.length <= 96 && BOOK_ID.test(id);
 }

@@ -20,7 +20,7 @@ import { forgetHeldNotes, noteOwner } from "./reader/noteSync.ts";
 const ADD_BUTTON = "add";
 
 /** The one row that is being edited or asked to confirm its removal. */
-type Active = { kind: "edit"; id: string } | { kind: "delete"; id: string; error: string | null };
+type Active = { kind: "edit" | "share"; id: string } | { kind: "delete"; id: string; error: string | null };
 
 export function LibraryPage() {
   const [, navigate] = useLocation();
@@ -44,7 +44,9 @@ export function LibraryPage() {
   const input = useRef<HTMLInputElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   const uploadingNow = useRef(false);
-  const dragging = useFileDrop(onDrop, active?.kind !== "edit");
+  // A file dropped on a dialog over the shelf is not meant for the shelf.
+  const inDialog = active?.kind === "edit" || active?.kind === "share";
+  const dragging = useFileDrop(onDrop, !inDialog);
 
   useEffect(() => {
     // `current` drops the answer of a request the reader has already replaced by pressing "Try again".
@@ -72,7 +74,7 @@ export function LibraryPage() {
   }, [focusAfterRemoval]);
 
   function onDrop(files: FileList) {
-    if (active?.kind === "edit") return;
+    if (inDialog) return;
     if (uploadingNow.current) {
       setError("A book is still being added. Drop it again when the upload finishes.");
       return;
@@ -109,7 +111,7 @@ export function LibraryPage() {
 
   function show(id: string, mode: Mode) {
     setAlready(null);
-    setActive(mode === "view" ? null : mode === "edit" ? { kind: "edit", id } : { kind: "delete", id, error: null });
+    setActive(mode === "view" ? null : mode === "delete" ? { kind: "delete", id, error: null } : { kind: mode, id });
   }
 
   /** Rejects with the server's message, which the edit form shows and keeps itself open for. */
@@ -259,6 +261,7 @@ export function LibraryPage() {
                     pending={pending}
                     deleteError={mine?.kind === "delete" ? mine.error : null}
                     focusLink={focusAfterRemoval === book.id}
+                    readerId={session?.profile.id ?? null}
                     onMode={(mode) => show(book.id, mode)}
                     onSave={save}
                     onRemove={remove}

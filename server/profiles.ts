@@ -13,6 +13,8 @@ import { copyBooks } from "./copy-books.ts";
 import { isRecord } from "./http.ts";
 import { createLibrary, isBookId, slugify } from "./library.ts";
 import type { Library, SharedLimit } from "./library.ts";
+import { createShares, readerShelf } from "./shares.ts";
+import type { Shares } from "./shares.ts";
 import { scopedStore } from "./storage.ts";
 import type { ObjectStore, StoredObject } from "./storage.ts";
 import { createThrottle } from "./throttle.ts";
@@ -162,6 +164,10 @@ export type Profiles = {
   photo(id: string): Promise<Photo | null>;
   /** The profile's own library, made once and kept until the profile is removed. */
   library(id: string): Library;
+  /** What the profile reads: its own library with the books other profiles share with it alongside. */
+  shelf(id: string): Library;
+  /** Who shares which book with whom. */
+  shares: Shares;
   /** The profiles as the admin dashboard shows them: with how many books each keeps and the room they take. */
   describe(profiles: StoredProfile[]): Promise<AdminProfile[]>;
 };
@@ -170,6 +176,8 @@ export function createProfiles(options: ProfilesOptions): Profiles {
   const { store, dataDir, limit, adminPasskey, adminName } = options;
   const tempRoot = join(dataDir, "tmp");
   const libraries = new Map<string, Library>();
+  const shelves = new Map<string, Library>();
+  const shares = createShares(store);
   // One per profile, keyed by client, so removing a profile forgets its tries in one step.
   const throttles = new Map<string, Throttle>();
   const changes = createQueue();
@@ -288,6 +296,24 @@ export function createProfiles(options: ProfilesOptions): Profiles {
     return library;
   }
 
+  function shelfOf(id: string): Library {
+    let shelf = shelves.get(id);
+    if (!shelf) {
+      const existing = (profileId: string) => profiles.find((profile) => profile.id === profileId);
+      shelf = readerShelf(libraryOf(id), id, {
+        store,
+        shares,
+        libraryOf: (owner) => (existing(owner) ? libraryOf(owner) : null),
+        profileOf: (profileId) => {
+          const profile = existing(profileId);
+          return profile ? publicProfile(profile) : null;
+        },
+      });
+      shelves.set(id, shelf);
+    }
+    return shelf;
+  }
+
   async function find(id: string): Promise<StoredProfile | null> {
     await open();
     return profiles.find((profile) => profile.id === id) ?? null;
@@ -399,6 +425,9 @@ export function createProfiles(options: ProfilesOptions): Profiles {
         console.warn(`could not clear away all the files of removed profile ${id}:`, error);
       }
       libraries.delete(id);
+      shelves.delete(id);
+      // What it shared and what was shared with it end with it.
+      await shares.forgetProfile(id);
       return true;
     },
 
@@ -462,6 +491,8 @@ export function createProfiles(options: ProfilesOptions): Profiles {
     },
 
     library: libraryOf,
+    shelf: shelfOf,
+    shares,
 
     async describe(list) {
       // One listing for the whole dashboard; one profile's folder when only that profile is asked about.

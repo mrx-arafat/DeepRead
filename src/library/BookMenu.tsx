@@ -1,4 +1,4 @@
-import { Ellipsis, Pencil, Trash2 } from "lucide-react";
+import { BookMinus, Ellipsis, Pencil, Share2, Trash2 } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { FocusEvent, KeyboardEvent, RefObject } from "react";
 
@@ -7,8 +7,13 @@ type Props = {
   disabled: boolean;
   /** The "more" button, so the row can hand focus back to it when an edit or a removal question closes. */
   triggerRef: RefObject<HTMLButtonElement | null>;
-  onEdit: () => void;
+  /** Absent for a book shared with the reader: only its owner changes it. */
+  onEdit?: () => void;
+  /** Absent where the book cannot be shared: without profiles, or a book someone else shared. */
+  onShare?: () => void;
   onRemove: () => void;
+  /** A book someone shared with the reader, which Remove only takes off their shelf. */
+  shared?: boolean;
 };
 
 /** Place the panel on the side with room for both actions when it cannot fit below the trigger. */
@@ -18,11 +23,11 @@ export function menuOpensAbove(triggerTop: number, triggerBottom: number, panelH
 }
 
 /**
- * What can be done to a book besides reading it. A disclosure, not a menu role: the two buttons follow the "more"
+ * What can be done to a book besides reading it. A disclosure, not a menu role: its buttons follow the "more"
  * button in tab order, and Escape, a click elsewhere or tabbing away folds them back in. The panel is laid over the shelf by the
  * stylesheet, across the width of the book it belongs to.
  */
-export function BookMenu({ title, disabled, triggerRef, onEdit, onRemove }: Props) {
+export function BookMenu({ title, disabled, triggerRef, onEdit, onShare, onRemove, shared = false }: Props) {
   const panelId = useId();
   const root = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -88,12 +93,25 @@ export function BookMenu({ title, disabled, triggerRef, onEdit, onRemove }: Prop
       </button>
       {open && (
         <div className="shelf-menu-panel" id={panelId} ref={panel} data-above={above || undefined}>
-          <button type="button" aria-label={`Edit ${title}`} onClick={() => choose(onEdit)}>
-            <Pencil size={18} aria-hidden /> Edit
-          </button>
-          <button type="button" className="danger" aria-label={`Remove ${title}`} onClick={() => choose(onRemove)}>
-            <Trash2 size={18} aria-hidden /> Remove
-          </button>
+          {onEdit && (
+            <button type="button" aria-label={`Edit ${title}`} onClick={() => choose(onEdit)}>
+              <Pencil size={18} aria-hidden /> Edit
+            </button>
+          )}
+          {onShare && (
+            <button type="button" aria-label={`Share ${title}`} onClick={() => choose(onShare)}>
+              <Share2 size={18} aria-hidden /> Share
+            </button>
+          )}
+          {shared ? (
+            <button type="button" aria-label={`Remove ${title} from my shelf`} onClick={() => choose(onRemove)}>
+              <BookMinus size={18} aria-hidden /> Remove
+            </button>
+          ) : (
+            <button type="button" className="danger" aria-label={`Remove ${title}`} onClick={() => choose(onRemove)}>
+              <Trash2 size={18} aria-hidden /> Remove
+            </button>
+          )}
         </div>
       )}
     </div>

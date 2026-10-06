@@ -203,4 +203,16 @@ describe("copyLibrary", () => {
     expect(await to.read("profiles.json")).toBeNull();
     expect(await readdir(tempDir)).toEqual([]);
   });
+  it("should carry the shares and what readers kept of the books shared with them, so a move loses neither", async () => {
+    await from.write("shares.json", '{"shares":[]}');
+    await from.write("profiles/mina-bbbbbb/shared/admin-aaaaaa--beta-22222222/progress.json", '{"blockId":"c1-b1"}');
+    await from.write("profiles/mina-bbbbbb/shared/admin-aaaaaa--beta-22222222/notes.json", "[]");
+    await from.write("profiles/mina-bbbbbb/shared/admin-aaaaaa--beta-22222222/cache/answer.json", '{"text":"hers"}');
+
+    await copyLibrary(from, to, { tempDir, limit: null });
+
+    expect((await to.read("shares.json"))?.toString()).toBe('{"shares":[]}');
+    expect((await to.read("profiles/mina-bbbbbb/shared/admin-aaaaaa--beta-22222222/progress.json"))?.toString()).toBe('{"blockId":"c1-b1"}');
+    expect((await to.read("profiles/mina-bbbbbb/shared/admin-aaaaaa--beta-22222222/cache/answer.json"))?.toString()).toBe('{"text":"hers"}');
+  });
 });
