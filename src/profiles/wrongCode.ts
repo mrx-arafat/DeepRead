@@ -2,15 +2,15 @@
 
 export const WRONG_CODE_LINES = [
   "Nope. That is not the code. Nice try, though.",
-  "Wrong code. Snooping in someone else's books? Bold.",
-  "Incorrect. The bouncer read that and laughed out loud.",
-  "Not even close. Try the code you actually own.",
+  "Wrong. Snooping in someone's books? Bold.",
+  "Wrong. The bouncer laughed out loud.",
+  "Not even close. Try the code you own.",
   "Wrong. Guessing is not a reading skill.",
-  "That code opens nothing. Your detective career ends here.",
-  "Nope. Even the books are judging you right now.",
+  "That opens nothing. Detective career over.",
+  "Nope. The books are judging you.",
   "Wrong code. Bold of you to guess.",
   "Access denied. Dramatic pause. Try again.",
-  "Wrong code. The library cat saw that and is disappointed.",
+  "Wrong code. The library cat is disappointed.",
 ] as const;
 
 /** A line for a wrong code, never the same one twice in a row (`previous` is the last one shown). */

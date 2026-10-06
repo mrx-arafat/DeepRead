@@ -15,9 +15,9 @@ describe("wrongCodeLine", () => {
     expect(seen.size).toBe(WRONG_CODE_LINES.length);
   });
 
-  it("should keep every line short, plain text, so it fits in two lines under the code box on a phone", () => {
+  it("should keep every line short, plain text, so it fits on one line under the code box", () => {
     for (const line of WRONG_CODE_LINES) {
-      expect(line.length).toBeLessThanOrEqual(70);
+      expect(line.length).toBeLessThanOrEqual(46);
       expect(line).toMatch(/^[\x20-\x7e]+$/);
     }
   });

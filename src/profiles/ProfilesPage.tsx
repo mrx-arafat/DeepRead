@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, LoaderCircle } from "lucide-react";
+import { ArrowRight, Check, ChevronLeft, Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { useLocation } from "wouter";
@@ -111,7 +111,10 @@ export function ProfilesPage() {
   );
 }
 
-/** One profile's code, asked for where the tiles were. */
+/**
+ * One profile's code, asked for where the tiles were: the picture, one field with its submit arrow and an eye inside it,
+ * and a quiet way back. A wrong code shakes the field and says so below it, without moving anything.
+ */
 function CodeEntry({ profile, onBack }: { profile: PublicProfile; onBack: () => void }) {
   const { setSession } = useSession();
   const [, navigate] = useLocation();
@@ -119,16 +122,26 @@ function CodeEntry({ profile, onBack }: { profile: PublicProfile; onBack: () => 
   const errorId = useId();
   const input = useRef<HTMLInputElement>(null);
   const [code, setCode] = useState("");
+  const [shown, setShown] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Counts the reports, so a second wrong code fades in again, and drives the shake.
+  const [reports, setReports] = useState(0);
+  const [shaking, setShaking] = useState(false);
   // The line the last wrong code got, so the next one is not the same joke.
   const lastJoke = useRef<string | null>(null);
+
+  function report(message: string, shake: boolean) {
+    setError(message);
+    setReports((n) => n + 1);
+    setShaking(shake);
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
     if (code === "") {
-      setError(`Type ${profile.name}'s code to open DeepRead.`);
+      report(`Type ${profile.name}'s code to open DeepRead.`, false);
       input.current?.focus();
       return;
     }
@@ -142,9 +155,9 @@ function CodeEntry({ profile, onBack }: { profile: PublicProfile; onBack: () => 
     } catch (err) {
       if (err instanceof ApiFailure && err.code === "wrong_code") {
         lastJoke.current = wrongCodeLine(lastJoke.current);
-        setError(lastJoke.current);
+        report(lastJoke.current, true);
       } else {
-        setError(err instanceof Error ? err.message : "That code could not be checked. Please try again.");
+        report(err instanceof Error ? err.message : "That code could not be checked. Please try again.", false);
       }
       setBusy(false);
       // Pressing the button disabled it, which dropped focus; the reader is about to retype.
@@ -167,41 +180,53 @@ function CodeEntry({ profile, onBack }: { profile: PublicProfile; onBack: () => 
         Enter {profile.name}'s code
       </label>
       <div className="profile-code-field">
-        <input
-          ref={input}
-          id={inputId}
-          name="code"
-          type="password"
-          value={code}
-          autoFocus
-          autoComplete="current-password"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          aria-invalid={error !== null}
-          aria-describedby={error !== null ? errorId : undefined}
-          readOnly={busy}
-          onChange={(event) => setCode(event.target.value)}
-        />
-        {/* Always on the page, so the line is already reserved and the buttons do not drop when an error arrives. */}
-        <p id={errorId} className="inline-error profile-code-error" role="alert">
-          {error}
+        <div
+          className="profile-code-box"
+          data-shaking={shaking || undefined}
+          data-invalid={error !== null || undefined}
+          onAnimationEnd={() => setShaking(false)}
+        >
+          <input
+            ref={input}
+            id={inputId}
+            name="code"
+            type={shown ? "text" : "password"}
+            value={code}
+            placeholder="Code"
+            autoFocus
+            autoComplete="current-password"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-invalid={error !== null}
+            aria-describedby={errorId}
+            readOnly={busy}
+            onChange={(event) => setCode(event.target.value)}
+          />
+          <button
+            type="button"
+            className="profile-code-eye"
+            aria-label={shown ? "Hide the code" : "Show the code"}
+            aria-pressed={shown}
+            disabled={busy}
+            // The field keeps focus, so the reader types on without a click back into it.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setShown((was) => !was)}
+          >
+            {shown ? <EyeOff size={20} aria-hidden /> : <Eye size={20} aria-hidden />}
+          </button>
+          <button type="submit" className="profile-code-go" aria-label={busy ? "Opening" : "Open"} disabled={busy}>
+            {busy ? <LoaderCircle className="profile-spinner" size={20} aria-hidden /> : <ArrowRight size={20} aria-hidden />}
+          </button>
+        </div>
+        {/* Always on the page, with room for a line, so nothing moves when a report arrives. */}
+        <p id={errorId} className="profile-code-error" role="alert">
+          {error && <span key={reports}>{error}</span>}
         </p>
       </div>
-      <div className="profile-code-actions">
-        <button type="submit" className="button" disabled={busy}>
-          {busy ? (
-            <>
-              <LoaderCircle className="profile-spinner" size={18} aria-hidden /> Opening
-            </>
-          ) : (
-            "Open"
-          )}
-        </button>
-        <button type="button" className="quiet-button" disabled={busy} onClick={onBack}>
-          <ChevronLeft size={18} aria-hidden /> Back
-        </button>
-      </div>
+      <button type="button" className="profile-code-back" disabled={busy} onClick={onBack}>
+        <ChevronLeft size={18} aria-hidden /> Choose another profile
+      </button>
       <span className="visually-hidden" role="status">
         {busy ? "Checking the code" : ""}
       </span>

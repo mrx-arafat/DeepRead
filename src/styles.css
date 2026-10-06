@@ -3102,19 +3102,38 @@ h5[data-block] {
   color: #fff;
 }
 
-/* The code for one profile, in the place the tiles were. */
+/* The code for one profile, in the place the tiles were. It eases in, as the tiles do when they come back. */
 .profile-code {
   display: grid;
   justify-items: center;
   gap: 1rem;
   width: 100%;
   max-width: 22rem;
+  animation: profile-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.profile-grid {
+  animation: profile-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes profile-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
 }
 
 .profile-code-art {
   width: var(--tile-large);
   height: var(--tile-large);
   margin-bottom: 0.5rem;
+  animation: profile-art-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes profile-art-in {
+  from {
+    transform: scale(0.92);
+  }
 }
 
 .profile-code-label {
@@ -3130,51 +3149,189 @@ h5[data-block] {
   width: 100%;
 }
 
-.profile-code-field input {
-  width: 100%;
-  min-height: 2.75rem;
-  padding: 0 0.75rem;
+/* One rounded field holding the code, the eye and the arrow, so the page has a single thing to aim at. */
+.profile-code-box {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 3.5rem;
+  padding: 0 0.5rem 0 1.125rem;
   /* A control's edge must clear 3:1 against the page; the hairline --rule is only for dividers. */
   border: 1px solid var(--ink-faint);
-  border-radius: var(--radius);
+  border-radius: 0.875rem;
   background: var(--paper);
-  color: var(--ink);
-  font: inherit;
-  text-align: center;
+  transition:
+    border-color 0.15s ease-out,
+    box-shadow 0.15s ease-out;
 }
 
-.profile-code-field input[aria-invalid="true"] {
+.profile-code-box:focus-within {
+  border-color: var(--pen);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pen) 28%, transparent);
+}
+
+.profile-code-box[data-invalid] {
   border-color: var(--danger);
 }
 
-/* Two lines are kept for it (a joke can run to two), so the buttons stay where they are when a wrong code is reported. */
+.profile-code-box[data-invalid]:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 24%, transparent);
+}
+
+.profile-code-box[data-shaking] {
+  animation: profile-shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes profile-shake {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(3px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-6px);
+  }
+  40%,
+  60% {
+    transform: translateX(6px);
+  }
+}
+
+.profile-code-box input {
+  flex: 1;
+  min-width: 0;
+  min-height: 3.25rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  /* 16px or more, so a phone does not zoom the page when the field is focused. */
+  font: inherit;
+  font-size: 1.125rem;
+  outline: none;
+}
+
+.profile-code-box input::placeholder {
+  color: var(--ink-faint);
+}
+
+.profile-code-eye,
+.profile-code-go {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease-out,
+    color 0.15s ease-out,
+    transform 0.15s ease-out;
+}
+
+.profile-code-eye {
+  background: transparent;
+  color: var(--ink-soft);
+}
+
+.profile-code-eye:hover:not(:disabled) {
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.profile-code-go {
+  background: var(--pen);
+  color: var(--pen-ink);
+}
+
+.profile-code-go:hover:not(:disabled) {
+  transform: translateX(2px);
+}
+
+.profile-code-go:disabled {
+  cursor: progress;
+}
+
+.profile-code-eye:focus-visible,
+.profile-code-go:focus-visible {
+  outline: 2px solid var(--pen);
+  outline-offset: 2px;
+}
+
+/* One line is kept for it (the jokes are written to fit), so nothing moves when a report arrives. */
 .profile-code-error {
-  min-height: 3rem;
+  min-height: 1.5rem;
+  color: var(--danger);
+  font-size: 0.9375rem;
+  line-height: 1.5;
   text-wrap: balance;
 }
 
-.profile-code-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.75rem;
+.profile-code-error span {
+  display: inline-block;
+  animation: profile-error-in 0.25s ease-out both;
 }
 
-.profile-code-actions .quiet-button {
+@keyframes profile-error-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+}
+
+/* The way back: a quiet line, not a button, so the arrow stays the one thing to press. */
+.profile-code-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   min-height: 2.75rem;
-  border-color: var(--ink-faint);
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color 0.15s ease-out;
 }
 
-.profile-code-actions .button:disabled {
-  opacity: 0.7;
-  cursor: progress;
-  filter: none;
+.profile-code-back:hover:not(:disabled),
+.profile-code-back:focus-visible {
+  color: var(--ink);
 }
 
-.profile-code-actions .quiet-button:disabled {
-  background: transparent;
+.profile-code-back:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* Touch screens: the same 44px floor as every other control. */
+@media (pointer: coarse) {
+  .profile-code-eye,
+  .profile-code-go {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-code,
+  .profile-grid,
+  .profile-code-art,
+  .profile-code-error span,
+  .profile-code-box[data-shaking] {
+    animation: none;
+  }
+
+  .profile-code-go:hover:not(:disabled) {
+    transform: none;
+  }
 }
 
 .profile-spinner {
