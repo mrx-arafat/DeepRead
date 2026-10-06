@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ChevronDown, ShieldCheck } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, LogOut, ShieldCheck } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { FocusEvent, KeyboardEvent } from "react";
 import { Link } from "wouter";
@@ -12,7 +12,7 @@ import { useSession } from "./session.tsx";
  * or tabbing away folds them back in. The stylesheet lays it over the page's top margin.
  */
 export function ProfileMenu({ session }: { session: Session }) {
-  const { signOut } = useSession();
+  const { signOut, startChoosing } = useSession();
   const panelId = useId();
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -41,7 +41,7 @@ export function ProfileMenu({ session }: { session: Session }) {
     if (event.relatedTarget && !root.current?.contains(event.relatedTarget)) setOpen(false);
   }
 
-  async function switchProfile() {
+  async function leave() {
     setLeaving(true);
     setError(null);
     try {
@@ -70,8 +70,18 @@ export function ProfileMenu({ session }: { session: Session }) {
       </button>
       {open && (
         <div className="profile-menu-panel" id={panelId}>
-          <button type="button" disabled={leaving} onClick={() => void switchProfile()}>
+          {/* Looks at the profiles but stays signed in: choosing oneself again asks for nothing. */}
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              startChoosing();
+            }}
+          >
             <ArrowLeftRight size={18} aria-hidden /> Switch profile
+          </button>
+          <button type="button" disabled={leaving} onClick={() => void leave()}>
+            <LogOut size={18} aria-hidden /> Sign out
           </button>
           {session.admin && (
             <Link href="/admin" onClick={() => setOpen(false)}>

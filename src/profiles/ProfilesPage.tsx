@@ -1,13 +1,14 @@
-import { ChevronLeft, LoaderCircle } from "lucide-react";
+import { Check, ChevronLeft, LoaderCircle } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { useLocation } from "wouter";
 import type { PublicProfile } from "../../shared/types.ts";
-import { api } from "../api.ts";
+import { api, ApiFailure } from "../api.ts";
 import { APP_NAME, useDocumentTitle } from "../pageTitle.ts";
 import { Avatar } from "./Avatar.tsx";
 import { useSession } from "./session.tsx";
 import { Unreachable } from "./Startup.tsx";
+import { wrongCodeLine } from "./wrongCode.ts";
 
 /** The "Who's reading?" page: everyone's picture and name, and the code that opens the one picked. */
 export function ProfilesPage() {
@@ -16,6 +17,9 @@ export function ProfilesPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [chosen, setChosen] = useState<PublicProfile | null>(null);
+  const { info, stopChoosing } = useSession();
+  // Someone already signed in, looking at the profiles to switch: their own tile needs no code.
+  const current = info?.mode === "profiles" ? (info.session?.profile ?? null) : null;
   const tiles = useRef(new Map<string, HTMLButtonElement>());
   // The tile the reader came from, so Back puts keyboard focus on it again instead of dropping it on the page.
   const cameFrom = useRef<string | null>(null);
@@ -40,12 +44,21 @@ export function ProfilesPage() {
   }, [chosen]);
 
   function choose(profile: PublicProfile) {
+    if (profile.id === current?.id) {
+      stopChoosing();
+      return;
+    }
     cameFrom.current = profile.id;
     setChosen(profile);
   }
 
+  // Escape goes back to reading as oneself, as it leaves the code box for the tiles.
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (current && !chosen && event.key === "Escape") stopChoosing();
+  }
+
   return (
-    <main className="profiles-page">
+    <main className="profiles-page" onKeyDown={handleKeyDown}>
       <h1 className="profiles-heading">Who's reading?</h1>
       {chosen ? (
         <CodeEntry key={chosen.id} profile={chosen} onBack={() => setChosen(null)} />
@@ -80,6 +93,11 @@ export function ProfilesPage() {
               >
                 <span className="profile-tile-art">
                   <Avatar profile={profile} size={136} />
+                  {profile.id === current?.id && (
+                    <span className="profile-tile-live" role="img" aria-label="Signed in" title="Signed in">
+                      <Check size={18} strokeWidth={3} aria-hidden />
+                    </span>
+                  )}
                 </span>
                 <span className="profile-tile-name">{profile.name}</span>
                 {profile.admin && <span className="profile-tile-mark">Admin</span>}
@@ -88,6 +106,7 @@ export function ProfilesPage() {
           ))}
         </ul>
       )}
+
     </main>
   );
 }
@@ -102,6 +121,8 @@ function CodeEntry({ profile, onBack }: { profile: PublicProfile; onBack: () => 
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The line the last wrong code got, so the next one is not the same joke.
+  const lastJoke = useRef<string | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -119,7 +140,12 @@ function CodeEntry({ profile, onBack }: { profile: PublicProfile; onBack: () => 
       navigate("/");
       setSession(session);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That code could not be checked. Please try again.");
+      if (err instanceof ApiFailure && err.code === "wrong_code") {
+        lastJoke.current = wrongCodeLine(lastJoke.current);
+        setError(lastJoke.current);
+      } else {
+        setError(err instanceof Error ? err.message : "That code could not be checked. Please try again.");
+      }
       setBusy(false);
       // Pressing the button disabled it, which dropped focus; the reader is about to retype.
       input.current?.focus();

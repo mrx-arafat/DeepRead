@@ -138,7 +138,10 @@ Click your picture and name, then type your code to open your own library.
 You stay signed in on that browser for 30 days, so next time DeepRead opens straight to your books.
 Sign in as the same profile on another device and the same books and notes are there.
 To read as someone else, open the profile menu at the top of the library (your picture and name) and choose **Switch profile**.
-It signs you out and shows the profiles again.
+The profiles appear again, and the one you are signed in as has a green check on its picture.
+Choose it and you are back in your books at once, with no code.
+Choose someone else and type their code; coming back to yours later asks for yours again.
+To leave a shared computer, choose **Sign out** in the same menu.
 Your books, your place in each book, your notes and your saved answers belong to your profile, and other profiles cannot see them.
 The steps below are the same for every profile.
 
@@ -510,7 +513,8 @@ With profiles on, DeepRead opens on **Who's reading?**, which shows every profil
 Click yours and type its code.
 You stay signed in on that browser for 30 days.
 To read as someone else, open the profile menu at the top of the library and choose **Switch profile**.
-It signs you out and shows the profiles again.
+Your own profile, marked with a green check, opens without a code; anyone else's asks for theirs.
+**Sign out** in the same menu ends your sign-in on that browser.
 
 ### What each profile gets
 
@@ -536,7 +540,7 @@ From there you can:
   A new code signs that profile out everywhere.
 - **Sign a profile out everywhere.**
   Every phone and computer it is signed in on goes back to **Who's reading?**.
-  Use it when a device is lost or was borrowed: pressing **Switch profile** only signs out the device you are on.
+  Use it when a device is lost or was borrowed: **Sign out** in the profile menu only signs out the device you are on.
 - **Delete a profile.**
   Its books, notes and saved answers are removed for good, so DeepRead asks you to confirm first.
   The admin's own profile cannot be deleted.
@@ -666,7 +670,8 @@ The signing key comes from the secret in `session-secret` in the data folder tog
 Changing a profile's code ends that profile's sessions.
 When a session ends, the web app goes back to **Who's reading?**.
 The server counts wrong codes for each profile and device (the tunnel's `cf-connecting-ip`, or this computer) while it runs: after 5 in a row it refuses that pair for 5 minutes, doubling with each further lock up to a day, and a restart clears the count.
-**Switch profile** only clears the cookie on that device; `POST /api/admin/profiles/:id/sign-out` ends every session of a profile.
+**Sign out** in the profile menu only clears the cookie on that device; `POST /api/admin/profiles/:id/sign-out` ends every session of a profile.
+**Switch profile** keeps the session until another profile's code is accepted, which then replaces it.
 
 The admin is a profile like the others, named `ADMIN_NAME`, whose code is `ADMIN_PASSKEY` and which cannot be deleted.
 Its routes are under `/api/admin/` and need an admin session: `GET` and `POST /api/admin/profiles`, `PATCH` and `DELETE /api/admin/profiles/:id`, `PUT` and `DELETE /api/admin/profiles/:id/photo`, and `POST /api/admin/profiles/:id/sign-out`.

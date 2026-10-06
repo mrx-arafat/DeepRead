@@ -7,7 +7,7 @@ import { Startup } from "./profiles/Startup.tsx";
 import { ReaderPage } from "./reader/ReaderPage.tsx";
 
 export function App() {
-  const { info, error, retry } = useSession();
+  const { info, error, retry, choosing } = useSession();
   return (
     <Switch>
       {/* Always the admin page, signed in or not: it asks for the passkey itself. */}
@@ -15,7 +15,7 @@ export function App() {
       <Route>
         {info === null ? (
           <Startup error={error} onRetry={retry} />
-        ) : info.mode === "profiles" && info.session === null ? (
+        ) : info.mode === "profiles" && (info.session === null || choosing) ? (
           <ProfilesPage />
         ) : (
           // A different reader (signing in, or the admin reading as someone) starts the shelf over, so none of the last reader's books stay on screen.

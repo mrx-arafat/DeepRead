@@ -23,6 +23,7 @@
   --marker-spoken: #cdf3c2;
   --marker-voice: #7fcf6c;
   --danger: #b3261e;
+  --live: #1a7f37;
 
   /* Book cloth for the library's covers, chosen from the title. Muted and dark, so the cream cover ink clears 5.8:1 on
      every one, and the page behind them (white or sepia) clears 5.5:1 against every cloth. */
@@ -77,6 +78,7 @@
   --marker-spoken: #d6e7b8;
   --marker-voice: #8cc275;
   --danger: #9f2a1d;
+  --live: #1a7f37;
 }
 
 :root[data-font="sans"] {
@@ -118,6 +120,7 @@
   --marker-spoken: #1c4226;
   --marker-voice: #2a6236;
   --danger: #ff8a80;
+  --live: #2ea043;
 
   /* The same cloths, lifted to the same lightness (cover ink still clears 5.8:1), so each cover is a shape on the dark page. */
   --cloth-1: #a03c39;
@@ -3038,6 +3041,7 @@ h5[data-block] {
 }
 
 .profile-tile-art {
+  position: relative;
   width: var(--tile);
   height: var(--tile);
   outline: 3px solid transparent;
@@ -3081,6 +3085,21 @@ h5[data-block] {
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1.5;
+}
+
+/* A green check on the picture of the profile that is signed in: choosing it again opens it without a code. */
+.profile-tile-live {
+  position: absolute;
+  right: -0.5rem;
+  bottom: -0.5rem;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid var(--paper);
+  border-radius: 50%;
+  background: var(--live);
+  color: #fff;
 }
 
 /* The code for one profile, in the place the tiles were. */
@@ -3128,9 +3147,10 @@ h5[data-block] {
   border-color: var(--danger);
 }
 
-/* One line is kept for it, so the buttons stay where they are when a wrong code is reported. */
+/* Two lines are kept for it (a joke can run to two), so the buttons stay where they are when a wrong code is reported. */
 .profile-code-error {
-  min-height: 1.5rem;
+  min-height: 3rem;
+  text-wrap: balance;
 }
 
 .profile-code-actions {
@@ -3474,23 +3494,18 @@ h5[data-block] {
   border-top: 1px solid var(--ink);
 }
 
-/* Picture, name and buttons on one line when they fit; when the buttons are too wide to leave the name its room, they
-   drop to a line of their own under it, and each profile settles that for itself. */
+/* Picture and name on one line, the buttons under the name: the same in every row, so their left edges line up down the
+   list, and a long name or a long button label never squeezes the other. */
 .admin-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0.75rem 1rem;
   padding: 1rem 0;
   border-bottom: 1px solid var(--rule);
 }
 
-.admin-row > :first-child {
-  flex: none;
-}
-
 .admin-who {
-  flex: 1 1 18rem;
   min-width: 0;
 }
 
@@ -3525,9 +3540,8 @@ h5[data-block] {
 
 .admin-actions {
   display: flex;
-  flex: 1 1 auto;
+  grid-column: 2;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: 0.5rem;
 }
 
@@ -3537,13 +3551,13 @@ h5[data-block] {
 
 /* Under the profile it asks about, across the whole row. */
 .admin-confirm {
-  flex: 1 0 100%;
+  grid-column: 1 / -1;
   margin-top: 0;
   font-size: 0.9375rem;
 }
 
 .admin-row-error {
-  flex: 1 0 100%;
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 40rem) {
@@ -3555,10 +3569,9 @@ h5[data-block] {
     padding-top: 3rem;
   }
 
-  /* The buttons take a row of their own under the name, so a long name keeps its width. */
+  /* On a phone the buttons use the whole width, from under the picture. */
   .admin-actions {
-    flex-basis: 100%;
-    justify-content: flex-start;
+    grid-column: 1 / -1;
   }
 }
 
