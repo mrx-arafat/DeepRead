@@ -214,10 +214,10 @@ describe("DeepRead API", () => {
 
       const saved = await send("PUT", `/api/books/${id}/progress`, { chapterId: "c1", blockId: "c1-b3" });
       expect(saved.status).toBe(200);
-      // The reader's block 3 of 3 is two thirds into the 19 words of chapter one, out of 24 in the book.
-      expect(await saved.json()).toMatchObject({ blockId: "c1-b3", chapterTitle: "First Chapter", percent: 52 });
+      // At the start of block 3, 73 of the chapter's 101 characters are above it: 73/101 of its 19 words, out of 24 in the book.
+      expect(await saved.json()).toMatchObject({ blockId: "c1-b3", chapterTitle: "First Chapter", percent: 57 });
       const relisted = (await (await app.request("/api/books")).json()) as BookSummary[];
-      expect(relisted[0]?.progress).toMatchObject({ blockId: "c1-b3", chapterTitle: "First Chapter", percent: 52 });
+      expect(relisted[0]?.progress).toMatchObject({ blockId: "c1-b3", chapterTitle: "First Chapter", percent: 57 });
 
       const ranged = await app.request(`/api/books/${id}/pdf`, { headers: { Range: "bytes=0-4" } });
       expect(ranged.status).toBe(206);

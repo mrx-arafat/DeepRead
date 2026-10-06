@@ -159,7 +159,11 @@ Your books stand on a shelf with their own covers when the PDF has a cover on it
 The book you read last waits at the top in a **Continue reading** card, with the chapter you stopped in and how much of the book is left.
 Click **Continue**, or the card, to open it right there.
 Under each cover a thin line shows how far you are, with the time left, or **New** and the time it takes to read for a book you have not opened.
-Click a cover to open that book where you left it.
+Click a cover, or the title, to open that book on the very line you stopped at.
+DeepRead keeps that place for every book, as you read and again the moment you leave, so the next visit starts there, on any device that opens this DeepRead.
+The percentage counts the text above that line over the whole book, by length, so a long paragraph counts for more than a short one.
+Contents, notes and index pages do not count.
+Jumping ahead from the chapter list moves your place, and the percentage with it: it says where you are in the book, not how much you have read.
 The **...** button under a cover lets you edit the book's title and author, or remove it.
 
 <table><tr><td><img src="docs/images/library.webp" alt="The library with a Continue reading card and a shelf of book covers" width="900"></td></tr></table>

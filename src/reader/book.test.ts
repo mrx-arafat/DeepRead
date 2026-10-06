@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Block, ChapterSummary } from "../../shared/types.ts";
 import {
+  textFraction,
   bookPercent,
   chapterMinutesLeft,
   chapterPosition,
@@ -159,5 +160,21 @@ describe("headingTags", () => {
 
   it("should let a heading go back up to a shallower level", () => {
     expect(headingTags([heading(1), heading(2), heading(1)])).toEqual(["h3", "h4", "h3"]);
+  });
+});
+
+describe("textFraction", () => {
+  it("should count the characters above the place, those of the line the reader is on included", () => {
+    expect(textFraction([100, 300, 100], 1, 150)).toBe(0.5);
+    expect(textFraction([100, 300, 100], 0, 0)).toBe(0);
+  });
+
+  it("should stop at the end of a block, and read a place past the last block as the end of the chapter", () => {
+    expect(textFraction([100, 300], 0, 999)).toBe(0.25);
+    expect(textFraction([100, 300], 2, 0)).toBe(1);
+  });
+
+  it("should give 0 for a chapter with no text", () => {
+    expect(textFraction([], 0, 0)).toBe(0);
   });
 });

@@ -90,3 +90,34 @@ describe("streamText", () => {
     }
   });
 });
+
+describe("api.saveProgress", () => {
+  it("should be on its way before the library asks for the books, so the shelf shows the place just left", async () => {
+    const calls: string[] = [];
+    let answerSave: () => void = () => {};
+    vi.stubGlobal("fetch", (path: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${path}`);
+      if (init?.method === "PUT") return new Promise<Response>((resolve) => (answerSave = () => resolve(new Response("{}", { status: 200 }))));
+      return Promise.resolve(new Response("[]", { status: 200 }));
+    });
+
+    const saved = api.saveProgress("a-b", "c1", "c1-b1", 0);
+    const listed = api.listBooks();
+    await Promise.resolve();
+    expect(calls).toEqual(["PUT /api/books/a-b/progress"]);
+
+    answerSave();
+    await saved;
+    await listed;
+    expect(calls).toEqual(["PUT /api/books/a-b/progress", "GET /api/books"]);
+  });
+
+  it("should not hold the library up when the save fails", async () => {
+    vi.stubGlobal("fetch", (_path: string, init?: RequestInit) =>
+      init?.method === "PUT" ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve(new Response("[]", { status: 200 })),
+    );
+
+    await api.saveProgress("a-b", "c1", "c1-b1", 0).catch(() => {});
+    await expect(api.listBooks()).resolves.toEqual([]);
+  });
+});

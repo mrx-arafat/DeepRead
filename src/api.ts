@@ -77,9 +77,26 @@ const json = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
+// The newest progress save still on its way. The shelf and a book wait for it (two seconds at most, and whatever its
+// outcome), so what they say of the reader's place is never the one before the place they have just left.
+let saving: Promise<unknown> = Promise.resolve();
+const SAVE_WAIT_MS = 2000;
+
+async function afterSaving(): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([saving, new Promise((resolve) => (timer = setTimeout(resolve, SAVE_WAIT_MS)))]);
+  clearTimeout(timer);
+}
+
 export const api = {
-  listBooks: () => request<BookSummary[]>("/api/books"),
-  getBook: (id: string) => request<BookDetail>(`/api/books/${id}`),
+  listBooks: async () => {
+    await afterSaving();
+    return request<BookSummary[]>("/api/books");
+  },
+  getBook: async (id: string) => {
+    await afterSaving();
+    return request<BookDetail>(`/api/books/${id}`);
+  },
   updateBook: (id: string, update: BookUpdate) => request<BookDetail>(`/api/books/${id}`, json("PATCH", update)),
   deleteBook: (id: string) => request<void>(`/api/books/${id}`, { method: "DELETE" }),
   getChapter: (bookId: string, chapterId: string, signal?: AbortSignal) =>
@@ -91,8 +108,12 @@ export const api = {
     // 201 is a new book; 200 means this exact file is already in the library and nothing was added.
     return { book: (await res.json()) as BookDetail, alreadyHad: res.status === 200 };
   },
-  saveProgress: (bookId: string, chapterId: string, blockId: string, offset: number) =>
-    request<ReadingProgress>(`/api/books/${bookId}/progress`, json("PUT", { chapterId, blockId, offset })),
+  saveProgress: (bookId: string, chapterId: string, blockId: string, offset: number) => {
+    // `keepalive`: the save made as the page closes is still delivered.
+    const done = request<ReadingProgress>(`/api/books/${bookId}/progress`, { ...json("PUT", { chapterId, blockId, offset }), keepalive: true });
+    saving = done.catch(() => {});
+    return done;
+  },
   getNotes: (bookId: string) => request<Note[]>(`/api/books/${bookId}/notes`),
   changeNote: (bookId: string, change: NoteChange) =>
     change.kind === "put"

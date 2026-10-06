@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import type { BookDetail, Chapter, ReadingProgress } from "../../shared/types.ts";
 import { api } from "../api.ts";
-import { bookPercent, chapterMinutesLeft, indexAtLine } from "./book.ts";
+import { bookPercent, chapterMinutesLeft, indexAtLine, textFraction } from "./book.ts";
 import { inPages, pageFrame } from "./paging.ts";
 
 export type ReadingPosition = {
@@ -97,9 +97,14 @@ export function keepingLine(change: () => void): void {
   kept = { block, offset, scrollY: window.scrollY };
 }
 
-/** How far into its chapter the spot is, 0 to 1. Above the text (heading, preview) is 0; the recap after it is 1. */
+/**
+ * How far into its chapter the spot is, 0 to 1, by the text above the line the reader is on (the server counts it the
+ * same way, so the shelf agrees with the top bar). Above the text (heading, preview) is 0; the recap after it is 1.
+ */
 function fractionRead({ block, blocks }: Spot): number {
-  return block ? Array.prototype.indexOf.call(blocks, block) / blocks.length : 1;
+  if (!block) return 1;
+  const lengths = Array.from(blocks, (each) => each.textContent?.length ?? 0);
+  return textFraction(lengths, Array.prototype.indexOf.call(blocks, block), offsetAtLine(block, eyeLine()));
 }
 
 /** The closing heading is wholly above the footer, so no chapter time remains to be read. */
@@ -116,13 +121,14 @@ const same = (a: ReadingPosition, b: ReadingPosition) =>
 type Place = Required<Pick<ReadingProgress, "chapterId" | "blockId" | "offset">>;
 
 /** The block at the eye line and how far into it the line there starts. */
-function placeAtEyeLine(): Place | null {
-  const spot = spotAtEyeLine();
+function placeOf(spot: Spot | null): Place | null {
   const blockId = spot?.block?.dataset.block;
   const chapterId = spot?.chapter.dataset.chapter;
   if (!spot?.block || !blockId || !chapterId) return null;
   return { chapterId, blockId, offset: offsetAtLine(spot.block, eyeLine()) };
 }
+
+const placeAtEyeLine = (): Place | null => placeOf(spotAtEyeLine());
 
 /**
  * The place kept with a page of the browser's history (its `history.state`), so that Back and Forward return to it.
@@ -211,6 +217,8 @@ export function useReadingPosition(
     let measuring: number | undefined;
     let keeping: number | undefined;
     let saving: number | undefined;
+    // The place at the last measurement: once the page is leaving, its text is gone and the eye line cannot be read.
+    let latest: Place | null = null;
 
     const measure = () => {
       measuring = undefined;
@@ -218,6 +226,7 @@ export function useReadingPosition(
       const id = spot?.chapter.dataset.chapter;
       if (!spot || !id) return;
       const fraction = fractionRead(spot);
+      latest = placeOf(spot);
       const completed = atBookEnd();
       const next: ReadingPosition = {
         chapterId: id,
@@ -240,8 +249,9 @@ export function useReadingPosition(
       if (place) changingHistory(() => history.replaceState({ ...history.state, place }, ""));
     };
 
-    const save = () => {
-      const place = placeAtEyeLine();
+    const save = (leaving = false) => {
+      // A page that is going away is read from the last measurement; one that is only hidden still has its text.
+      const place = leaving ? latest : (placeAtEyeLine() ?? latest);
       if (!place || (saved.current?.blockId === place.blockId && saved.current.offset === place.offset)) return;
       saved.current = place;
       api.saveProgress(bookId, place.chapterId, place.blockId, place.offset).catch(() => {
@@ -261,9 +271,18 @@ export function useReadingPosition(
     // Opening a chapter is being there, even for a reader who leaves without scrolling.
     keeping = window.setTimeout(keep, 300);
     saving = window.setTimeout(save, 1200);
+    // A reader who scrolls and leaves within the delay above must still be found where they stopped. Switching
+    // away on a phone is how a tab ends, and it gives no other warning.
+    const hidden = () => document.visibilityState === "hidden" && save();
+    const leave = () => save();
     window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("pagehide", leave);
+    document.addEventListener("visibilitychange", hidden);
     return () => {
       window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("pagehide", leave);
+      document.removeEventListener("visibilitychange", hidden);
+      save(true);
       window.clearTimeout(measuring);
       window.clearTimeout(keeping);
       window.clearTimeout(saving);

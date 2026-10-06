@@ -105,6 +105,19 @@ export function indexAtLine(count: number, bottomOf: (index: number) => number, 
 }
 
 /**
+ * How far into a chapter's text a place is, 0 to 1: the characters above it over all of them. A long paragraph is more
+ * of the chapter than a short one, and the line the reader is on counts, so the figure moves smoothly as they read.
+ * `lengths` is each block's text length; a place past the last block is the end of the chapter.
+ */
+export function textFraction(lengths: number[], index: number, offset: number): number {
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  if (total === 0) return 0;
+  const above = lengths.slice(0, index).reduce((sum, length) => sum + length, 0);
+  const within = Math.min(Math.max(offset, 0), lengths[index] ?? 0);
+  return (above + within) / total;
+}
+
+/**
  * Whole-book progress in percent: the words of every chapter before `chapterId`, plus `fraction` (0 to 1) of
  * that chapter's words, over the book's total. Only the book's own text counts: front matter sits at 0 and
  * back matter at 100. Rounded down, so 100 means the very end.

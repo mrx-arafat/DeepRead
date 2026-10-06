@@ -83,7 +83,7 @@ function lacksDetails(meta: BookMeta): boolean {
 function withDetails(meta: BookMeta, book: ParsedBook): BookMeta {
   const { progress } = meta;
   if (!progress || !lacksDetails(meta)) return meta;
-  const where = describePosition(book, meta.chapterWordCounts, progress.chapterId, progress.blockId);
+  const where = describePosition(book, meta.chapterWordCounts, progress.chapterId, progress.blockId, progress.offset);
   // A spot that is no longer in the book cannot be named, so the library shows the book as unstarted.
   return { ...meta, progress: where && { ...progress, ...where } };
 }
@@ -513,7 +513,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
       return serialized(id, async () => {
         const meta = await readMeta(id);
         const book = meta && (await loadBook(id));
-        const where = meta && book && describePosition(book, meta.chapterWordCounts, chapterId, blockId);
+        const where = meta && book && describePosition(book, meta.chapterWordCounts, chapterId, blockId, offset);
         if (!meta || !where) return null;
         const progress: ReadingProgress = { chapterId, blockId, offset, updatedAt: new Date().toISOString(), ...where };
         await writeMeta({ ...meta, progress });

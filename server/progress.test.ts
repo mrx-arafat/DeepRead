@@ -40,6 +40,30 @@ describe("describePosition", () => {
     expect(describePosition(book, wordCounts, "c2", "c2-b1")).toEqual({ chapterTitle: "Two", percent: 10 });
   });
 
+  it("should weigh blocks by their length and count the line the reader is on, so a long paragraph is more of a chapter than a short one", () => {
+    const uneven: ParsedBook = {
+      ...book,
+      chapters: [
+        book.chapters[0]!,
+        {
+          id: "c2",
+          title: "Two",
+          startPage: 3,
+          endPage: 5,
+          blocks: [
+            { id: "c2-b1", type: "paragraph", text: "x".repeat(100), page: 3 },
+            { id: "c2-b2", type: "paragraph", text: "x".repeat(300), page: 4 },
+          ],
+        },
+        book.chapters[2]!,
+      ],
+    };
+    // 100 + 150 of 400 characters is 62.5% of chapter two's 300 words: 187.5 and chapter one's 100, of 1000.
+    expect(describePosition(uneven, wordCounts, "c2", "c2-b2", 150)).toEqual({ chapterTitle: "Two", percent: 28 });
+    // At the start of the second block only the short first one is above: a quarter of the chapter, not the half block counting gave.
+    expect(describePosition(uneven, wordCounts, "c2", "c2-b2")).toEqual({ chapterTitle: "Two", percent: 17 });
+  });
+
   it("should return null when the chapter or block is not in the book", () => {
     expect(describePosition(book, wordCounts, "c9", "c9-b1")).toBeNull();
     expect(describePosition(book, wordCounts, "c2", "c2-b99")).toBeNull();
