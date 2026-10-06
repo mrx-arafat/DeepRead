@@ -266,4 +266,21 @@ describe("createOpenRouter", () => {
     respond = (call) => (call.url.endsWith("/key") ? reply(500, "down") : sse(delta("ready"), "[DONE]"));
     expect(await make({ OPENROUTER_API_KEY: KEY, OPENROUTER_MODEL: MODEL }).test()).toEqual({ ok: true, model: MODEL, ms: expect.any(Number) });
   });
+  it("should say how much of the key's credit is gone for the admin page, asking OpenRouter once a minute at most", async () => {
+    let now = 5_000_000;
+    respond = () => new Response(JSON.stringify({ data: { usage: 0.25, limit: 2 } }));
+    const llm = createOpenRouter({ dataDir, env: { OPENROUTER_API_KEY: KEY, OPENROUTER_MODEL: MODEL }, fetch: fetcher, now: () => now });
+    expect(await llm.balance()).toEqual({ used: 0.25, limit: 2 });
+    await llm.balance();
+    expect(calls.filter((call) => call.url.endsWith("/key"))).toHaveLength(1);
+    now += 61_000;
+    await llm.balance();
+    expect(calls.filter((call) => call.url.endsWith("/key"))).toHaveLength(2);
+
+    // Without a key there is nothing to ask, and a refusal or an outage is no balance rather than an error.
+    expect(await make().balance()).toBeNull();
+    respond = () => reply(500, "down");
+    now += 61_000;
+    expect(await llm.balance()).toBeNull();
+  });
 });

@@ -2,10 +2,15 @@
   <title>DeepRead</title>
   <defs>
     <clipPath id="tile"><rect width="32" height="32" rx="6.5"/></clipPath>
+    <!-- The page swaps in its own theme's colour once it loads; until then the browser's own scheme decides. -->
+    <style>
+      .cloth { fill: #7a2e2b; }
+      @media (prefers-color-scheme: dark) { .cloth { fill: #a03c39; } }
+    </style>
   </defs>
   <g clip-path="url(#tile)">
     <!-- The cloth of the library's first cover, and the shade its spine lies in. -->
-    <rect width="32" height="32" fill="#7a2e2b"/>
+    <rect class="cloth" width="32" height="32" fill="#7a2e2b"/>
     <rect width="7" height="32" fill="#000" opacity="0.24"/>
     <!-- The hinge: a thread of cream where the cover bends. -->
     <rect x="7" width="1.4" height="32" fill="#fbf5e6" opacity="0.4"/>

@@ -42,6 +42,7 @@ function fakeOpenRouter(ready: boolean): OpenRouter {
       usedToday: {},
     }),
     admit() {},
+    balance: async () => null,
     available: async () => ready,
     save: async () => {
       throw new Error("not used");

@@ -21,7 +21,8 @@ export function openrouterRoutes(deps: { openrouter: OpenRouter; llm: Ai }): Hon
   routes.use("*", async (c, next) => (c.var.session?.actor.admin ? next() : adminOnly(c)));
 
   async function view(): Promise<OpenRouterAdminView> {
-    return { ...(await openrouter.describe()), active: (await llm.status()).active };
+    const [described, status, balance] = await Promise.all([openrouter.describe(), llm.status(), openrouter.balance()]);
+    return { ...described, active: status.active, ...(balance && { balance }) };
   }
 
   routes.get("/", async (c) => c.json(await view()));

@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { FocusEvent, KeyboardEvent } from "react";
 import { Link } from "wouter";
 import type { Session } from "../../shared/types.ts";
+import { useAiRequests } from "../admin/useAiRequests.ts";
 import { Avatar } from "./Avatar.tsx";
 import { useSession } from "./session.tsx";
 
@@ -20,6 +21,9 @@ export function ProfileMenu({ session }: { session: Session }) {
   const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { profile } = session;
+  // The admin hears of a request for an AI helper here, without opening the admin page. Not while reading as someone else.
+  const { requests } = useAiRequests(30_000, session.admin && !session.impersonatedBy);
+  const waiting = requests.length;
 
   useEffect(() => {
     if (!open) return;
@@ -59,12 +63,19 @@ export function ProfileMenu({ session }: { session: Session }) {
         ref={trigger}
         type="button"
         className="profile-menu-button"
-        aria-label={`${profile.name}, profile menu`}
+        aria-label={`${profile.name}, profile menu${waiting > 0 ? `, ${waiting} AI request${waiting === 1 ? "" : "s"} waiting` : ""}`}
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((was) => !was)}
       >
-        <Avatar profile={profile} size={32} />
+        <span className="profile-menu-picture">
+          <Avatar profile={profile} size={32} />
+          {waiting > 0 && (
+            <span className="profile-menu-badge" aria-hidden>
+              {waiting}
+            </span>
+          )}
+        </span>
         <span className="profile-menu-name">{profile.name}</span>
         <ChevronDown size={16} aria-hidden />
       </button>
@@ -89,6 +100,7 @@ export function ProfileMenu({ session }: { session: Session }) {
           {session.admin && (
             <Link href="/admin" onClick={() => setOpen(false)}>
               <ShieldCheck size={18} aria-hidden /> Admin
+              {waiting > 0 && <span className="profile-menu-waiting">{waiting} waiting</span>}
             </Link>
           )}
           {error && (

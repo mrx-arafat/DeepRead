@@ -1,4 +1,6 @@
 import { Route, Switch } from "wouter";
+import { useFavicon } from "./favicon.ts";
+import { usePrefs } from "./prefs.ts";
 import { AdminPage } from "./admin/AdminPage.tsx";
 import { SharingPage } from "./library/SharingPage.tsx";
 import { LibraryPage } from "./LibraryPage.tsx";
@@ -9,6 +11,7 @@ import { ReaderPage } from "./reader/ReaderPage.tsx";
 
 export function App() {
   const { info, error, retry, choosing } = useSession();
+  useFavicon(usePrefs().theme);
   return (
     <Switch>
       {/* Always the admin page, signed in or not: it asks for the passkey itself. */}

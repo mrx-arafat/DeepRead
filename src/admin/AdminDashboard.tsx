@@ -5,6 +5,8 @@ import type { AdminProfile, AiStatus, ProfileUpdate, Session } from "../../share
 import { api } from "../api.ts";
 import { useSession } from "../profiles/session.tsx";
 import { AdminApiModel } from "./AdminApiModel.tsx";
+import { AiRequestsInbox } from "./AiRequestsInbox.tsx";
+import { useAiRequests } from "./useAiRequests.ts";
 import { AdminShares } from "./AdminShares.tsx";
 import { AiAccessDialog } from "./AiAccessDialog.tsx";
 import { ProfileDialog } from "./ProfileDialog.tsx";
@@ -39,8 +41,45 @@ export function AdminDashboard({ session }: { session: Session }) {
   // Set once a removed row's focus needs a new home: the Add button, which is disabled until the removal has settled.
   const [focusAdd, setFocusAdd] = useState(false);
   const addButton = useRef<HTMLButtonElement>(null);
-  // What this server can answer with, as the admin sees it: fetched when the AI dialog opens, so it is current.
+  // What this server can answer with, as the admin sees it: fetched when the page opens, when the key or model changes, and
+  // when the AI dialog opens, so it is current.
   const [helpers, setHelpers] = useState<AiStatus | null>(null);
+  // What readers have asked for. Looked at again every few seconds, so a request made after this page opened still shows.
+  const { requests, refresh: refreshRequests } = useAiRequests(15_000);
+
+  function loadHelpers() {
+    api
+      .aiStatus()
+      .then(setHelpers)
+      .catch(() => {});
+  }
+  useEffect(loadHelpers, []);
+
+  // A request that came in while the page was open puts its name on the profile's row at once, without loading the list again.
+  useEffect(() => {
+    setProfiles(
+      (all) =>
+        all?.map((profile) => {
+          const asked = requests.filter((request) => request.profile.id === profile.id).map((request) => request.helper);
+          return asked.join() === profile.aiRequested.join() ? profile : { ...profile, aiRequested: asked };
+        }) ?? null,
+    );
+  }, [requests]);
+
+  // The tab says how many are waiting, for the admin who is on another one.
+  useEffect(() => {
+    // After AdminPage has set its own title, which it does once the page has mounted.
+    const timer = window.setTimeout(() => {
+      document.title = `${requests.length > 0 ? `(${requests.length}) ` : ""}Admin - DeepRead`;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [requests.length]);
+
+  /** A profile as it is now (after a helper was given or taken back, or a request turned down): the row shows it, and the requests are looked at again. */
+  function profileChanged(updated: AdminProfile) {
+    setProfiles((all) => all?.map((one) => (one.id === updated.id ? updated : one)) ?? null);
+    void refreshRequests();
+  }
 
   useEffect(() => {
     // `current` drops the answer of a request the admin has already replaced by pressing "Try again".
@@ -209,6 +248,13 @@ export function AdminDashboard({ session }: { session: Session }) {
         </div>
       )}
 
+      <AiRequestsInbox
+        requests={requests}
+        ready={Object.fromEntries(helpers?.providers.map((one) => [one.id, one.installed]) ?? [])}
+        onChanged={profileChanged}
+        onAnnounce={setAnnouncement}
+      />
+
       {profiles === null && !loadError && <p className="admin-quiet">Loading profiles...</p>}
 
       {profiles && (
@@ -244,7 +290,7 @@ export function AdminDashboard({ session }: { session: Session }) {
             </p>
           )}
           {!onlyAdmin && <AdminShares changed={profiles} />}
-          <AdminApiModel profiles={profiles} />
+          <AdminApiModel profiles={profiles} onProfileChanged={profileChanged} onChanged={loadHelpers} />
         </>
       )}
 
@@ -255,7 +301,7 @@ export function AdminDashboard({ session }: { session: Session }) {
         <AiAccessDialog
           profile={givingAi}
           helpers={helpers}
-          onChange={(updated) => setProfiles((all) => all?.map((one) => (one.id === updated.id ? updated : one)) ?? null)}
+          onChange={profileChanged}
           onClose={() => setActive(null)}
         />
       )}

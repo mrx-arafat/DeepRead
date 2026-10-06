@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AdminProfile,
   AdminShare,
+  AiRequest,
   AiStatus,
   ApiError,
   BookDetail,
@@ -828,6 +829,7 @@ describe("DeepRead with profiles", () => {
         dailyLimit: 40,
         usedToday: {},
         active: "openrouter",
+        balance: { used: 0.1, limit: 2 },
       });
       expect(await json<unknown[]>(call("GET", "/api/admin/openrouter/models", adminCookie))).toEqual([
         { id: MODEL, name: "Vendor: Good", free: false, promptPerMillion: 1, completionPerMillion: 2 },
@@ -893,6 +895,74 @@ describe("DeepRead with profiles", () => {
       const dismissed = await json<AdminProfile>(call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { aiDismiss: ["claude"] }));
       expect(dismissed).toMatchObject({ ai: [], aiRequested: [] });
       expect(stateOf(await providers(minaCookie))).toEqual({ claude: "on", codex: "off", openrouter: "on" });
+    });
+
+    it("should list what readers asked for, oldest first, and let the admin approve each at once or turn it down", async () => {
+      await startServer({ env: { OPENROUTER_API_KEY: KEY, OPENROUTER_MODEL: MODEL } });
+      const adminCookie = await signIn(admin, PASSKEY);
+      const mina = await addProfile(adminCookie, "Mina", "246810");
+      const sam = await addProfile(adminCookie, "Sam", "135790");
+      const minaCookie = await signIn(mina.id, "246810");
+      const samCookie = await signIn(sam.id, "135790");
+      const bookId = await upload(minaCookie, "Mina's Book");
+      const ask = (cookie: string, id: string) => call("POST", "/api/ai/request", cookie, { id });
+
+      expect(await json<unknown[]>(call("GET", "/api/admin/ai-requests", adminCookie))).toEqual([]);
+      await ask(minaCookie, "claude");
+      await ask(minaCookie, "openrouter");
+      await ask(samCookie, "claude");
+      const waiting = await json<AiRequest[]>(call("GET", "/api/admin/ai-requests", adminCookie));
+      expect(waiting.map((r) => [r.profile.name, r.helper])).toEqual([["Mina", "claude"], ["Mina", "openrouter"], ["Sam", "claude"]]);
+      expect(waiting.map((r) => r.requestedAt)).toEqual([...waiting.map((r) => r.requestedAt)].sort());
+      expect(new Date(waiting[0]!.requestedAt).getTime()).not.toBeNaN();
+
+      // Only the admin sees and answers them.
+      for (const [method, path] of [
+        ["GET", "/api/admin/ai-requests"],
+        ["POST", `/api/admin/ai-requests/${mina.id}/claude/approve`],
+        ["DELETE", `/api/admin/ai-requests/${mina.id}/claude`],
+      ] as const) {
+        expect((await call(method, path, minaCookie)).status).toBe(403);
+      }
+
+      // Two approvals made at the same moment both stand: neither overwrites the other.
+      const both = await Promise.all([
+        call("POST", `/api/admin/ai-requests/${mina.id}/claude/approve`, adminCookie),
+        call("POST", `/api/admin/ai-requests/${mina.id}/openrouter/approve`, adminCookie),
+      ]);
+      expect(both.map((r) => r.status)).toEqual([200, 200]);
+      expect((await json<AdminProfile[]>(call("GET", "/api/admin/profiles", adminCookie))).find((p) => p.id === mina.id)).toMatchObject({
+        ai: ["claude", "openrouter"],
+        aiRequested: [],
+      });
+      expect(await explain(minaCookie, bookId)).toContain("answer from claude");
+      // Approving again changes nothing, and what is left is Sam's.
+      expect((await call("POST", `/api/admin/ai-requests/${mina.id}/claude/approve`, adminCookie)).status).toBe(200);
+      expect((await json<AiRequest[]>(call("GET", "/api/admin/ai-requests", adminCookie))).map((r) => [r.profile.name, r.helper])).toEqual([["Sam", "claude"]]);
+
+      // Not now: the request goes, nothing is given, and Sam sees it as his to ask for again.
+      const turnedDown = await call("DELETE", `/api/admin/ai-requests/${sam.id}/claude`, adminCookie);
+      expect(await turnedDown.json()).toMatchObject({ ai: [], aiRequested: [] });
+      expect(await json<unknown[]>(call("GET", "/api/admin/ai-requests", adminCookie))).toEqual([]);
+      expect(stateOf(await providers(samCookie))).toMatchObject({ claude: "on" });
+    });
+
+    it("should refuse to approve a helper this server does not have, or one that does not exist, or for a profile that is not there", async () => {
+      await startServer({ env: {} });
+      const adminCookie = await signIn(admin, PASSKEY);
+      const mina = await addProfile(adminCookie, "Mina", "246810");
+      const approve = (profileId: string, helper: string) => call("POST", `/api/admin/ai-requests/${profileId}/${helper}/approve`, adminCookie);
+
+      // No key and model are set, so the API model cannot answer anyone yet; Codex is not installed (only Claude Code is).
+      const notSet = await approve(mina.id, "openrouter");
+      expect(notSet.status).toBe(409);
+      expect(await json<ApiError>(notSet)).toMatchObject({ error: "ai_not_installed", message: expect.stringContaining("API Model") });
+      expect((await approve(mina.id, "codex")).status).toBe(409);
+      expect((await approve(mina.id, "nope")).status).toBe(400);
+      expect((await approve("nobody-123456", "claude")).status).toBe(404);
+      // The admin's own profile uses everything that works: there is nothing to approve.
+      expect(await json<ApiError>(approve(admin, "claude"))).toMatchObject({ error: "admin_ai" });
+      expect(await json<AdminProfile[]>(call("GET", "/api/admin/profiles", adminCookie))).toSatisfy((list: AdminProfile[]) => list.every((p) => p.ai.length === 0));
     });
 
     it("should hold a reader to the daily number of requests the admin set for the API model, and say when it starts again", async () => {

@@ -169,8 +169,15 @@ export type OpenRouterView = {
   usedToday: Record<string, number>;
 };
 
-/** The admin page's view, with which helper answers for everyone right now. */
-export type OpenRouterAdminView = OpenRouterView & { active: AiProviderId | null };
+/** The admin page's view, with which helper answers for everyone right now, and what the key has spent when OpenRouter says. */
+export type OpenRouterAdminView = OpenRouterView & {
+  active: AiProviderId | null;
+  /** US dollars the key has spent and may spend (limit is null for a key with none). Absent when OpenRouter cannot say. */
+  balance?: { used: number; limit: number | null };
+};
+
+/** A reader's request for an AI helper, waiting for the admin to approve it or turn it down. */
+export type AiRequest = { profile: PublicProfile; helper: AiProviderId; requestedAt: string };
 
 /** `null` takes away what the admin saved, which goes back to what .env says; a missing field stays as it is. */
 export type OpenRouterPatch = { apiKey?: string | null; model?: string | null; dailyLimit?: number | null };

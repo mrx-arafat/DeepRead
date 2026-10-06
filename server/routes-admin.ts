@@ -3,7 +3,8 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { AI_PROVIDERS, AVATAR_PRESETS, isAiProviderId } from "../shared/types.ts";
-import type { AdminProfile, AdminShare, BookSummary, NewProfile, ProfileUpdate, Session } from "../shared/types.ts";
+import type { AdminProfile, AiProviderId, AdminShare, AiRequest, BookSummary, NewProfile, ProfileUpdate, Session } from "../shared/types.ts";
+import type { Ai } from "./ai.ts";
 import type { AppEnv } from "./app-env.ts";
 import { isPhotoFile, MAX_PHOTO_BYTES, squarePhoto } from "./avatar.ts";
 import type { Accounts } from "./deps.ts";
@@ -77,7 +78,7 @@ function readProfileFields(c: Context, body: Record<string, unknown>, whole: boo
 }
 
 /** The admin's routes. Every one needs the admin signed in, also while they view DeepRead as someone else. */
-export function adminRoutes(accounts: Accounts): Hono<AppEnv> {
+export function adminRoutes(accounts: Accounts, llm: Ai): Hono<AppEnv> {
   const { profiles, sessionKey } = accounts;
   const routes = new Hono<AppEnv>();
   const jsonLimit = bodyLimit({ maxSize: 16 * 1024, onError: (c) => invalidBody(c, "the body is too large.") });
@@ -188,6 +189,51 @@ export function adminRoutes(accounts: Accounts): Hono<AppEnv> {
     const viewing: SignedIn = { profile: target, actor: session.actor, expiresAt: session.expiresAt };
     startSession(c, sessionKey, viewing);
     return c.json(toSession(viewing) satisfies Session);
+  });
+
+  // What readers have asked the admin for, oldest first: what the admin sees first, and what the profile menu counts.
+  routes.get("/ai-requests", async (c) => {
+    const waiting: AiRequest[] = (await profiles.list()).flatMap((profile) =>
+      profile.admin
+        ? []
+        : Object.entries(profile.aiRequests ?? {}).flatMap(([helper, requestedAt]) =>
+            isAiProviderId(helper) && typeof requestedAt === "string" ? [{ profile: publicProfile(profile), helper, requestedAt }] : [],
+          ),
+    );
+    return c.json(waiting.sort((a, b) => a.requestedAt.localeCompare(b.requestedAt) || a.profile.name.localeCompare(b.profile.name)));
+  });
+
+  /** The profile and helper named in an address, or the answer to send instead. */
+  function requestOf(c: Context<AppEnv>): { id: string; helper: AiProviderId } | Response {
+    const { profileId, helper } = c.req.param() as { profileId: string; helper: string };
+    if (!isProfileId(profileId)) return profileNotFound(c);
+    if (!isAiProviderId(helper)) {
+      return apiError(c, 400, "invalid_ai", `Unknown AI helper. Pick one of: ${Object.keys(AI_PROVIDERS).join(", ")}.`);
+    }
+    return { id: profileId, helper };
+  }
+
+  // Approving is one change on the server, not the dashboard's list with one more helper in it, so two approvals never overwrite each other.
+  routes.post("/ai-requests/:profileId/:helper/approve", async (c) => {
+    const found = requestOf(c);
+    if (found instanceof Response) return found;
+    const provider = (await llm.statusFor({ allowed: "all" })).providers.find((one) => one.id === found.helper);
+    if (!provider?.installed) {
+      return apiError(c, 409, "ai_not_installed", `${AI_PROVIDERS[found.helper]} is not set up on this server yet, so there is nothing to give. Set it up first.`);
+    }
+    return withinRules(c, async () => {
+      const granted = await profiles.grantAi(found.id, found.helper);
+      return granted ? c.json(await shown(granted)) : profileNotFound(c);
+    });
+  });
+
+  routes.delete("/ai-requests/:profileId/:helper", async (c) => {
+    const found = requestOf(c);
+    if (found instanceof Response) return found;
+    return withinRules(c, async () => {
+      const updated = await profiles.update(found.id, { aiDismiss: [found.helper] });
+      return updated ? c.json(await shown(updated)) : profileNotFound(c);
+    });
   });
 
   // Every book shared between profiles, so the admin can see what goes where and stop any of it.

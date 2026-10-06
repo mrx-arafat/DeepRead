@@ -691,9 +691,15 @@ A reader sees all three in **Aa**, under **AI helper**, each in the state it is 
   After they press it, it says "Asked Arafat. Waiting for the answer."
 - **Not there.** It is greyed with the reason, such as "Not installed on this server."
 
-On the admin page, a profile that has asked shows **Asked for AI** beside its name.
-Press **AI helpers** on its row and switch on what to give, one helper at a time.
-Giving a helper answers the request for it, and **Turn down** answers it without giving anything.
+A request reaches the admin without anyone having to look for it:
+
+- When something is waiting, the admin page opens with a **Waiting for you** box that says who asked for which helper and how long ago, with **Approve** and **Not now** on each line.
+  **Approve** gives the helper at once, and **Not now** answers the request without giving anything.
+- The page checks for new requests every 15 seconds and when you come back to its tab, so a request appears without reloading.
+- The tab title carries the count, for example "(2) Admin - DeepRead", and the profile menu shows it on the admin's picture and beside **Admin**.
+- The profile's row names the helpers it asked for, for example **Asked for Claude Code, Codex**.
+
+To give a helper without waiting for a request, press **AI helpers** on a profile's row and switch on what to give, one helper at a time.
 A helper that this server does not have cannot be switched on.
 Taking one back takes effect at once, and a reader who was using it moves to another they have, if they have one.
 The admin's own profile can use everything that works.
@@ -721,17 +727,23 @@ From there you can:
 - **Delete a profile.**
   Its books, notes and saved answers are removed for good, so DeepRead asks you to confirm first.
   The admin's own profile cannot be deleted.
+- **Answer requests for AI.**
+  **Waiting for you** at the top lists what readers asked for, with **Approve** and **Not now** on each.
 - **Give AI helpers.**
   **AI helpers** on a profile's row switches Claude Code, Codex or the API Model on or off for that reader, and shows what they have asked for.
 - **Set up the API Model.**
-  Under the profiles: the key, the model, each reader's daily limit, a test, and how many requests each reader has made today.
+  Under the profiles, one card shows whether it works (**Ready** or what it still needs), a **Test it** button, the model, how much credit the key has used, and how many requests were made today.
+  Below that are the key, the model and the daily limit, each with a button to change it, and a list of readers with a switch to give or take back the API Model, and a bar for how much of the day's limit each has used.
+  A reader who asked for it shows **Approve** and **Not now** in place of the switch.
 - **See and stop shared books.**
   Under the profiles, **Shared books** lists every book one profile shares with another, with a **Stop sharing** button on each.
 - **Read as a profile.**
   You see DeepRead the way that person does, with a banner at the top that says who you are reading as.
   Press **Back to** and your own name in the banner (for example **Back to Admin**) to return to your own library.
 
-<table><tr><td><img src="docs/images/admin.webp" alt="The admin page: each profile with its badge, how many books it has and its buttons, and the list of shared books below" width="900"></td></tr></table>
+<table><tr><td><img src="docs/images/admin.webp" alt="The admin page: a Waiting for you box with two requests for AI helpers and an Approve button on each, then each profile with its badge, how many books it has and its buttons, and the list of shared books below" width="900"></td></tr></table>
+
+<table><tr><td><img src="docs/images/api-model.webp" alt="The API Model card: a Ready sign and a Test it button, the model and what the key has used, the key, model and daily limit with a button to change each, and a switch for each reader" width="900"></td></tr></table>
 
 DeepRead keeps each code only in a scrambled form, so nobody, the admin included, can read one back.
 If someone forgets theirs, give that profile a new one.
@@ -996,6 +1008,7 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 | `src/library/` | The shelf: covers, the book menu, the Share dialog and the Sharing page |
 | `src/reader/speech.ts`, `natural*.ts`, `voicing.ts` | Reading aloud: the device voice, the natural voice, and where the pauses fall |
 | `public/`, `scripts/make-icons.mjs` | The icon: `favicon.svg` is the source, and the script draws the PNG sizes from it |
+| `src/favicon.ts` | The tab icon in the colour of the reader's theme (the cover's cloth in light, sepia or dark), swapped in while the app runs |
 | `src/profiles/`, `src/admin/` | The **Who's reading?** page, the profile menu and the pictures; the `/admin` page where the admin adds, edits, deletes and reads as profiles |
 | `scripts/install.sh`, `scripts/deepread.mjs` | The one-line installer and the `deepread` command |
 | `e2e/` | End-to-end browser tests of reader journeys |

@@ -3,6 +3,7 @@ import type {
   AdminProfile,
   AdminShare,
   AiProviderId,
+  AiRequest,
   AiStatus,
   ApiError,
   BookDetail,
@@ -170,6 +171,14 @@ export const api = {
   chooseAi: (id: AiProviderId) => request<AiStatus>("/api/ai/provider", json("PUT", { id })),
   /** Asks the admin for a helper the reader was not given. */
   requestAi: (id: AiProviderId) => request<AiStatus>("/api/ai/request", json("POST", { id })),
+  /** What readers have asked the admin for, oldest first. */
+  aiRequests: () => request<AiRequest[]>("/api/admin/ai-requests"),
+  /** Gives the reader the helper they asked for, at once. Rejects with 409 when this server does not have it. */
+  approveAiRequest: (profileId: string, helper: AiProviderId) =>
+    request<AdminProfile>(`/api/admin/ai-requests/${profileId}/${helper}/approve`, { method: "POST" }),
+  /** Turns the request down without giving anything. */
+  declineAiRequest: (profileId: string, helper: AiProviderId) =>
+    request<AdminProfile>(`/api/admin/ai-requests/${profileId}/${helper}`, { method: "DELETE" }),
   adminApiModel: () => request<OpenRouterAdminView>("/api/admin/openrouter"),
   saveApiModel: (patch: OpenRouterPatch) => request<OpenRouterAdminView>("/api/admin/openrouter", json("PUT", patch)),
   testApiModel: () => request<OpenRouterTest>("/api/admin/openrouter/test", { method: "POST" }),

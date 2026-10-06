@@ -28,7 +28,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   // Every route after this reads c.var.library, the books of whoever is signed in; with profiles, nobody gets no further.
   app.use("/api/*", readerGuard(deps));
-  if (deps.accounts) app.route("/api/admin", adminRoutes(deps.accounts));
+  if (deps.accounts) app.route("/api/admin", adminRoutes(deps.accounts, deps.llm));
   // The admin's OpenRouter key and model: only with profiles on, where there is an admin to hold them (with one library, .env does it).
   if (deps.accounts && deps.openrouter) app.route("/api/admin/openrouter", openrouterRoutes({ openrouter: deps.openrouter, llm: deps.llm }));
   app.get("/api/storage", async (c) => c.json(await c.var.library.usage()));

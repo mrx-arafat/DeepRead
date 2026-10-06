@@ -48,6 +48,8 @@ export type OpenRouter = Llm & {
   test(): Promise<OpenRouterTest>;
   /** Counts a request by `reader` against their day, or throws LlmError once they have used all of it. */
   admit(reader: string): void;
+  /** What the key has spent and may spend, kept for a minute; null with no key, or when OpenRouter cannot say. */
+  balance(): Promise<{ used: number; limit: number | null } | null>;
 };
 
 export type OpenRouterOptions = {
@@ -383,8 +385,10 @@ export function createOpenRouter(options: OpenRouterOptions): OpenRouter {
     counts.set(reader, used + 1);
   }
 
+  let kept: { key: string; at: number; value: { used: number; limit: number | null } | null } | null = null;
+
   /** What the key has spent and may spend, from OpenRouter; null when it cannot say. */
-  async function balance(apiKey: string): Promise<{ used: number; limit: number | null } | null> {
+  async function askBalance(apiKey: string): Promise<{ used: number; limit: number | null } | null> {
     try {
       const response = await doFetch(`${API}/key`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10_000) });
       if (!response.ok) return null;
@@ -394,6 +398,16 @@ export function createOpenRouter(options: OpenRouterOptions): OpenRouter {
     } catch {
       return null;
     }
+  }
+
+  async function balance(): Promise<{ used: number; limit: number | null } | null> {
+    const { apiKey } = resolved();
+    if (!apiKey) return null;
+    // The admin page asks whenever it opens or refreshes, and the answer hardly changes in a minute.
+    if (kept && kept.key === apiKey && now() - kept.at < 60_000) return kept.value;
+    const value = await askBalance(apiKey);
+    kept = { key: apiKey, at: now(), value };
+    return value;
   }
 
   async function test(): Promise<OpenRouterTest> {
@@ -406,7 +420,7 @@ export function createOpenRouter(options: OpenRouterOptions): OpenRouter {
       if (text.trim() === "") return { ok: false, message: "The model answered with nothing." };
       const ms = Date.now() - started;
       const key = resolved().apiKey;
-      const left = key ? await balance(key) : null;
+      const left = key ? await askBalance(key) : null;
       return { ok: true, model: model ?? "", ms, ...(left && { balance: left }) };
     } catch (error) {
       return { ok: false, message: error instanceof LlmError ? error.message : "The test could not be run." };
@@ -425,5 +439,6 @@ export function createOpenRouter(options: OpenRouterOptions): OpenRouter {
     models,
     test,
     admit,
+    balance,
   };
 }

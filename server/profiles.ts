@@ -173,6 +173,11 @@ export type Profiles = {
   setAiChoice(id: string, choice: AiProviderId | null): Promise<StoredProfile | null>;
   /** The reader asks the admin for a helper. Asking again keeps the first time. Null when there is no such profile. */
   requestAi(id: string, helper: AiProviderId): Promise<StoredProfile | null>;
+  /**
+   * Gives the profile one more helper and answers its request for it, as one change: two approvals at the same moment both stand.
+   * Null when there is no such profile; throws ProfileError for the admin's, which can use everything that works.
+   */
+  grantAi(id: string, helper: AiProviderId): Promise<StoredProfile | null>;
   /** Removes the profile and everything it keeps. False when there is none; throws ProfileError for the admin's. */
   remove(id: string): Promise<boolean>;
   /** Ends every session of the profile; its code still opens new ones. False when there is none; throws ProfileError for the admin's. */
@@ -442,6 +447,25 @@ export function createProfiles(options: ProfilesOptions): Profiles {
           const next: StoredProfile = { ...profile };
           if (choice === null) delete next.aiChoice;
           else next.aiChoice = choice;
+          return [replace(current, next), next];
+        }),
+      );
+    },
+
+    async grantAi(id, helper) {
+      await open();
+      return changes(() =>
+        rewrite((current): [StoredProfile[], StoredProfile | null] => {
+          const profile = current.find((candidate) => candidate.id === id);
+          if (!profile) return [current, null];
+          if (profile.admin) {
+            throw new ProfileError("admin_ai", "The admin can use every AI helper that works, so there is nothing to give.");
+          }
+          const next: StoredProfile = { ...profile, aiAccess: inProviderOrder([...(profile.aiAccess ?? []), helper]) };
+          const asked = { ...profile.aiRequests };
+          delete asked[helper];
+          if (Object.keys(asked).length === 0) delete next.aiRequests;
+          else next.aiRequests = asked;
           return [replace(current, next), next];
         }),
       );
