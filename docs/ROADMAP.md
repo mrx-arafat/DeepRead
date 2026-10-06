@@ -150,7 +150,7 @@ The admin's profile signs in with `ADMIN_PASSKEY` and opens `/admin`: add, edit 
 Server: `server/profiles.ts`, `sessions.ts`, `session-token.ts`, `codes.ts`, `throttle.ts`, `avatar.ts`, `routes-session.ts`, `routes-admin.ts`, `app-env.ts`.
 Client: `src/profiles/`, `src/admin/`, and `src/reader/noteSync.ts` (the notes outbox is kept per profile).
 Tests: `server/profiles-app.test.ts`, `server/codes.test.ts`, `server/session-token.test.ts`, `server/throttle.test.ts`, `server/avatar.test.ts`, `src/admin/profileText.test.ts`, and the profile cases in `src/reader/noteSync.test.ts`.
-A security review found nine issues and all were fixed before the commit: the migration deleting skipped books, notes leaking between profiles on a shared browser, a lockout anyone could use against the admin, any profile switching the AI helper, notes lost on a 401, uploads written back after a profile was removed, a missing route change for storage:migrate, image decompression bombs, and no way to end a profile's sessions.
+A security review found nine issues and all were fixed before the commit: the migration deleting skipped books, notes leaking between profiles on a shared browser, a lockout anyone could use against the admin, any profile switching the AI helper, notes lost on a 401, uploads written back after a profile was removed, storage:migrate leaving profiles behind, image decompression bombs, and no way to end a profile's sessions.
 It was checked end to end against the real R2 bucket over the API (admin sign-in, a test profile's create, read, update and delete, isolation, Read as, lockout); the screens themselves have not been looked at in a browser yet.
 
 ## Next up
