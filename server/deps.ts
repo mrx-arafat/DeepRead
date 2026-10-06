@@ -2,6 +2,7 @@ import type { ParsedBook } from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
 import type { CoverImage } from "./cover.ts";
 import type { Library } from "./library.ts";
+import type { OpenRouter } from "./openrouter.ts";
 import type { Profiles } from "./profiles.ts";
 import type { QuickTranslate } from "./translate.ts";
 
@@ -21,8 +22,10 @@ export type Accounts = {
 type SharedDeps = {
   parsePdf: ParsePdf;
   renderCover: RenderCover;
-  /** The AI tool that answers, and which ones are installed. */
+  /** The AI helper that answers, and which ones can. */
   llm: Ai;
+  /** The admin's OpenRouter key and model, which answer for readers whose computer has no helper of its own. */
+  openrouter?: OpenRouter;
   quickTranslate: QuickTranslate;
   /** Built web app to serve (production only). Unknown paths fall back to its index.html. */
   webRoot?: string;

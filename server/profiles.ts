@@ -5,8 +5,8 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { AVATAR_PRESETS } from "../shared/types.ts";
-import type { AdminProfile, AvatarPreset, NewProfile, ProfileUpdate, PublicProfile } from "../shared/types.ts";
+import { AI_PROVIDERS, AVATAR_PRESETS, isAiProviderId } from "../shared/types.ts";
+import type { AdminProfile, AiProviderId, AvatarPreset, NewProfile, ProfileUpdate, PublicProfile } from "../shared/types.ts";
 import type { Photo } from "./avatar.ts";
 import { hashCode, samePasskey, verifyCode } from "./codes.ts";
 import { copyBooks } from "./copy-books.ts";
@@ -27,6 +27,12 @@ export type StoredProfile = {
   admin: boolean;
   /** What the admin chose to label this profile with; absent for none (the admin's then shows "Admin"). */
   badge?: string;
+  /** The AI helpers the admin gave this profile; absent for none. The admin's own profile uses every helper that works. */
+  aiAccess?: AiProviderId[];
+  /** Which of those the reader prefers. */
+  aiChoice?: AiProviderId;
+  /** The helpers this profile has asked for and the admin has not answered, each with when it asked. */
+  aiRequests?: Partial<Record<AiProviderId, string>>;
   preset: AvatarPreset;
   /** Changes with every new photo; null without one. */
   photo: string | null;
@@ -97,6 +103,9 @@ function isStoredProfile(value: unknown): value is StoredProfile {
     typeof value.name === "string" &&
     typeof value.admin === "boolean" &&
     (value.badge === undefined || typeof value.badge === "string") &&
+    (value.aiAccess === undefined || (Array.isArray(value.aiAccess) && value.aiAccess.every(isAiProviderId))) &&
+    (value.aiChoice === undefined || isAiProviderId(value.aiChoice)) &&
+    (value.aiRequests === undefined || (isRecord(value.aiRequests) && Object.keys(value.aiRequests).every(isAiProviderId))) &&
     isAvatarPreset(value.preset) &&
     (value.photo === null || typeof value.photo === "string") &&
     (value.codeHash === null || typeof value.codeHash === "string") &&
@@ -104,6 +113,12 @@ function isStoredProfile(value: unknown): value is StoredProfile {
     typeof value.createdAt === "string"
   );
 }
+
+/** Helpers in the order AI_PROVIDERS lists them, each once. */
+const inProviderOrder = (ids: Iterable<AiProviderId>): AiProviderId[] => {
+  const wanted = new Set(ids);
+  return (Object.keys(AI_PROVIDERS) as AiProviderId[]).filter((id) => wanted.has(id));
+};
 
 /** Names are unique whatever their case: "Mina" and "mina" would be one face on the picker. */
 const sameName = (a: string, b: string): boolean => a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
@@ -154,6 +169,10 @@ export type Profiles = {
   create(profile: NewProfile): Promise<StoredProfile>;
   /** The caller has validated and trimmed `patch`. Null when there is no such profile; throws ProfileError. */
   update(id: string, patch: ProfileUpdate): Promise<StoredProfile | null>;
+  /** The reader's own pick among the helpers they may use; null forgets it. Null when there is no such profile. */
+  setAiChoice(id: string, choice: AiProviderId | null): Promise<StoredProfile | null>;
+  /** The reader asks the admin for a helper. Asking again keeps the first time. Null when there is no such profile. */
+  requestAi(id: string, helper: AiProviderId): Promise<StoredProfile | null>;
   /** Removes the profile and everything it keeps. False when there is none; throws ProfileError for the admin's. */
   remove(id: string): Promise<boolean>;
   /** Ends every session of the profile; its code still opens new ones. False when there is none; throws ProfileError for the admin's. */
@@ -395,6 +414,47 @@ export function createProfiles(options: ProfilesOptions): Profiles {
           };
           if (patch.badge === "") delete next.badge;
           else if (patch.badge !== undefined) next.badge = patch.badge;
+          if (patch.ai !== undefined) {
+            if (profile.admin) {
+              throw new ProfileError("admin_ai", "The admin can use every AI helper that works, so there is nothing to give.");
+            }
+            const access = inProviderOrder(patch.ai);
+            if (access.length === 0) delete next.aiAccess;
+            else next.aiAccess = access;
+            if (next.aiChoice && !access.includes(next.aiChoice)) delete next.aiChoice;
+          }
+          // Giving a helper answers a request for it, and so does turning it down.
+          const asked = { ...next.aiRequests };
+          for (const helper of [...(patch.ai ?? []), ...(patch.aiDismiss ?? [])]) delete asked[helper];
+          if (Object.keys(asked).length === 0) delete next.aiRequests;
+          else next.aiRequests = asked;
+          return [replace(current, next), next];
+        }),
+      );
+    },
+
+    async setAiChoice(id, choice) {
+      await open();
+      return changes(() =>
+        rewrite((current): [StoredProfile[], StoredProfile | null] => {
+          const profile = current.find((candidate) => candidate.id === id);
+          if (!profile) return [current, null];
+          const next: StoredProfile = { ...profile };
+          if (choice === null) delete next.aiChoice;
+          else next.aiChoice = choice;
+          return [replace(current, next), next];
+        }),
+      );
+    },
+
+    async requestAi(id, helper) {
+      await open();
+      return changes(() =>
+        rewrite((current): [StoredProfile[], StoredProfile | null] => {
+          const profile = current.find((candidate) => candidate.id === id);
+          if (!profile) return [current, null];
+          if (profile.aiRequests?.[helper]) return [current, profile];
+          const next: StoredProfile = { ...profile, aiRequests: { ...profile.aiRequests, [helper]: new Date().toISOString() } };
           return [replace(current, next), next];
         }),
       );
@@ -510,6 +570,8 @@ export function createProfiles(options: ProfilesOptions): Profiles {
       }
       return list.map((profile) => ({
         ...publicProfile(profile),
+        ai: profile.aiAccess ?? [],
+        aiRequested: inProviderOrder(Object.keys(profile.aiRequests ?? {}).filter(isAiProviderId)),
         createdAt: profile.createdAt,
         bookCount: shelves.get(profile.id)?.bookCount ?? 0,
         used: shelves.get(profile.id)?.used ?? 0,

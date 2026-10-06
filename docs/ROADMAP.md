@@ -150,6 +150,9 @@ The admin's profile signs in with `ADMIN_PASSKEY` and opens `/admin`: add, edit 
 Sharing: a book is shared by its owner with other profiles in `shares.json` at the root of the store, and read through the owner's library (`server/shares.ts`, `routes-shares.ts`, `/api/books/:id/shares/:profileId`, `/api/shares`, `/api/admin/shares`).
 A shared book goes by `<owner id>--<book id>` on the reader's shelf; their place, notes and cached answers for it are their own, in `profiles/<reader>/shared/<that id>/`, kept when the share stops and removed when the book or a profile is.
 Client: `src/library/ShareDialog.tsx`, `SharingPage.tsx`, `src/admin/AdminShares.tsx`.
+AI access: with profiles each reader may use only the AI helpers the admin gave them (`aiAccess`, `aiChoice` and `aiRequests` on a profile in `profiles.json`); the admin's own profile may use all that work.
+`server/ai.ts` `for(access)` is the one place a reader's questions are answered, so the picker only shows what it decides, and what is installed is looked at once per 30 s, shared by everyone asking.
+A third helper, the API Model (`server/openrouter.ts`, OpenRouter), answers with the admin's key and model from `.env` or `data/openrouter.json` (0600); the admin page (`AdminApiModel.tsx`, `AiAccessDialog.tsx`) sets them and gives helpers to readers; a reader's requests of it count against a daily limit (in memory).
 Server: `server/profiles.ts`, `sessions.ts`, `session-token.ts`, `codes.ts`, `throttle.ts`, `avatar.ts`, `routes-session.ts`, `routes-admin.ts`, `app-env.ts`.
 Client: `src/profiles/`, `src/admin/`, and `src/reader/noteSync.ts` (the notes outbox is kept per profile).
 Tests: `server/profiles-app.test.ts`, `server/codes.test.ts`, `server/session-token.test.ts`, `server/throttle.test.ts`, `server/avatar.test.ts`, `src/admin/profileText.test.ts`, and the profile cases in `src/reader/noteSync.test.ts`.

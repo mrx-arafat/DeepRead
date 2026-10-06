@@ -2,7 +2,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { AVATAR_PRESETS } from "../shared/types.ts";
+import { AI_PROVIDERS, AVATAR_PRESETS, isAiProviderId } from "../shared/types.ts";
 import type { AdminProfile, AdminShare, BookSummary, NewProfile, ProfileUpdate, Session } from "../shared/types.ts";
 import type { AppEnv } from "./app-env.ts";
 import { isPhotoFile, MAX_PHOTO_BYTES, squarePhoto } from "./avatar.ts";
@@ -50,6 +50,18 @@ function readProfileFields(c: Context, body: Record<string, unknown>, whole: boo
     fields.preset = body.preset;
   }
 
+  // Which AI helpers a profile may use, and which requests for one are turned down. Only a change to an existing profile.
+  if (!whole) {
+    for (const field of ["ai", "aiDismiss"] as const) {
+      if (!Object.hasOwn(body, field)) continue;
+      const list = body[field];
+      if (!Array.isArray(list) || list.length > Object.keys(AI_PROVIDERS).length || !list.every(isAiProviderId)) {
+        return apiError(c, 400, "invalid_ai", `${field} is a list of AI helpers. Pick from: ${Object.keys(AI_PROVIDERS).join(", ")}.`);
+      }
+      fields[field] = list;
+    }
+  }
+
   if (Object.hasOwn(body, "badge")) {
     const badge = typeof body.badge === "string" ? body.badge.trim() : null;
     if (badge === null || badge.length > MAX_BADGE_CHARS) {
@@ -59,7 +71,7 @@ function readProfileFields(c: Context, body: Record<string, unknown>, whole: boo
   }
 
   if (Object.keys(fields).length === 0) {
-    return apiError(c, 400, "invalid_request", "Nothing to change. Send a new name, code, picture or badge.");
+    return apiError(c, 400, "invalid_request", "Nothing to change. Send a new name, code, picture, badge or AI helpers.");
   }
   return fields;
 }

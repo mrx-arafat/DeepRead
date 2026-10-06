@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AdminProfile,
   AdminShare,
+  AiStatus,
   ApiError,
   BookDetail,
   BookShare,
@@ -25,7 +26,10 @@ import type { Ai } from "./ai.ts";
 import type { AppEnv } from "./app-env.ts";
 import { createApp } from "./app.ts";
 import type { ParsePdf } from "./deps.ts";
+import { createAi } from "./ai.ts";
 import { createLibrary } from "./library.ts";
+import { createOpenRouter } from "./openrouter.ts";
+import type { OpenRouter } from "./openrouter.ts";
 import { createProfiles } from "./profiles.ts";
 import { sessionKey } from "./session-token.ts";
 import { loadSessionSecret } from "./sessions.ts";
@@ -55,6 +59,9 @@ const fakeLlm: Ai = {
     })(),
   model: () => "fake-model",
   status: async () => ({ active: null, providers: [] }),
+  ensureStatus: async () => {},
+  statusFor: async () => ({ active: null, providers: [] }),
+  for: () => fakeLlm,
   choose: async () => ({ active: null, providers: [] }),
   close() {},
 };
@@ -76,14 +83,19 @@ describe("DeepRead with profiles", () => {
   let admin: string;
 
   /** DeepRead starting (again) on the same data folder: profiles.json, the books and the session secret carry over. */
-  async function start({ limit = null, parsePdf = fakeParsePdf }: { limit?: number | null; parsePdf?: ParsePdf } = {}): Promise<void> {
+  async function start({
+    limit = null,
+    parsePdf = fakeParsePdf,
+    ai = { llm: fakeLlm },
+  }: { limit?: number | null; parsePdf?: ParsePdf; ai?: { llm: Ai; openrouter?: OpenRouter } } = {}): Promise<void> {
     const profiles = createProfiles({ store: createLocalStore(dataDir), dataDir, limit, adminPasskey: PASSKEY, adminName: "Arafat" });
     const key = sessionKey(await loadSessionSecret(dataDir), PASSKEY);
     app = createApp({
       accounts: { profiles, sessionKey: key },
       parsePdf,
       renderCover: async () => null,
-      llm: fakeLlm,
+      llm: ai.llm,
+      openrouter: ai.openrouter,
       quickTranslate: async (text) => text,
       remoteKey: REMOTE_KEY,
     });
@@ -275,8 +287,8 @@ describe("DeepRead with profiles", () => {
       ["DELETE", `/api/admin/profiles/${admin}`],
       ["POST", `/api/admin/profiles/${admin}/sign-out`],
       ["POST", `/api/admin/impersonate/${admin}`],
-      // One AI helper answers for everyone, so only the admin picks it.
-      ["PUT", "/api/ai/provider", { id: "codex" }],
+      // Which AI helpers a profile may use is the admin's to decide.
+      ["PATCH", `/api/admin/profiles/${admin}`, { ai: ["claude"] }],
     ];
     for (const [method, path, body] of requests) {
       const response = await call(method, path, minaCookie, body);
@@ -285,7 +297,6 @@ describe("DeepRead with profiles", () => {
     }
     expect((await json<PublicProfile[]>(call("GET", "/api/profiles"))).map((p) => p.name)).toEqual(["Arafat", "Mina"]);
     expect((await call("GET", "/api/ai/providers", minaCookie)).status).toBe(200);
-    expect((await call("PUT", "/api/ai/provider", adminCookie, { id: "codex" })).status).toBe(200);
   });
 
   it("should let the admin add, rename and re-code a profile, and a new code sign that profile out", async () => {
@@ -299,6 +310,8 @@ describe("DeepRead with profiles", () => {
       avatar: { preset: "cat-rose", photo: null },
       admin: false,
       badge: null,
+      ai: [],
+      aiRequested: [],
       createdAt: expect.any(String),
       bookCount: 0,
       used: 0,
@@ -703,6 +716,204 @@ describe("DeepRead with profiles", () => {
       expect((await call("DELETE", `/api/admin/shares/${mina.id}/${hers}/${admin}`, adminCookie)).status).toBe(204);
       expect((await shelf(adminCookie)).map((b) => b.title)).toEqual(["No Longer Human"]);
       expect((await call("DELETE", `/api/admin/shares/${mina.id}/${hers}/${admin}`, adminCookie)).status).toBe(404);
+    });
+  });
+  describe("AI helpers, which the admin gives to readers one by one", () => {
+    const KEY = "sk-or-v1-0123456789abcdef0123456789abcdef";
+    const MODEL = "vendor/good-model";
+    const MODELS = { data: [{ id: MODEL, name: "Vendor: Good", context_length: 8000, pricing: { prompt: "0.000001", completion: "0.000002" } }] };
+    let requests: Array<{ url: string; authorization: string | undefined }>;
+
+    /** Claude Code on this server answers "answer from claude"; the API model answers "A helpful answer.", over a faked network. */
+    async function startServer({ claude = true, env = {} }: { claude?: boolean; env?: Record<string, string> } = {}): Promise<void> {
+      const encoder = new TextEncoder();
+      const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        requests.push({ url: String(url), authorization: headers.Authorization });
+        if (String(url).endsWith("/models")) return new Response(JSON.stringify(MODELS));
+        if (String(url).endsWith("/key")) return new Response(JSON.stringify({ data: { usage: 0.1, limit: 2 } }));
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: "A helpful answer." } }] })}\n\ndata: [DONE]\n\n`));
+            controller.close();
+          },
+        });
+        return new Response(stream, { status: 200 });
+      }) as typeof fetch;
+      const openrouter = createOpenRouter({ dataDir, env, fetch: fetcher });
+      const llm = createAi({
+        dataDir,
+        installed: async (bin) => bin === "claude" && claude,
+        create: () => ({
+          async *streamText() {
+            yield "answer from claude";
+          },
+          model: () => "claude-model",
+          close() {},
+        }),
+        openrouter,
+      });
+      await llm.status();
+      await start({ ai: { llm, openrouter } });
+      admin = (await json<PublicProfile[]>(call("GET", "/api/profiles")))[0]!.id;
+    }
+
+    let selections = 0;
+    /** A question never asked before, so the answer is the helper's and not one kept from an earlier question. */
+    const explain = async (cookie: string, bookId: string) =>
+      (
+        await call("POST", "/api/ai/explain", cookie, {
+          bookId,
+          chapterId: "c1",
+          blockId: "c1-b0",
+          selection: `word ${(selections += 1)}`,
+          mode: "word",
+          lang: "bn",
+        })
+      ).text();
+    const providers = (cookie: string) => json<AiStatus>(call("GET", "/api/ai/providers", cookie));
+    const stateOf = (status: AiStatus) => Object.fromEntries(status.providers.map((p) => [p.id, `${p.installed ? "on" : "off"}${p.allowed ? " yours" : ""}${p.requested ? " asked" : ""}`]));
+
+    beforeEach(() => {
+      requests = [];
+    });
+
+    it("should let only the admin see and set the key, the model and the daily limit, and never send the key back", async () => {
+      await startServer({ claude: false });
+      const adminCookie = await signIn(admin, PASSKEY);
+      const mina = await addProfile(adminCookie, "Mina", "246810");
+      const minaCookie = await signIn(mina.id, "246810");
+
+      expect(await json<unknown>(call("GET", "/api/admin/openrouter", adminCookie))).toEqual({
+        keySet: false,
+        keySource: null,
+        keyHint: null,
+        model: null,
+        modelSource: null,
+        dailyLimit: 100,
+        usedToday: {},
+        active: null,
+      });
+      for (const [method, path, body] of [
+        ["GET", "/api/admin/openrouter"],
+        ["PUT", "/api/admin/openrouter", { apiKey: KEY }],
+        ["POST", "/api/admin/openrouter/test"],
+        ["GET", "/api/admin/openrouter/models"],
+      ] as Array<[string, string, unknown?]>) {
+        const refused = await call(method, path, minaCookie, body);
+        expect(refused.status).toBe(403);
+        expect(await refused.json()).toMatchObject({ error: "admin_only" });
+      }
+
+      const badKey = await call("PUT", "/api/admin/openrouter", adminCookie, { apiKey: "not a key" });
+      expect(badKey.status).toBe(400);
+      expect(await json<ApiError>(badKey)).toMatchObject({ error: "invalid_key" });
+      const unknown = await call("PUT", "/api/admin/openrouter", adminCookie, { model: "nvidia/nvfp4" });
+      expect(unknown.status).toBe(400);
+      expect(await json<ApiError>(unknown)).toMatchObject({ error: "unknown_model", message: expect.stringContaining("nvidia/nvfp4") });
+      expect(await json<ApiError>(call("PUT", "/api/admin/openrouter", adminCookie, { dailyLimit: -1 }))).toMatchObject({ error: "invalid_limit" });
+      expect((await call("PUT", "/api/admin/openrouter", adminCookie, {})).status).toBe(400);
+
+      const saved = await call("PUT", "/api/admin/openrouter", adminCookie, { apiKey: KEY, model: MODEL, dailyLimit: 40 });
+      expect(saved.status).toBe(200);
+      const view = await saved.text();
+      expect(view).not.toContain(KEY);
+      // Nothing else on this server can answer, so the API model is what answers for the admin now.
+      expect(JSON.parse(view)).toEqual({
+        keySet: true,
+        keySource: "admin",
+        keyHint: "cdef",
+        model: MODEL,
+        modelSource: "admin",
+        dailyLimit: 40,
+        usedToday: {},
+        active: "openrouter",
+      });
+      expect(await json<unknown[]>(call("GET", "/api/admin/openrouter/models", adminCookie))).toEqual([
+        { id: MODEL, name: "Vendor: Good", free: false, promptPerMillion: 1, completionPerMillion: 2 },
+      ]);
+      expect(await json<unknown>(call("POST", "/api/admin/openrouter/test", adminCookie))).toMatchObject({ ok: true, model: MODEL, balance: { used: 0.1, limit: 2 } });
+      // The helper list every reader sees names the model, never the key.
+      expect(await (await call("GET", "/api/ai/providers", minaCookie)).text()).not.toContain(KEY);
+    });
+
+    it("should give a reader a helper only when the admin does: they ask, the admin answers, they use it and pick among theirs", async () => {
+      await startServer({ env: { OPENROUTER_API_KEY: KEY, OPENROUTER_MODEL: MODEL } });
+      const adminCookie = await signIn(admin, PASSKEY);
+      const mina = await addProfile(adminCookie, "Mina", "246810");
+      const minaCookie = await signIn(mina.id, "246810");
+      const bookId = await upload(minaCookie, "Mina's Book");
+
+      // On this server Claude Code is installed and Codex is not, and the admin has set up an API key. The admin sees all of it;
+      // Mina sees the same three, none of them hers yet.
+      expect(stateOf(await providers(adminCookie))).toEqual({ claude: "on yours", codex: "off yours", openrouter: "on yours" });
+      // The helpers are Arafat's, and Mina is told whose.
+      expect(await providers(minaCookie)).toMatchObject({ active: null, owner: "Arafat" });
+      expect(stateOf(await providers(minaCookie))).toEqual({ claude: "on", codex: "off", openrouter: "on" });
+      expect(await explain(minaCookie, bookId)).toContain("ask the admin for one");
+      expect(requests).toEqual([]);
+
+      // She cannot take one, nor ask for what the server lacks.
+      expect((await call("PUT", "/api/ai/provider", minaCookie, { id: "claude" })).status).toBe(403);
+      expect(await json<ApiError>(call("POST", "/api/ai/request", minaCookie, { id: "codex" }))).toMatchObject({ error: "ai_not_installed" });
+      expect((await call("POST", "/api/ai/request", minaCookie, { id: "nope" })).status).toBe(400);
+
+      // She can ask for one that is there, and asking twice changes nothing.
+      expect(stateOf(await json<AiStatus>(call("POST", "/api/ai/request", minaCookie, { id: "claude" })))).toEqual({ claude: "on asked", codex: "off", openrouter: "on" });
+      await call("POST", "/api/ai/request", minaCookie, { id: "claude" });
+      const asked = (await json<AdminProfile[]>(call("GET", "/api/admin/profiles", adminCookie))).find((p) => p.id === mina.id);
+      expect(asked).toMatchObject({ ai: [], aiRequested: ["claude"] });
+
+      // The rules for the grant itself.
+      expect(await json<ApiError>(call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { ai: ["bogus"] }))).toMatchObject({ error: "invalid_ai" });
+      expect(await json<ApiError>(call("PATCH", `/api/admin/profiles/${admin}`, adminCookie, { ai: ["claude"] }))).toMatchObject({ error: "admin_ai" });
+
+      // The admin gives her Claude Code and the API model. The request is answered, and Claude Code is first.
+      const given = await json<AdminProfile>(call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { ai: ["openrouter", "claude"] }));
+      expect(given).toMatchObject({ ai: ["claude", "openrouter"], aiRequested: [] });
+      expect(await providers(minaCookie)).toMatchObject({ active: "claude" });
+      expect(stateOf(await providers(minaCookie))).toEqual({ claude: "on yours", codex: "off", openrouter: "on yours" });
+      expect(await explain(minaCookie, bookId)).toContain("answer from claude");
+
+      // She picks the API model, which answers through the admin's key, and the pick stays.
+      expect(await json<AiStatus>(call("PUT", "/api/ai/provider", minaCookie, { id: "openrouter" }))).toMatchObject({ active: "openrouter" });
+      expect(await explain(minaCookie, bookId)).toContain("A helpful answer.");
+      expect(requests.filter((r) => r.url.endsWith("/chat/completions")).map((r) => r.authorization)).toEqual([`Bearer ${KEY}`]);
+      expect(await providers(minaCookie)).toMatchObject({ active: "openrouter" });
+
+      // The admin takes the API model back: her pick goes with it, and she can no longer choose it.
+      await call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { ai: ["claude"] });
+      expect(await providers(minaCookie)).toMatchObject({ active: "claude" });
+      expect((await call("PUT", "/api/ai/provider", minaCookie, { id: "openrouter" })).status).toBe(403);
+
+      // Taking everything back leaves her where she began; a request can be turned down without giving anything.
+      await call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { ai: [] });
+      expect(await explain(minaCookie, bookId)).toContain("ask the admin for one");
+      await call("POST", "/api/ai/request", minaCookie, { id: "claude" });
+      const dismissed = await json<AdminProfile>(call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { aiDismiss: ["claude"] }));
+      expect(dismissed).toMatchObject({ ai: [], aiRequested: [] });
+      expect(stateOf(await providers(minaCookie))).toEqual({ claude: "on", codex: "off", openrouter: "on" });
+    });
+
+    it("should hold a reader to the daily number of requests the admin set for the API model, and say when it starts again", async () => {
+      await startServer({ claude: false, env: { OPENROUTER_API_KEY: KEY, OPENROUTER_MODEL: MODEL, OPENROUTER_DAILY_LIMIT: "2" } });
+      const adminCookie = await signIn(admin, PASSKEY);
+      const mina = await addProfile(adminCookie, "Mina", "246810");
+      await call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { ai: ["openrouter"] });
+      const minaCookie = await signIn(mina.id, "246810");
+      const bookId = await upload(minaCookie, "Mina's Book");
+
+      expect(await explain(minaCookie, bookId)).toContain("A helpful answer.");
+      expect(await explain(minaCookie, bookId)).toContain("A helpful answer.");
+      const over = await explain(minaCookie, bookId);
+      expect(over).toContain("used today's 2 requests");
+      expect(over).not.toContain("A helpful answer.");
+      expect(requests.filter((r) => r.url.endsWith("/chat/completions"))).toHaveLength(2);
+      expect((await json<{ usedToday: Record<string, number> }>(call("GET", "/api/admin/openrouter", adminCookie))).usedToday).toEqual({ [mina.id]: 2 });
+
+      // The admin raises it, and she carries on.
+      await call("PUT", "/api/admin/openrouter", adminCookie, { dailyLimit: 5 });
+      expect(await explain(minaCookie, bookId)).toContain("A helpful answer.");
     });
   });
 });

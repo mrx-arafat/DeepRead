@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { formatBytes } from "../shared/bytes.ts";
 import { createAi } from "./ai.ts";
 import { createApp } from "./app.ts";
+import { createOpenRouter } from "./openrouter.ts";
 import { renderCover } from "./cover.ts";
 import type { Accounts } from "./deps.ts";
 import { loadEnvFiles } from "./env.ts";
@@ -46,7 +47,9 @@ async function openStore(): Promise<{ config: StorageConfig; store: ObjectStore 
 }
 
 const { config: storage, store } = await openStore();
-const llm = createAi({ dataDir });
+// The admin's OpenRouter key and model (.env, or saved on the admin page): the API model the admin can give to readers.
+const openrouter = createOpenRouter({ dataDir });
+const llm = createAi({ dataDir, openrouter });
 // Settles which AI tool answers before the first request, so cache keys name the right model.
 const ai = await llm.status();
 const translator = createQuickTranslate({ cacheFile: join(dataDir, "translate-cache.json") });
@@ -84,6 +87,7 @@ const app = createApp({
   parsePdf,
   renderCover,
   llm,
+  openrouter,
   quickTranslate: translator.translate,
   webRoot: production ? resolve(import.meta.dirname, "../dist") : undefined,
   remoteKey: process.env.DEEPREAD_REMOTE_KEY || undefined,
@@ -98,7 +102,12 @@ const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) =
   console.log(`Books are kept in ${where}${storage.limit === null ? "." : `, up to ${formatBytes(storage.limit)}.`}`);
   if (accounts) void logProfiles(accounts);
   const helper = ai.providers.find((provider) => provider.id === ai.active);
-  console.log(helper ? `Explanations by ${helper.name}.` : "No AI helper found (Claude Code or Codex): reading works, explanations do not.");
+  console.log(
+    helper
+      ? `Explanations by ${helper.name}${helper.detail ? ` (${helper.detail})` : ""}.`
+      : "No AI helper found (Claude Code, Codex or an API key): reading works, explanations do not.",
+  );
+  if (accounts) console.log("Each reader uses the AI helpers the admin gives them, on the admin page.");
   // Books added before covers were kept get theirs now, in the background, while the app already answers.
   void addMissingCovers();
 });

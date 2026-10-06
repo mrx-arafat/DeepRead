@@ -11,6 +11,7 @@ import { accessGuard } from "./local-only.ts";
 import { adminRoutes } from "./routes-admin.ts";
 import { aiRoutes } from "./routes-ai.ts";
 import { booksRoutes } from "./routes-books.ts";
+import { openrouterRoutes } from "./routes-openrouter.ts";
 import { sharesRoutes } from "./routes-shares.ts";
 import { sessionRoutes } from "./routes-session.ts";
 import { readerGuard } from "./sessions.ts";
@@ -28,6 +29,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // Every route after this reads c.var.library, the books of whoever is signed in; with profiles, nobody gets no further.
   app.use("/api/*", readerGuard(deps));
   if (deps.accounts) app.route("/api/admin", adminRoutes(deps.accounts));
+  // The admin's OpenRouter key and model: only with profiles on, where there is an admin to hold them (with one library, .env does it).
+  if (deps.accounts && deps.openrouter) app.route("/api/admin/openrouter", openrouterRoutes({ openrouter: deps.openrouter, llm: deps.llm }));
   app.get("/api/storage", async (c) => c.json(await c.var.library.usage()));
 
   app.get("/api/translate", async (c) => {
@@ -51,7 +54,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // Sharing is between profiles, so without them these addresses are unknown like any other.
   if (deps.accounts) app.route("/api", sharesRoutes(deps.accounts));
   app.route("/api/books", booksRoutes({ parsePdf: deps.parsePdf, renderCover: deps.renderCover }));
-  app.route("/api/ai", aiRoutes({ llm: deps.llm }));
+  app.route("/api/ai", aiRoutes({ llm: deps.llm, accounts: deps.accounts }));
 
   // Unknown API paths answer in JSON, never with the web app's HTML.
   app.all("/api/*", (c) => apiError(c, 404, "not_found", "There is nothing at this address."));

@@ -117,15 +117,82 @@ export type LangCode = keyof typeof LANGUAGES;
 export const DEFAULT_LANG: LangCode = "bn";
 
 /** The AI tools DeepRead can answer with, in the order it prefers them. */
-export const AI_PROVIDERS = { claude: "Claude Code", codex: "Codex" } as const;
+export const AI_PROVIDERS = { claude: "Claude Code", codex: "Codex", openrouter: "API Model" } as const;
+
+/** What each helper is, for the admin who gives it to readers. */
+export const AI_PROVIDER_HELP = {
+  claude: "Claude Code on this computer, with the admin's Claude account.",
+  codex: "Codex on this computer, with the admin's ChatGPT account.",
+  openrouter: "An API call to an AI model on the admin's key, not anyone's Claude or Codex sign-in.",
+} as const;
 
 export type AiProviderId = keyof typeof AI_PROVIDERS;
 
-/** Which AI tools are installed on this computer, and which one answers (null: none is installed). */
+export function isAiProviderId(value: unknown): value is AiProviderId {
+  return typeof value === "string" && Object.hasOwn(AI_PROVIDERS, value);
+}
+
+/**
+ * Which AI helpers can answer, and which one does (null: none can). A command-line tool can answer when it is installed on
+ * this computer; the API model, when the admin has given it a key and a model. With profiles on, a reader may use only
+ * the helpers the admin gave them, and `allowed` says which.
+ */
 export type AiStatus = {
+  /** With profiles: the admin's name, whose helpers these are. A reader is told they are using "Arafat's Claude Code". */
+  owner?: string;
   active: AiProviderId | null;
-  providers: Array<{ id: AiProviderId; name: string; installed: boolean }>;
+  providers: Array<{
+    id: AiProviderId;
+    name: string;
+    installed: boolean;
+    /** For the API model: the model that answers, or what it still needs. */
+    detail?: string;
+    /** With profiles: whether the admin gave this reader the helper. Absent when nothing limits who may use it. */
+    allowed?: boolean;
+    /** With profiles: this reader has asked the admin for it, and the admin has not answered. */
+    requested?: boolean;
+  }>;
 };
+
+/** What the admin page shows of the OpenRouter helper. The key itself is never sent to a browser. */
+export type OpenRouterView = {
+  keySet: boolean;
+  /** Where the key in use comes from: what the admin saved wins over .env. */
+  keySource: "admin" | "env" | null;
+  /** The last four characters of the key, so the admin can tell which one is in use. */
+  keyHint: string | null;
+  model: string | null;
+  modelSource: "admin" | "env" | null;
+  /** The most requests a reader may make of it in a day; 0 for no limit. The admin's own profile is never held to it. */
+  dailyLimit: number;
+  /** Requests made today, by reader id. */
+  usedToday: Record<string, number>;
+};
+
+/** The admin page's view, with which helper answers for everyone right now. */
+export type OpenRouterAdminView = OpenRouterView & { active: AiProviderId | null };
+
+/** `null` takes away what the admin saved, which goes back to what .env says; a missing field stays as it is. */
+export type OpenRouterPatch = { apiKey?: string | null; model?: string | null; dailyLimit?: number | null };
+
+export type OpenRouterModel = {
+  id: string;
+  name: string;
+  free: boolean;
+  /** US dollars for a million tokens in and out; null where OpenRouter prices it by what the request turns out to need. */
+  promptPerMillion: number | null;
+  completionPerMillion: number | null;
+};
+
+export type OpenRouterTest =
+  | {
+      ok: true;
+      model: string;
+      ms: number;
+      /** What the key has spent and may spend, in US dollars, when OpenRouter says (limit is null for a key with none). */
+      balance?: { used: number; limit: number | null };
+    }
+  | { ok: false; message: string };
 
 /** Fast, keyless lookup shown the instant a word is tapped. */
 export type QuickTranslation = {
@@ -217,6 +284,10 @@ export type AdminShare = { owner: PublicProfile; recipient: PublicProfile; bookI
 
 /** A profile as the admin dashboard shows it. */
 export type AdminProfile = PublicProfile & {
+  /** The AI helpers the admin gave this profile. The admin's own can use every one that works. */
+  ai: AiProviderId[];
+  /** The helpers this profile has asked for, and the admin has not answered. */
+  aiRequested: AiProviderId[];
   createdAt: string;
   bookCount: number;
   /** Bytes its books take. */
@@ -242,7 +313,16 @@ export type SessionInfo = { mode: "single" } | { mode: "profiles"; session: Sess
 export type NewProfile = { name: string; code: string; preset: AvatarPreset; badge?: string };
 
 /** A missing field stays as it is; an empty badge takes the badge away. A new code signs that profile out everywhere. */
-export type ProfileUpdate = { name?: string; code?: string; preset?: AvatarPreset; badge?: string };
+export type ProfileUpdate = {
+  name?: string;
+  code?: string;
+  preset?: AvatarPreset;
+  badge?: string;
+  /** The AI helpers this profile may use, replacing the list. Giving one answers a request for it. */
+  ai?: AiProviderId[];
+  /** Turns down these requests for a helper, without giving it. */
+  aiDismiss?: AiProviderId[];
+};
 
 export type ExplainRequest = {
   bookId: string;

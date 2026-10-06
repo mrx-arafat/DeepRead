@@ -49,6 +49,8 @@ export type LlmRequest = {
   user: string;
   /** Aborting kills the model process. */
   signal?: AbortSignal;
+  /** The most the answer may run to, in tokens. Only a model reached over an API honours it; a command-line tool does not. */
+  maxTokens?: number;
 };
 
 export type Llm = {
@@ -151,7 +153,7 @@ function aborted(): LlmError {
 }
 
 /** A counting semaphore; waiters are served in order and can leave the queue by aborting. */
-function createGate(limit: number) {
+export function createGate(limit: number) {
   let active = 0;
   const waiting: Array<() => void> = [];
 

@@ -9,7 +9,7 @@ Select a passage and get it explained in simple words.
 Listen to the book read aloud, in a natural voice if you like.
 Come back to the exact line you left, on any device.
 Share a book with the people you read with, and each of you keeps your own place and notes.
-Your books stay on your computer, and AI help uses your own Claude Code or Codex sign-in.
+Your books stay on your computer, and AI help comes from your own Claude Code or Codex, or from an API key you choose.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-1d3bb8)](LICENSE)
 [![Node.js 24+](https://img.shields.io/badge/node-24%2B-1d3bb8)](https://nodejs.org)
@@ -42,7 +42,7 @@ The explanation appears beside the paragraph you are reading, and you keep going
 | Never lose your place | Every book opens on the line you stopped at, on any device, and the shelf shows how far you are ([Your library](#2-your-library)) |
 | Read with other people | A profile for each reader, and books you can share with them, read only, each with their own place and notes ([Read together](#read-together-profiles-and-sharing)) |
 | Read the way you like | Light, sepia or dark, two fonts, text size, margins, and scrolling or pages ([Make it yours](#10-make-it-yours)) |
-| Keep it your own | Your books on your computer or in your own Cloudflare R2 bucket, and AI help through your own Claude Code or Codex sign-in ([AI helpers](#ai-helpers), [Cloudflare R2](#keep-your-books-in-cloudflare-r2)) |
+| Keep it your own | Your books on your computer or in your own Cloudflare R2 bucket, and AI help from your own Claude Code or Codex, or an API key ([AI helpers](#ai-helpers), [Cloudflare R2](#keep-your-books-in-cloudflare-r2)) |
 
 It suits one person on one computer.
 If a family, a class or a book club reads on the same DeepRead, turn on profiles: everyone gets a library of their own, and anyone can share a book with the others.
@@ -71,7 +71,7 @@ It asks before it installs anything optional, and your books stay on your comput
 <tr><td width="34%"><b>What it checks</b></td><td width="66%"><b>What it does about it</b></td></tr>
 <tr><td>git</td><td>Tells you the one command to install it if it is missing.</td></tr>
 <tr><td>Node.js 24 or newer, the engine DeepRead runs on</td><td>Uses one already on your computer, even if your terminal normally runs an older one (from Homebrew, nvm, fnm, Volta, asdf or mise). If there is none, it downloads a private copy from <a href="https://nodejs.org">nodejs.org</a> just for DeepRead, checks that the download is genuine, and changes nothing else on your computer.</td></tr>
-<tr><td>An AI helper</td><td>Looks for Claude Code or Codex, including where their installers put them when your terminal cannot see them yet. If neither is there, it lets you pick one to install, or none (the default): reading and listening work without one (see <a href="#ai-helpers">AI helpers</a>). Nothing is installed unless you pick it.</td></tr>
+<tr><td>An AI helper</td><td>Looks for Claude Code or Codex, including where their installers put them when your terminal cannot see them yet. If neither is there, it lets you pick one to install, or none (the default): reading and listening work without one, and an API key can stand in for them (see <a href="#ai-helpers">AI helpers</a>). Nothing is installed unless you pick it.</td></tr>
 <tr><td>DeepRead itself</td><td>Downloads it to <code>~/DeepRead</code> (or updates it), installs its packages, builds it, and adds the <code>deepread</code> command.</td></tr>
 </table>
 
@@ -124,18 +124,23 @@ The installer may have added a line mentioning `.local/bin` to `~/.zshrc`, `~/.b
 
 ## AI helpers
 
-DeepRead has no API key and no account of its own.
-It explains words and passages through an AI tool you already use, signed in with your own subscription.
+DeepRead has no account of its own.
+It explains words and passages through an AI you already have, and there are three ways to get one:
 
-| AI helper | Comes with | Install | Sign in once |
-| --- | --- | --- | --- |
-| **Claude Code** | Claude Pro or Max | `curl -fsSL https://claude.ai/install.sh \| bash` | run `claude` and follow the steps |
-| **Codex** | ChatGPT Plus or Pro | `npm install -g @openai/codex` | run `codex` and choose **Sign in with ChatGPT** |
+| AI helper | What it is | Set it up |
+| --- | --- | --- |
+| **Claude Code** | Runs on this computer, signed in with your Claude account (Claude Pro or Max). | `curl -fsSL https://claude.ai/install.sh \| bash`, then run `claude` and follow the steps |
+| **Codex** | Runs on this computer, signed in with your ChatGPT account (ChatGPT Plus or Pro). | `npm install -g @openai/codex`, then run `codex` and choose **Sign in with ChatGPT** |
+| **API Model** | An API call to an AI model, paid for with an API key from [OpenRouter](https://openrouter.ai). It uses nobody's Claude Code or Codex sign-in. | Put `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` in `.env` (see [The API Model](#the-api-model)) |
 
-If you have both, open **Aa** in the reader and pick one under **AI helper**.
-With profiles on, only the admin can change it, because it is the same helper for everyone.
-DeepRead remembers your choice.
-If you install one later, it shows up there the next time you open the menu.
+DeepRead finds the first two by itself.
+Open **Aa** in the reader: **AI helper** lists all three, the ones that work to pick and the others greyed with the reason (**Not installed on this computer**, or what the API Model still needs).
+DeepRead remembers your pick, and if you install one later it shows up the next time you open the menu.
+
+With profiles on, the helpers are the admin's to give.
+Claude Code and Codex run on the admin's computer under the admin's own sign-in, and the API Model runs on the admin's key, so a reader uses only the ones the admin has switched on for them (see [Read together](#read-together-profiles-and-sharing)).
+Everyone else sees the same list, with a helper they do not have yet greyed and an **Ask** button beside it.
+A reader who is using one is told whose it is: "You are using Arafat's Claude Code. Sharing is caring."
 
 <table><tr><td><img src="docs/images/settings.webp" alt="The Aa menu with theme, font, text size, line spacing, margins, alignment, layout, read-aloud voice, explanation language and the AI helper picker" width="900"></td></tr></table>
 
@@ -146,6 +151,35 @@ Only the explanations (the meaning, the example sentence and the passage notes) 
 > Antigravity's command-line tool is not supported.
 > When asked a question from a script, it runs commands on your computer, even in its plan and sandbox modes, so text inside a book could make it do things you did not ask for.
 > Claude Code and Codex are both run with their tools switched off.
+
+### The API Model
+
+The API Model is for a computer that has neither Claude Code nor Codex, and for readers the admin wants to give an AI to without lending their own sign-in.
+Each question is one call to a model on [OpenRouter](https://openrouter.ai), with the admin's API key.
+It never uses anyone's Claude Code or Codex sign-in, and it gives the model no tools, so text in a book cannot make it do anything.
+
+To set it up:
+
+1. Make a key at [openrouter.ai/keys](https://openrouter.ai/keys), and choose a model from [openrouter.ai/models](https://openrouter.ai/models).
+   A model's name looks like `vendor/model-name`.
+2. Put them in `.env` (see [.env.example](.env.example)), then restart DeepRead:
+
+   ```bash
+   OPENROUTER_API_KEY=sk-or-...
+   OPENROUTER_MODEL=vendor/model-name
+   ```
+
+   With profiles on, the admin page can set the key, the model and the limit below as well, under **API Model**.
+   What is saved there wins over `.env`, and the admin can test it with one press: DeepRead asks the model for one word and says how long it took and how much of the key's credit has gone.
+3. With profiles on, switch it on for each reader who should have it (see [Read together](#read-together-profiles-and-sharing)).
+
+One model answers for everyone, and the admin chooses it.
+The admin page lists what OpenRouter offers with what each costs, and refuses a name OpenRouter does not list.
+It also keeps a reader from using up your credit: each reader may make 100 requests of the API Model a day (set `OPENROUTER_DAILY_LIMIT` or change it on the admin page; 0 means no limit), and the admin's own requests are never counted.
+When a provider behind OpenRouter is briefly busy, DeepRead tries again before the reader sees anything.
+
+The key is read from `.env` or kept in `data/openrouter.json`, which only your user can read.
+It is never sent to a browser: the admin page shows only its last four characters.
 
 ## How to use DeepRead
 
@@ -341,8 +375,34 @@ Then press **Try again** on the card.
 <details>
 <summary><b>Explanations say "DeepRead needs an AI helper"</b></summary>
 
-Neither Claude Code nor Codex was found.
-Install one as shown in [AI helpers](#ai-helpers), sign in, then open **Aa** in the reader.
+No AI helper is set up on this computer.
+Install Claude Code or Codex as shown in [AI helpers](#ai-helpers), or set up the [API Model](#the-api-model), then open **Aa** in the reader.
+
+</details>
+
+<details>
+<summary><b>Explanations say "You do not have an AI helper yet"</b></summary>
+
+With profiles on, the admin decides who may use which AI helper.
+Open **Aa**, find the helper you would like under **AI helper**, and press **Ask** beside it.
+The admin sees your request on their page, and the helper works for you as soon as they switch it on.
+Reading and listening work in the meantime.
+
+</details>
+
+<details>
+<summary><b>Explanations say "You have used today's 100 requests"</b></summary>
+
+The admin limits how many questions each reader may ask of the API Model in a day, so one reader cannot use up the credit.
+It starts again tomorrow, or the admin can raise the limit on their page (**API Model**).
+
+</details>
+
+<details>
+<summary><b>The API Model says its key was refused, or is out of credit</b></summary>
+
+For the admin: the key is wrong, was revoked, or the account behind it has no credit left.
+Replace the key or add credit at [openrouter.ai](https://openrouter.ai), then press **Test it** under **API Model** on the admin page.
 
 </details>
 
@@ -600,6 +660,7 @@ A profile can carry a small badge beside its name, such as **Editor** or **Kid**
 - Its own picture: one of the built-in ones, or a photo the admin uploads.
 - Its own code, which it types to sign in.
 - The books other profiles share with it, to read (see [Sharing a book](#sharing-a-book)).
+- The AI helpers the admin gives it, and none until they do (see [AI helpers for each profile](#ai-helpers-for-each-profile)).
 - The same storage limit as everyone else.
   `DEEPREAD_STORAGE_LIMIT` is shared by all profiles, so the books of every profile count toward it together.
   The line under the shelf shows both numbers, such as "Your books take 1.2 GB; everyone's together take 3.4 GB, kept on this computer."
@@ -618,6 +679,27 @@ These are the rules behind it:
 - If the owner removes the book, or the admin removes a profile, the shares that go with it end and what others kept of that book is removed too.
 - The admin sees every share on the dashboard under **Shared books**, and can stop any of them.
 - Sharing needs profiles: without them there is nobody to share with.
+
+### AI helpers for each profile
+
+A new profile has no AI helper.
+Claude Code and Codex run under the admin's own sign-in and the API Model runs on the admin's key, so the admin decides who may use which.
+A reader sees all three in **Aa**, under **AI helper**, each in the state it is in for them:
+
+- **Given to them.** It can be picked, and says who shared it: "Shared with you by Arafat."
+- **Installed but not given.** It is greyed, says "Needs Arafat's approval", and has an **Ask Arafat** button.
+  After they press it, it says "Asked Arafat. Waiting for the answer."
+- **Not there.** It is greyed with the reason, such as "Not installed on this server."
+
+On the admin page, a profile that has asked shows **Asked for AI** beside its name.
+Press **AI helpers** on its row and switch on what to give, one helper at a time.
+Giving a helper answers the request for it, and **Turn down** answers it without giving anything.
+A helper that this server does not have cannot be switched on.
+Taking one back takes effect at once, and a reader who was using it moves to another they have, if they have one.
+The admin's own profile can use everything that works.
+
+When a reader selects a passage to explain, the bar over it says whose AI it is: "With Arafat's API model, shared with you".
+Without profiles there is no admin to ask: whoever reads uses what is on the computer.
 
 ### The admin dashboard
 
@@ -639,6 +721,10 @@ From there you can:
 - **Delete a profile.**
   Its books, notes and saved answers are removed for good, so DeepRead asks you to confirm first.
   The admin's own profile cannot be deleted.
+- **Give AI helpers.**
+  **AI helpers** on a profile's row switches Claude Code, Codex or the API Model on or off for that reader, and shows what they have asked for.
+- **Set up the API Model.**
+  Under the profiles: the key, the model, each reader's daily limit, a test, and how many requests each reader has made today.
 - **See and stop shared books.**
   Under the profiles, **Shared books** lists every book one profile shares with another, with a **Stop sharing** button on each.
 - **Read as a profile.**
@@ -687,7 +773,7 @@ flowchart LR
     Parser -->|chapters and paragraphs| Library[(Library in the data folder or an R2 bucket)]
     Library --> Reader[Reader in the browser]
     Reader -->|tap or select| Server
-    Server -->|prompt with surrounding paragraphs| AI[Claude Code or Codex]
+    Server -->|prompt with surrounding paragraphs| AI[Claude Code, Codex or an API model]
     AI -->|streamed answer| Reader
     Server <-->|answers by prompt and model| Library
     Reader <-->|notes, one change at a time| Server
@@ -806,7 +892,9 @@ Whatever the store, a few small things stay in the data folder on this computer:
 Every prompt lives in [`server/prompts.ts`](server/prompts.ts).
 The model sees the paragraph you are on plus the paragraphs before and after it, so it explains what the sentence means at that point in the book rather than in general.
 
-The AI helper is run headless, one process per answer, in an empty folder, with its tools switched off ([`server/llm.ts`](server/llm.ts)).
+Claude Code and Codex are run headless, one process per answer, in an empty folder, with their tools switched off ([`server/llm.ts`](server/llm.ts)).
+The API Model ([`server/openrouter.ts`](server/openrouter.ts)) is one streamed chat-completion request per answer, with no tools, asked not to think first (measured: the first word in 0.6 s instead of 4 s, for the same answer at half the cost).
+It retries a briefly busy provider before any of the answer has arrived, counts each reader's requests against their day, and keeps the admin's key and model in `data/openrouter.json` (mode 0600) or `.env`.
 With Claude Code every answer comes from Claude Sonnet, chosen by measuring models on real passages and words.
 Claude Haiku is about twice as fast, but it invented events and wrote broken Bangla on full passages, and on single words it gave the term of the wrong field, such as the physics word for "induction" in a chapter on logic.
 Each kind of answer runs at a Claude Code effort level DeepRead picks for it, whatever yours is set to, chosen by timing it and checking what it writes.
@@ -815,6 +903,11 @@ The quiz runs at "high" too: it arrives whole, in about 10 seconds either way, s
 Notes, your own questions, previews and summaries run at "medium", so their first words come in about a second and a half instead of the 4 to 8 seconds they took at "xhigh".
 With Codex, answers come from Codex's default model at low reasoning effort; its own coding instructions are replaced by DeepRead's.
 Codex runs in a Codex home of DeepRead's own, `data/codex-home`, signed in through a link to your own sign-in, so your personal `~/.codex/AGENTS.md`, skills and settings stay out of its answers.
+
+[`server/ai.ts`](server/ai.ts) decides which helper answers whom.
+`ai.for(access)` is the one place a reader's questions are answered, and it uses only a helper the admin gave that reader, so a request made by hand gets the same answer as the screen.
+What is installed is looked at once per half minute and shared by everyone asking, so a reader with nothing given cannot make the server start programs.
+`GET /api/ai/providers` tells each reader every helper in their own state, `PUT /api/ai/provider` is their pick among their own, and `POST /api/ai/request` asks the admin for one; the admin gives them with `PATCH /api/admin/profiles/:id` (`ai`, `aiDismiss`) and manages the key, model and limit under `/api/admin/openrouter` (`GET`, `PUT`, `POST .../test`, `GET .../models`).
 
 Answers stream as they are written and are cached with the book (on disk, or in your R2 bucket), keyed by the prompt and the model, so asking again is instant and editing a prompt never serves a stale answer.
 
@@ -846,7 +939,9 @@ Each sentence is made while the one before it is read, the silence the voice lea
   The admin can see everything, by choosing **Read as** your profile.
 - The natural voice, if you choose it, downloads its code from jsDelivr and its model from Hugging Face once.
   The book text is never sent to either.
-- The text you ask about goes to Anthropic (Claude Code) or OpenAI (Codex) through your own sign-in, the same as any session you start yourself.
+- The text you ask about goes to Anthropic (Claude Code) or OpenAI (Codex) through the sign-in of whoever runs DeepRead, the same as any session they start themselves.
+  With the API Model it goes to OpenRouter and the company that runs the model, on the admin's API key, under OpenRouter's terms and the settings of the admin's account there.
+  Only readers the admin gave a helper to can use it, and the admin's key is never sent to a browser.
 - A fallback word translation uses an unofficial Google endpoint, and only if the AI answer fails or there is no AI helper.
 
 ## For developers
@@ -883,7 +978,8 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 | `shared/bytes.ts` | Sizes as text, such as `1.2 GB`, the same in server messages and on the library page |
 | `server/parser/` | PDF to chapters and paragraphs |
 | `server/prompts.ts` | Every prompt sent to the model |
-| `server/ai.ts` | Which AI helper answers: detection and the reader's choice |
+| `server/ai.ts` | Which AI helper answers whom: detection, the first-come default, and the helper for one reader |
+| `server/openrouter.ts`, `server/routes-openrouter.ts` | The API Model: key and model, streaming, retries, the daily limit, the test; and the admin's routes for them |
 | `server/llm.ts` | Running Claude Code or Codex: streaming, timeouts, concurrency |
 | `server/library.ts` | The books on top of a store: key layout, adding and removing, usage and the limit, notes |
 | `server/storage*.ts`, `server/atomic-write.ts` | The `ObjectStore` interface and the local store (`storage.ts`), the R2 store (`storage-r2.ts`), reading the storage settings (`storage-config.ts`), atomic file writes |
@@ -895,6 +991,8 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 | `server/routes-session.ts`, `server/routes-admin.ts` | The routes under `/api/session`, `/api/profiles` and `/api/admin` |
 | `server/shares.ts`, `server/routes-shares.ts` | Who shares which book with whom (`shares.json`), each profile's shelf with the shared books on it, and the sharing routes |
 | `src/` | The web app: library and reader |
+| `src/reader/helperState.ts`, `aiStatusStore.ts`, `helperCredit.ts` | The AI helper list in the Aa menu, and whose AI it says is answering |
+| `src/admin/AiAccessDialog.tsx`, `AdminApiModel.tsx` | The admin's switches for what each reader may use, and the API Model's key, model, limit and test |
 | `src/library/` | The shelf: covers, the book menu, the Share dialog and the Sharing page |
 | `src/reader/speech.ts`, `natural*.ts`, `voicing.ts` | Reading aloud: the device voice, the natural voice, and where the pauses fall |
 | `public/`, `scripts/make-icons.mjs` | The icon: `favicon.svg` is the source, and the script draws the PNG sizes from it |
@@ -914,6 +1012,7 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
   When it starts, it removes any book folder that has no `meta.json`, which could be a book another server is adding at that moment.
 - A page you opened earlier shows notes added on another device only after you reload it.
 - With R2, the secret key sits in `.env.local` on this computer.
+- The count of each reader's requests of the API Model is kept in memory, so a restart gives everyone a fresh day.
 - With profiles on, the lock after wrong codes is kept by the running server, so it starts over when DeepRead restarts.
   Each DeepRead server keeps its own count.
 - A book shared with a profile is read from its owner's copy, so the owner's PDF is open to whoever it is shared with, for as long as the share lasts.

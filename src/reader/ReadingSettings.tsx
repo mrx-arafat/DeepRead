@@ -4,6 +4,9 @@ import { LANGUAGES, type AiProviderId, type AiStatus, type LangCode } from "../.
 import { api } from "../api.ts";
 import { FONT_SIZES, setPrefs, type Prefs } from "../prefs.ts";
 import { useSession } from "../profiles/session.tsx";
+import { setAiStatus, useReaderKey } from "./aiStatusStore.ts";
+import { helperRows } from "./helperState.ts";
+import type { Viewer } from "./helperState.ts";
 import { NATURAL_DOWNLOAD_MB, useNaturalState } from "./natural.ts";
 import { keepingLine } from "./useReadingPosition.ts";
 
@@ -186,12 +189,15 @@ function closeWhenTabbedAway(event: FocusEvent<HTMLElement>) {
 const SETUP_HELP = "https://github.com/mrx-arafat/DeepRead#ai-helpers";
 
 /**
- * Which AI tool explains words and passages. Looked up each time the menu opens: one may have been installed since.
- * It is one tool for everyone, so with profiles only the admin can change it; the others are told which one it is.
+ * Which AI helper explains words and passages, with every helper shown in the state it is in for this reader: theirs to
+ * pick, installed but the admin's to give (with a way to ask), or not there at all. Looked up each time the menu opens: one
+ * may have been installed, or given, since. The server decides who may use what; this only shows it.
  */
-function AiHelper({ open, canChoose }: { open: boolean; canChoose: boolean }) {
+function AiHelper({ open, viewer }: { open: boolean; viewer: Viewer }) {
+  const reader = useReaderKey();
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [asking, setAsking] = useState<AiProviderId | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -201,69 +207,98 @@ function AiHelper({ open, canChoose }: { open: boolean; canChoose: boolean }) {
       .then((found) => {
         if (cancelled) return;
         setStatus(found);
+        setAiStatus(found, reader);
         setError(null);
       })
       .catch((err: Error) => !cancelled && setError(err.message));
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, reader]);
 
-  async function choose(id: AiProviderId) {
+  async function change(work: () => Promise<AiStatus>) {
     try {
-      setStatus(await api.chooseAi(id));
+      const next = await work();
+      setStatus(next);
+      // The selection bar names whose helper answers: it follows a pick at once.
+      setAiStatus(next, reader);
       setError(null);
     } catch (err) {
       setError((err as Error).message);
     }
   }
 
+  async function ask(id: AiProviderId) {
+    setAsking(id);
+    await change(() => api.requestAi(id));
+    setAsking(null);
+  }
+
+  const rows = status ? helperRows(status, viewer) : [];
   const active = status?.providers.find((provider) => provider.id === status.active);
-  const choosing = canChoose && active && status;
+  const detail = active?.detail ? ` (${active.detail})` : "";
   return (
-    <div className="settings-group">
-      {choosing ? (
-        <label className="settings-label" htmlFor={`${PANEL}-ai`}>
-          AI helper
-        </label>
-      ) : (
-        <p className="settings-label">AI helper</p>
+    <fieldset className="settings-group">
+      <legend className="settings-label">AI helper</legend>
+      {viewer === "reader" && <p className="settings-hint helper-lead">{status?.owner ?? "The admin"} decides which of these you can use.</p>}
+      {status && (
+        <ul className="helper-list">
+          {rows.map((row) => {
+            const usable = row.state === "selected" || row.state === "available";
+            return (
+              <li key={row.id} className="helper" data-state={row.state}>
+                <label className="helper-pick">
+                  <input
+                    type="radio"
+                    name={`${PANEL}-ai`}
+                    value={row.id}
+                    checked={row.state === "selected"}
+                    disabled={!usable}
+                    aria-describedby={`${PANEL}-ai-${row.id}`}
+                    onChange={() => void change(() => api.chooseAi(row.id))}
+                  />
+                  <span className="helper-name">{row.name}</span>
+                  <span id={`${PANEL}-ai-${row.id}`} className="helper-note">
+                    {row.note ?? row.help}
+                  </span>
+                </label>
+                {row.state === "ask" && (
+                  <button type="button" className="quiet-button helper-ask" disabled={asking !== null} onClick={() => void ask(row.id)}>
+                    {asking === row.id ? "Asking..." : `Ask ${status?.owner ?? "the admin"}`}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
-      {choosing && (
-        <select
-          id={`${PANEL}-ai`}
-          value={active.id}
-          aria-describedby={`${PANEL}-ai-hint`}
-          onChange={(event) => void choose(event.target.value as AiProviderId)}
-        >
-          {status.providers.map((provider) => (
-            <option key={provider.id} value={provider.id} disabled={!provider.installed}>
-              {provider.installed ? provider.name : `${provider.name} (not installed)`}
-            </option>
-          ))}
-        </select>
-      )}
-      <p id={`${PANEL}-ai-hint`} className="settings-hint" aria-live="polite">
+      <p className="settings-hint" aria-live="polite">
         {error ? (
           <span className="inline-error">{error}</span>
         ) : !status ? (
-          "Looking for AI helpers on this computer..."
+          "Looking for AI helpers..."
         ) : active ? (
-          canChoose
-            ? `${active.name} explains words and passages, signed in with your own account.`
-            : `${active.name} explains words and passages. Only the admin can change it.`
-        ) : canChoose ? (
+          viewer === "reader"
+            ? status?.owner
+              ? `You are using ${status.owner}'s ${active.name}. Sharing is caring.`
+              : `${active.name}${detail} answers for you.`
+            : `${active.name}${detail} explains words and passages.`
+        ) : viewer === "reader" ? (
+          rows.some((row) => row.state === "ask")
+            ? `You have no AI helper yet. Ask ${status?.owner ?? "the admin"} for one above. Reading and listening work without one.`
+            : rows.some((row) => row.state === "asked")
+              ? `Asked. ${status?.owner ?? "The admin"} will see it. Reading and listening work meanwhile.`
+              : "No AI helper is set up on this server yet. Reading and listening work without one."
+        ) : (
           <>
-            None found. Install Claude Code or Codex and sign in to get explanations; reading and listening work without one.{" "}
+            None yet. Install Claude Code or Codex, or set up an API model; reading and listening work without one.{" "}
             <a href={SETUP_HELP} target="_blank" rel="noreferrer">
               How to set one up
             </a>
           </>
-        ) : (
-          "No AI helper is set up, so there are no explanations. Ask the admin to set one up; reading and listening work without one."
         )}
       </p>
-    </div>
+    </fieldset>
   );
 }
 
@@ -276,8 +311,8 @@ function AiHelper({ open, canChoose }: { open: boolean; canChoose: boolean }) {
 export function ReadingSettings({ prefs }: { prefs: Prefs }) {
   const [open, setOpen] = useState(false);
   const { info } = useSession();
-  // The server refuses the change to anyone else, so the choice is only offered where it can be made.
-  const canChooseAi = info?.mode === "single" || (info?.mode === "profiles" && info.session?.admin === true);
+  // With profiles, the admin's own profile sees every helper as theirs; a reader sees which the admin has given them.
+  const viewer: Viewer = info?.mode === "profiles" ? (info.session?.admin && !info.session.impersonatedBy ? "admin" : "reader") : "single";
   return (
     <>
       <button type="button" className="icon-button settings-button" popoverTarget={PANEL} aria-label="Reading settings">
@@ -393,7 +428,7 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
           </p>
         </div>
 
-        <AiHelper open={open} canChoose={canChooseAi} />
+        <AiHelper open={open} viewer={viewer} />
       </section>
     </>
   );

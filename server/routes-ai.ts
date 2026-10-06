@@ -31,8 +31,10 @@ import {
 } from "./http.ts";
 import { isReadableBookId } from "./shares.ts";
 import type { Library } from "./library.ts";
-import type { Ai } from "./ai.ts";
+import type { Ai, AiAccess } from "./ai.ts";
 import { isAiProviderId } from "./ai.ts";
+import type { Accounts } from "./deps.ts";
+import type { StoredProfile } from "./profiles.ts";
 import { completeText, LlmError } from "./llm.ts";
 import type { Llm } from "./llm.ts";
 import { askPrompt, chapterAidPrompt, explainPrompt } from "./prompts.ts";
@@ -148,10 +150,37 @@ async function locate(c: Context, library: Library, bookId: string, chapterId: s
   return chapter ? { book, chapter } : chapterNotFound(c);
 }
 
-/** The answers are cached with the book, in c.var.library: the books of whoever is reading. */
-export function aiRoutes(deps: { llm: Ai }): Hono<AppEnv> {
-  const { llm } = deps;
+/** What a profile may use: the admin's own, anything that works; every other, only what the admin gave them. */
+export function accessOf(profile: StoredProfile): AiAccess {
+  return {
+    allowed: profile.admin ? "all" : (profile.aiAccess ?? []),
+    choice: profile.aiChoice ?? null,
+    requested: Object.keys(profile.aiRequests ?? {}).filter(isAiProviderId),
+    reader: profile.id,
+  };
+}
+
+/**
+ * The answers are cached with the book, in c.var.library: the books of whoever is reading.
+ * With profiles, each reader's questions are answered by a helper the admin gave them, and by no other: this is the one place
+ * that decides it, so the picker the reader sees only shows what is decided here.
+ */
+export function aiRoutes(deps: { llm: Ai; accounts?: Accounts }): Hono<AppEnv> {
+  const { llm, accounts } = deps;
   const routes = new Hono<AppEnv>();
+
+  /** The admin's name, so a reader is told whose helper they are using. */
+  async function ownerName(): Promise<string | undefined> {
+    return accounts ? (await accounts.profiles.list()).find((profile) => profile.admin)?.name : undefined;
+  }
+
+  /** The helper that answers whoever is reading: the one for everyone without profiles, else the one the admin gave them. */
+  async function helperFor(c: Context<AppEnv>): Promise<Llm> {
+    const { session } = c.var;
+    if (!session) return llm;
+    await llm.ensureStatus();
+    return llm.for(accessOf(session.profile));
+  }
 
   routes.use(
     "*",
@@ -160,6 +189,7 @@ export function aiRoutes(deps: { llm: Ai }): Hono<AppEnv> {
 
   routes.post("/explain", async (c) => {
     const { library } = c.var;
+    const helper = await helperFor(c);
     const body = await readJsonObject(c);
     if (!body) return invalidBody(c, "send a JSON object.");
     const bookId = readString(body, "bookId", MAX_ID_FIELD);
@@ -197,19 +227,20 @@ export function aiRoutes(deps: { llm: Ai }): Hono<AppEnv> {
       chapterId,
       blockId,
       selection,
-      model: llm.model(task),
+      model: helper.model(task),
       prompt,
     });
     return answerStream(c, library, {
       bookId,
       cacheKey: key,
       refresh: false,
-      generate: (signal) => llm.streamText({ task, ...prompt, signal }),
+      generate: (signal) => helper.streamText({ task, ...prompt, signal }),
     });
   });
 
   routes.post("/chapter", async (c) => {
     const { library } = c.var;
+    const helper = await helperFor(c);
     const body = await readJsonObject(c);
     if (!body) return invalidBody(c, "send a JSON object.");
     const bookId = readString(body, "bookId", MAX_ID_FIELD);
@@ -232,14 +263,14 @@ export function aiRoutes(deps: { llm: Ai }): Hono<AppEnv> {
       chapterText: buildChapterText(chapter.blocks),
       language: LANGUAGES[lang],
     });
-    const key = cacheKey({ task: kind, lang, chapterId, model: llm.model(kind), prompt });
+    const key = cacheKey({ task: kind, lang, chapterId, model: helper.model(kind), prompt });
 
     if (kind !== "quiz") {
       return answerStream(c, library, {
         bookId,
         cacheKey: key,
         refresh,
-        generate: (signal) => llm.streamText({ task: kind, ...prompt, signal }),
+        generate: (signal) => helper.streamText({ task: kind, ...prompt, signal }),
       });
     }
 
@@ -249,7 +280,7 @@ export function aiRoutes(deps: { llm: Ai }): Hono<AppEnv> {
       if (questions) return c.json({ kind: "quiz", questions } satisfies ChapterAid);
     }
     try {
-      const questions = await generateQuiz(llm, prompt, c.req.raw.signal);
+      const questions = await generateQuiz(helper, prompt, c.req.raw.signal);
       if (!questions) {
         return apiError(c, 502, "quiz_invalid", "The AI did not produce a usable quiz. Please try again.");
       }
@@ -263,6 +294,7 @@ export function aiRoutes(deps: { llm: Ai }): Hono<AppEnv> {
 
   routes.post("/ask", async (c) => {
     const { library } = c.var;
+    const helper = await helperFor(c);
     const body = await readJsonObject(c);
     if (!body) return invalidBody(c, "send a JSON object.");
     const bookId = readString(body, "bookId", MAX_ID_FIELD);
@@ -296,28 +328,64 @@ export function aiRoutes(deps: { llm: Ai }): Hono<AppEnv> {
       bookId,
       cacheKey: null,
       refresh: false,
-      generate: (signal) => llm.streamText({ task: "ask", ...prompt, signal }),
+      generate: (signal) => helper.streamText({ task: "ask", ...prompt, signal }),
     });
   });
 
-  routes.get("/providers", async (c) => c.json(await llm.status()));
+  routes.get("/providers", async (c) => {
+    const { session } = c.var;
+    // With profiles each reader sees every helper in the state it is in for them: theirs, asked for, or the admin's to give.
+    return c.json(session ? { ...(await llm.statusFor(accessOf(session.profile))), owner: await ownerName() } : await llm.status());
+  });
 
   routes.put("/provider", async (c) => {
-    // One AI helper answers for every profile, so with profiles only the admin picks it (also while viewing as someone).
     const { session } = c.var;
-    if (session && !session.actor.admin) return adminOnly(c);
     const body = await readJsonObject(c);
     if (!body) return invalidBody(c, "send a JSON object.");
     const { id } = body;
     if (!isAiProviderId(id)) {
       return apiError(c, 400, "invalid_provider", `Unknown AI helper. Pick one of: ${Object.keys(AI_PROVIDERS).join(", ")}.`);
     }
-    try {
-      return c.json(await llm.choose(id));
-    } catch (error) {
-      if (error instanceof LlmError) return apiError(c, 409, "ai_not_installed", error.message);
-      throw error;
+    if (!session || !accounts) {
+      try {
+        return c.json(await llm.choose(id));
+      } catch (error) {
+        if (error instanceof LlmError) return apiError(c, 409, "ai_not_installed", error.message);
+        throw error;
+      }
     }
+    // With profiles a reader picks among the helpers the admin gave them, for themselves.
+    const access = accessOf(session.profile);
+    const provider = (await llm.statusFor(access)).providers.find((one) => one.id === id);
+    if (!provider?.allowed) {
+      return apiError(c, 403, "ai_not_allowed", `The admin has not given you ${AI_PROVIDERS[id]}. Ask them for it.`);
+    }
+    if (!provider.installed) {
+      return apiError(c, 409, "ai_not_installed", `${AI_PROVIDERS[id]} is not available on this server right now.`);
+    }
+    await accounts.profiles.setAiChoice(session.profile.id, id);
+    return c.json({ ...(await llm.statusFor({ ...access, choice: id })), owner: await ownerName() });
+  });
+
+  // A reader asks the admin for a helper they were not given. Only what this server can answer with can be asked for.
+  routes.post("/request", async (c) => {
+    const { session } = c.var;
+    if (!session || !accounts) return apiError(c, 404, "not_found", "Asking the admin needs profiles: without them there is no admin to ask.");
+    const body = await readJsonObject(c);
+    if (!body) return invalidBody(c, "send JSON like {\"id\": \"claude\"}.");
+    const { id } = body;
+    if (!isAiProviderId(id)) {
+      return apiError(c, 400, "invalid_provider", `Unknown AI helper. Pick one of: ${Object.keys(AI_PROVIDERS).join(", ")}.`);
+    }
+    const access = accessOf(session.profile);
+    const provider = (await llm.statusFor(access)).providers.find((one) => one.id === id);
+    if (provider?.allowed) return c.json({ ...(await llm.statusFor(access)), owner: await ownerName() });
+    if (!provider?.installed) {
+      return apiError(c, 409, "ai_not_installed", `${AI_PROVIDERS[id]} is not set up on this server, so the admin has nothing to give you yet.`);
+    }
+    const updated = await accounts.profiles.requestAi(session.profile.id, id);
+    if (!updated) return apiError(c, 404, "not_found", "That profile no longer exists.");
+    return c.json({ ...(await llm.statusFor(accessOf(updated))), owner: await ownerName() });
   });
 
   return routes;

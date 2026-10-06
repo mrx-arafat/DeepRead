@@ -1,7 +1,8 @@
 import { autoUpdate, flip, inline, offset, shift, useFloating } from "@floating-ui/react";
-import { Headphones } from "lucide-react";
+import { HandHeart, Headphones } from "lucide-react";
 import { useLayoutEffect, type KeyboardEvent } from "react";
 import { LANGUAGES, type ExplainMode, type LangCode } from "../../shared/types.ts";
+import { useHelperCredit } from "./aiStatusStore.ts";
 import { canSpeak } from "./speech.ts";
 import { blockOf } from "./textRanges.ts";
 
@@ -31,6 +32,8 @@ function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
 
 /** The small bar that appears over selected text: how do you want this explained? */
 export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListen }: Props) {
+  // For a reader the admin shared an AI with: whose it is, where they choose to use it. Sharing is caring.
+  const credit = useHelperCredit();
   const { refs, floatingStyles } = useFloating({
     placement: touch ? "bottom" : "top",
     middleware: [inline(), offset(touch ? TOUCH_HANDLE_CLEARANCE : 8), flip({ padding: 64, crossAxis: false }), shift({ padding: 12 })],
@@ -79,6 +82,11 @@ export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListe
         <button type="button" aria-label="Listen from here" title="Listen from here" onClick={onListen}>
           <Headphones size={16} aria-hidden /> Listen
         </button>
+      )}
+      {credit && (
+        <p className="selection-credit">
+          <HandHeart size={13} aria-hidden /> With {credit}, shared with you
+        </p>
       )}
     </div>
   );

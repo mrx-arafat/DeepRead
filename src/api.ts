@@ -13,6 +13,10 @@ import type {
   LangCode,
   NewProfile,
   Note,
+  OpenRouterAdminView,
+  OpenRouterModel,
+  OpenRouterPatch,
+  OpenRouterTest,
   ProfileUpdate,
   PublicProfile,
   QuickTranslation,
@@ -164,6 +168,12 @@ export const api = {
     ),
   aiStatus: () => request<AiStatus>("/api/ai/providers"),
   chooseAi: (id: AiProviderId) => request<AiStatus>("/api/ai/provider", json("PUT", { id })),
+  /** Asks the admin for a helper the reader was not given. */
+  requestAi: (id: AiProviderId) => request<AiStatus>("/api/ai/request", json("POST", { id })),
+  adminApiModel: () => request<OpenRouterAdminView>("/api/admin/openrouter"),
+  saveApiModel: (patch: OpenRouterPatch) => request<OpenRouterAdminView>("/api/admin/openrouter", json("PUT", patch)),
+  testApiModel: () => request<OpenRouterTest>("/api/admin/openrouter/test", { method: "POST" }),
+  apiModelList: () => request<OpenRouterModel[]>("/api/admin/openrouter/models"),
 };
 
 const CUT_OFF = "The answer stopped before it was finished.";

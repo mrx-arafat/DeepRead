@@ -1,17 +1,19 @@
 import { ArrowLeft, UserPlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import type { AdminProfile, ProfileUpdate, Session } from "../../shared/types.ts";
+import type { AdminProfile, AiStatus, ProfileUpdate, Session } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { useSession } from "../profiles/session.tsx";
+import { AdminApiModel } from "./AdminApiModel.tsx";
 import { AdminShares } from "./AdminShares.tsx";
+import { AiAccessDialog } from "./AiAccessDialog.tsx";
 import { ProfileDialog } from "./ProfileDialog.tsx";
 import type { ProfileInput } from "./ProfileForm.tsx";
 import { reason } from "./profileText.ts";
 import { ProfileRow } from "./ProfileRow.tsx";
 
 /** The one thing that is open: the form to add a profile or edit one, or a row asking to confirm its removal. */
-type Active = { kind: "add" } | { kind: "edit"; id: string } | { kind: "delete"; id: string; error: string | null };
+type Active = { kind: "add" } | { kind: "edit"; id: string } | { kind: "ai"; id: string } | { kind: "delete"; id: string; error: string | null };
 
 /** What `pending` holds while a profile is being added, or while the admin returns from reading as someone. */
 const ADDING = "adding";
@@ -37,6 +39,8 @@ export function AdminDashboard({ session }: { session: Session }) {
   // Set once a removed row's focus needs a new home: the Add button, which is disabled until the removal has settled.
   const [focusAdd, setFocusAdd] = useState(false);
   const addButton = useRef<HTMLButtonElement>(null);
+  // What this server can answer with, as the admin sees it: fetched when the AI dialog opens, so it is current.
+  const [helpers, setHelpers] = useState<AiStatus | null>(null);
 
   useEffect(() => {
     // `current` drops the answer of a request the admin has already replaced by pressing "Try again".
@@ -58,6 +62,17 @@ export function AdminDashboard({ session }: { session: Session }) {
   }, [focusAdd, pending]);
 
   const editing = active?.kind === "edit" ? profiles?.find((profile) => profile.id === active.id) : undefined;
+  const givingAi = active?.kind === "ai" ? profiles?.find((profile) => profile.id === active.id) : undefined;
+
+  async function openAi(profile: AdminProfile): Promise<void> {
+    setError(null);
+    try {
+      setHelpers(await api.aiStatus());
+      setActive({ kind: "ai", id: profile.id });
+    } catch (err) {
+      setError(reason(err, "The AI helpers could not be looked up. Please try again."));
+    }
+  }
 
   /** The session holds a copy of the profile being read as, which a change or a removal here has just made old. */
   function refreshSessionIfShown(id: string) {
@@ -213,6 +228,7 @@ export function AdminDashboard({ session }: { session: Session }) {
                   signOutError={signOutError?.id === profile.id ? signOutError.message : null}
                   onRead={() => void readAs(profile)}
                   onEdit={() => setActive({ kind: "edit", id: profile.id })}
+                  onAi={() => void openAi(profile)}
                   onSignOut={() => void signOutEverywhere(profile)}
                   onAskDelete={() => setActive({ kind: "delete", id: profile.id, error: null })}
                   onKeep={() => setActive(null)}
@@ -228,11 +244,20 @@ export function AdminDashboard({ session }: { session: Session }) {
             </p>
           )}
           {!onlyAdmin && <AdminShares changed={profiles} />}
+          <AdminApiModel profiles={profiles} />
         </>
       )}
 
       {active?.kind === "add" && (
         <ProfileDialog profile={null} saving={pending === ADDING} onSave={(input) => save(null, input)} onClose={() => setActive(null)} />
+      )}
+      {givingAi && helpers && (
+        <AiAccessDialog
+          profile={givingAi}
+          helpers={helpers}
+          onChange={(updated) => setProfiles((all) => all?.map((one) => (one.id === updated.id ? updated : one)) ?? null)}
+          onClose={() => setActive(null)}
+        />
       )}
       {editing && (
         <ProfileDialog

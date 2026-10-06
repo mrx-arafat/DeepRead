@@ -1,7 +1,8 @@
-import { Eye, LogOut, Pencil, Trash2 } from "lucide-react";
+import { Eye, LogOut, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import { formatBytes } from "../../shared/bytes.ts";
+import { AI_PROVIDERS } from "../../shared/types.ts";
 import type { AdminProfile } from "../../shared/types.ts";
 import { Avatar } from "../profiles/Avatar.tsx";
 import { addedText, bookCountText, deleteQuestion } from "./profileText.ts";
@@ -19,6 +20,7 @@ type Props = {
   signOutError: string | null;
   onRead: () => void;
   onEdit: () => void;
+  onAi: () => void;
   onSignOut: () => void;
   onAskDelete: () => void;
   onKeep: () => void;
@@ -36,6 +38,7 @@ export function ProfileRow({
   signOutError,
   onRead,
   onEdit,
+  onAi,
   onSignOut,
   onAskDelete,
   onKeep,
@@ -76,10 +79,12 @@ export function ProfileRow({
         <h2 className="admin-name">
           {profile.name}
           {profile.badge && <span className="admin-mark">{profile.badge}</span>}
+          {profile.aiRequested.length > 0 && <span className="admin-ask">Asked for AI</span>}
         </h2>
         <p className="admin-meta">
           {bookCountText(profile.bookCount)}, {formatBytes(profile.used)}
           {added && `, added ${added}`}
+          {!profile.admin && `. AI: ${profile.ai.length > 0 ? profile.ai.map((id) => AI_PROVIDERS[id]).join(", ") : "none yet"}`}
         </p>
       </div>
       {mode === "view" && (
@@ -92,6 +97,11 @@ export function ProfileRow({
           <button type="button" className="quiet-button" aria-label={`Edit ${profile.name}`} disabled={busy} onClick={onEdit}>
             <Pencil size={16} aria-hidden /> Edit
           </button>
+          {!profile.admin && (
+            <button type="button" className="quiet-button" aria-label={`AI helpers for ${profile.name}`} disabled={busy} onClick={onAi}>
+              <Sparkles size={16} aria-hidden /> AI helpers
+            </button>
+          )}
           {!profile.admin && (
             // Not disabled while its own request runs, or keyboard focus would fall off the button that was pressed.
             <button

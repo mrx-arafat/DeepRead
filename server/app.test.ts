@@ -90,6 +90,9 @@ function fakeLlm() {
     },
     model: () => "fake-model",
     status: async () => status(),
+    ensureStatus: async () => {},
+    statusFor: async () => status(),
+    for: () => llm,
     async choose(id) {
       if (id === "codex") throw new LlmError("cli_missing", "Codex is not installed on this computer. Install it and sign in first.");
       state.active = id;
