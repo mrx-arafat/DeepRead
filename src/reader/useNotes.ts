@@ -2,7 +2,8 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react"
 import { sameQuestion } from "../../shared/notes.ts";
 import type { NoteChange } from "../../shared/notes.ts";
 import type { LangCode, Note } from "../../shared/types.ts";
-import { createNoteSync } from "./noteSync.ts";
+import { useSession } from "../profiles/session.tsx";
+import { createNoteSync, noteOwner } from "./noteSync.ts";
 import type { NoteSync } from "./noteSync.ts";
 
 export type Notes = {
@@ -22,13 +23,15 @@ export function useNotes(bookId: string, lang: LangCode): Notes {
   const [notes, setNotes] = useState<Note[]>([]);
   const sync = useRef<NoteSync | null>(null);
   const langNow = useEffectEvent(() => lang);
+  // What this browser keeps for the book is filed under who is reading, so another profile's unsent notes stay out of it.
+  const { profileId, inheritsOldNotes } = noteOwner(useSession().info);
 
   useEffect(() => {
-    const opened = createNoteSync({ bookId, lang: langNow(), onChange: setNotes });
+    const opened = createNoteSync({ bookId, profileId, inheritsOldNotes, lang: langNow(), onChange: setNotes });
     sync.current = opened;
     void opened.load();
     return () => opened.close();
-  }, [bookId]);
+  }, [bookId, profileId, inheritsOldNotes]);
 
   const change = useCallback((next: NoteChange) => void sync.current?.change(next), []);
 

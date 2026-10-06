@@ -7,6 +7,7 @@ import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiProviderId, AiStatus, ApiError, BookDetail, BookSummary, Note, ParsedBook, StorageUsage } from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
+import type { AppEnv } from "./app-env.ts";
 import { createApp } from "./app.ts";
 import type { ParsePdf, RenderCover } from "./deps.ts";
 import { createLibrary } from "./library.ts";
@@ -126,7 +127,7 @@ const textOf = (events: SseEvent[]) =>
 describe("DeepRead API", () => {
   let dataDir: string;
   let library: Library;
-  let app: Hono;
+  let app: Hono<AppEnv>;
   let llm: ReturnType<typeof fakeLlm>;
 
   const appFor = (books: Library) =>
@@ -205,6 +206,11 @@ describe("DeepRead API", () => {
 
       const chapter = (await (await app.request(`/api/books/${id}/chapters/c2`)).json()) as { blocks: unknown[] };
       expect(chapter.blocks).toHaveLength(2);
+
+      // A heading is in the chapter but holds no reading position: that paragraph is what is missing, not the book.
+      const heading = await send("PUT", `/api/books/${id}/progress`, { chapterId: "c1", blockId: "c1-b0" });
+      expect(heading.status).toBe(404);
+      expect(await heading.json()).toMatchObject({ error: "block_not_found" });
 
       const saved = await send("PUT", `/api/books/${id}/progress`, { chapterId: "c1", blockId: "c1-b3" });
       expect(saved.status).toBe(200);
@@ -433,7 +439,7 @@ describe("DeepRead API", () => {
     const notesOf = async (id: string) => (await (await app.request(`/api/books/${id}/notes`)).json()) as Note[];
 
     it("should say how much room the books take, and refuse a book that would take them past the limit", async () => {
-      expect(await storage()).toEqual({ used: 0, limit: null, where: "local" });
+      expect(await storage()).toEqual({ used: 0, total: 0, limit: null, where: "local" });
       const id = await addBook();
       const files = await readdir(join(dataDir, "books", id), { recursive: true, withFileTypes: true });
       const onDisk = await Promise.all(files.filter((f) => f.isFile()).map(async (f) => (await stat(join(f.parentPath, f.name))).size));
@@ -451,7 +457,7 @@ describe("DeepRead API", () => {
       restart(used + pdfBytes(second).length + 10);
       expect((await upload(second)).status).toBe(507);
       expect(await bookIds()).toEqual([id]);
-      expect(await storage()).toEqual({ used, limit: used + pdfBytes(second).length + 10, where: "local" });
+      expect(await storage()).toEqual({ used, total: used, limit: used + pdfBytes(second).length + 10, where: "local" });
       expect(await entries(join(dataDir, "tmp"))).toEqual([]);
 
       restart(used * 3);
@@ -912,7 +918,7 @@ describe("DeepRead API", () => {
     // What a tunnelled request really looks like here: cloudflared and the Vite proxy rewrite Host to
     // loopback, and Cloudflare's edge adds cf-connecting-ip and cf-ray.
     const viaTunnel = { "cf-connecting-ip": "203.0.113.7", "cf-ray": "8f0c1a2b3c4d5e6f-DAC" };
-    let remote: Hono;
+    let remote: Hono<AppEnv>;
 
     beforeEach(() => {
       remote = createApp({

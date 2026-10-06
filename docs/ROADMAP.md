@@ -26,8 +26,8 @@ A page turn scrolls so the first line that was not fully shown becomes the next 
 
 1. Install: `pnpm install`.
 2. Run: `pnpm dev`, or run the API and Vite separately with your own ports and data folder:
-   `DEEPREAD_STORAGE=local DEEPREAD_API_PORT=8793 DEEPREAD_DATA_DIR=<scratch folder> node server/index.ts` and `DEEPREAD_API_PORT=8793 pnpm exec vite --port 5183 --strictPort`.
-   The separate instance starts with `DEEPREAD_STORAGE=local` because a `.env.local` that points at R2 would otherwise make it use the real bucket.
+   `DEEPREAD_STORAGE=local ADMIN_PASSKEY= DEEPREAD_API_PORT=8793 DEEPREAD_DATA_DIR=<scratch folder> node server/index.ts` and `DEEPREAD_API_PORT=8793 pnpm exec vite --port 5183 --strictPort`.
+   The separate instance starts with `DEEPREAD_STORAGE=local` because a `.env.local` that points at R2 would otherwise make it use the real bucket, and with an empty `ADMIN_PASSKEY=` so a passkey in `.env` does not turn profiles on.
    Add the test book with `curl -s -X POST http://127.0.0.1:8793/api/books -F 'file=@e2e/fixtures/problems-of-philosophy.pdf;type=application/pdf'`.
 3. Unit tests and types: `npx vitest run` and `pnpm typecheck`; both must be green before every commit.
    The store contract in `server/storage.test.ts` also runs against the real R2 bucket when you ask for it with `DEEPREAD_TEST_R2=1 pnpm exec vitest run server/storage.test.ts`.

@@ -3,21 +3,31 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { join } from "node:path";
 import type { QuickTranslation } from "../shared/types.ts";
+import type { AppEnv } from "./app-env.ts";
 import type { AppDeps } from "./deps.ts";
-import { apiError, invalidBody, isLangCode, LANG_HELP } from "./http.ts";
+import { apiError, invalidBody, isLangCode, LANG_HELP, signInRequired } from "./http.ts";
+import { LibraryClosedError } from "./library.ts";
 import { accessGuard } from "./local-only.ts";
+import { adminRoutes } from "./routes-admin.ts";
 import { aiRoutes } from "./routes-ai.ts";
 import { booksRoutes } from "./routes-books.ts";
+import { sessionRoutes } from "./routes-session.ts";
+import { readerGuard } from "./sessions.ts";
 
 const MAX_TRANSLATE_CHARS = 200;
 
-export function createApp(deps: AppDeps): Hono {
-  const { library } = deps;
-  const app = new Hono();
+export function createApp(deps: AppDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
 
   app.use("/api/*", accessGuard(deps.remoteKey));
   app.get("/api/health", (c) => c.json({ ok: true }));
-  app.get("/api/storage", async (c) => c.json(await library.usage()));
+  // Before the guard below: the profile picker shows these to people who have not signed in yet.
+  app.route("/api", sessionRoutes(deps.accounts));
+
+  // Every route after this reads c.var.library, the books of whoever is signed in; with profiles, nobody gets no further.
+  app.use("/api/*", readerGuard(deps));
+  if (deps.accounts) app.route("/api/admin", adminRoutes(deps.accounts));
+  app.get("/api/storage", async (c) => c.json(await c.var.library.usage()));
 
   app.get("/api/translate", async (c) => {
     const text = (c.req.query("q") ?? "").trim();
@@ -37,8 +47,8 @@ export function createApp(deps: AppDeps): Hono {
     }
   });
 
-  app.route("/api/books", booksRoutes({ library, parsePdf: deps.parsePdf, renderCover: deps.renderCover }));
-  app.route("/api/ai", aiRoutes({ library, llm: deps.llm }));
+  app.route("/api/books", booksRoutes({ parsePdf: deps.parsePdf, renderCover: deps.renderCover }));
+  app.route("/api/ai", aiRoutes({ llm: deps.llm }));
 
   // Unknown API paths answer in JSON, never with the web app's HTML.
   app.all("/api/*", (c) => apiError(c, 404, "not_found", "There is nothing at this address."));
@@ -52,6 +62,9 @@ export function createApp(deps: AppDeps): Hono {
 
   app.onError((error, c) => {
     if (error instanceof HTTPException) return error.getResponse();
+    // The profile was removed while this request was under way (profiles.ts closed its library): there is no one to
+    // read as any more, which is what the reader is told for any other request from a removed profile.
+    if (error instanceof LibraryClosedError) return signInRequired(c);
     console.error("unhandled error:", error);
     return apiError(c, 500, "internal", "Something went wrong on our side. Please try again.");
   });

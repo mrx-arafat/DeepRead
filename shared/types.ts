@@ -154,10 +154,72 @@ export type Note = {
 
 /** How much room the books take, where they are kept, and the most they may take (null: no limit). */
 export type StorageUsage = {
+  /** This reader's books. */
   used: number;
+  /** Everyone's books together: the limit is shared. The same as `used` when there are no profiles. */
+  total: number;
   limit: number | null;
   where: "local" | "r2";
 };
+
+/** The built-in pictures a profile can wear. src/profiles/avatars.tsx draws each one. */
+export const AVATAR_PRESETS = [
+  "smile-blue",
+  "smile-amber",
+  "shades-teal",
+  "cat-rose",
+  "owl-violet",
+  "robot-mint",
+  "star-coral",
+  "moon-navy",
+] as const;
+
+export type AvatarPreset = (typeof AVATAR_PRESETS)[number];
+
+/** A built-in picture, and an uploaded photo that wins over it while there is one. */
+export type ProfileAvatar = {
+  preset: AvatarPreset;
+  /** Changes with every upload, so the photo's address changes too: /api/profiles/<id>/avatar?v=<photo>. Null: no photo. */
+  photo: string | null;
+};
+
+/** What anyone may see of a profile: the "Who's reading?" page shows these before anyone signs in. */
+export type PublicProfile = {
+  id: string;
+  name: string;
+  avatar: ProfileAvatar;
+  /** The admin's profile: its code is ADMIN_PASSKEY, and signing in with it opens /admin. */
+  admin: boolean;
+};
+
+/** A profile as the admin dashboard shows it. */
+export type AdminProfile = PublicProfile & {
+  createdAt: string;
+  bookCount: number;
+  /** Bytes its books take. */
+  used: number;
+};
+
+/** Who is reading in this browser, until `expiresAt` (30 days after signing in). */
+export type Session = {
+  profile: PublicProfile;
+  /** Whether /admin opens: true for the admin, and for the admin while viewing as someone else. */
+  admin: boolean;
+  /** The admin, while they view DeepRead as `profile`. */
+  impersonatedBy: PublicProfile | null;
+  expiresAt: string;
+};
+
+/**
+ * "single": no profiles (ADMIN_PASSKEY is not set), so DeepRead opens straight to its one library.
+ * "profiles": everyone picks a profile and gives its code; `session` is null until they do.
+ */
+export type SessionInfo = { mode: "single" } | { mode: "profiles"; session: Session | null };
+
+export type NewProfile = { name: string; code: string; preset: AvatarPreset };
+
+/** A missing field stays as it is. A new code signs that profile out everywhere. */
+export type ProfileUpdate = { name?: string; code?: string; preset?: AvatarPreset };
 
 export type ExplainRequest = {
   bookId: string;

@@ -1,5 +1,6 @@
 import type { NoteChange } from "../shared/notes.ts";
 import type {
+  AdminProfile,
   AiProviderId,
   AiStatus,
   ApiError,
@@ -8,9 +9,14 @@ import type {
   BookUpdate,
   Chapter,
   LangCode,
+  NewProfile,
   Note,
+  ProfileUpdate,
+  PublicProfile,
   QuickTranslation,
   ReadingProgress,
+  Session,
+  SessionInfo,
   StorageUsage,
 } from "../shared/types.ts";
 
@@ -45,10 +51,17 @@ async function connect(path: string, init?: RequestInit): Promise<Response> {
   }
 }
 
+/** Fired on window when DeepRead answers that nobody is signed in (the session ended): App shows the profiles. */
+export const SIGNED_OUT_EVENT = "deepread:signed-out";
+
 /** The response of a request DeepRead answered with success; anything else throws an ApiFailure. */
 async function accept(path: string, init?: RequestInit): Promise<Response> {
   const res = await connect(path, init);
-  if (!res.ok) throw await failure(res);
+  if (!res.ok) {
+    const error = await failure(res);
+    if (error.code === "sign_in_required") window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+    throw error;
+  }
   return res;
 }
 
@@ -86,6 +99,30 @@ export const api = {
       ? request<void>(`/api/books/${bookId}/notes/${encodeURIComponent(change.note.id)}`, json("PUT", { note: change.note, before: change.before }))
       : request<void>(`/api/books/${bookId}/notes/${encodeURIComponent(change.id)}`, { method: "DELETE" }),
   storage: () => request<StorageUsage>("/api/storage"),
+
+  session: () => request<SessionInfo>("/api/session"),
+  profiles: () => request<PublicProfile[]>("/api/profiles"),
+  /** Signs in for 30 days. Rejects with code "wrong_code" (401) or "too_many_tries" (429). */
+  signIn: (profileId: string, code: string) => request<Session>("/api/session", json("POST", { profileId, code })),
+  signOut: () => request<void>("/api/session", { method: "DELETE" }),
+
+  adminProfiles: () => request<AdminProfile[]>("/api/admin/profiles"),
+  createProfile: (profile: NewProfile) => request<AdminProfile>("/api/admin/profiles", json("POST", profile)),
+  updateProfile: (id: string, update: ProfileUpdate) => request<AdminProfile>(`/api/admin/profiles/${id}`, json("PATCH", update)),
+  /** A PNG, JPEG or WebP of up to 5 MB; DeepRead keeps a square copy. */
+  uploadProfilePhoto: (id: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<AdminProfile>(`/api/admin/profiles/${id}/photo`, { method: "PUT", body: form });
+  },
+  removeProfilePhoto: (id: string) => request<AdminProfile>(`/api/admin/profiles/${id}/photo`, { method: "DELETE" }),
+  /** Removes the profile and every book, note and answer it has. */
+  deleteProfile: (id: string) => request<void>(`/api/admin/profiles/${id}`, { method: "DELETE" }),
+  /** Signs the profile out on every device it is signed in on. Rejects with 400 for the admin's own profile. */
+  signOutProfile: (id: string) => request<void>(`/api/admin/profiles/${id}/sign-out`, { method: "POST" }),
+  /** The admin reads as `id` until stopImpersonating. */
+  impersonate: (id: string) => request<Session>(`/api/admin/impersonate/${id}`, { method: "POST" }),
+  stopImpersonating: () => request<Session>("/api/admin/impersonate", { method: "DELETE" }),
   translate: (text: string, lang: LangCode, signal?: AbortSignal) =>
     request<QuickTranslation>(
       `/api/translate?q=${encodeURIComponent(text)}&lang=${lang}`,

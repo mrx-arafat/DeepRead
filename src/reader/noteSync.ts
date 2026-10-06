@@ -2,12 +2,25 @@
 // the reader to another device. Only the request is kept: the server caches the answers.
 // Each change is sent on its own (shared/notes.ts), so notes added on another device in the meantime stay. A change
 // DeepRead has not taken yet waits in this browser's outbox, and goes with the next change or the next load.
+// One browser can hold several profiles, and the same PDF has the same book id in each, so everything this browser
+// keeps is filed under the profile it belongs to: one profile's unsent notes are never sent into another's library.
 import { applyNoteChange } from "../../shared/notes.ts";
 import type { NoteChange } from "../../shared/notes.ts";
-import type { LangCode, Note } from "../../shared/types.ts";
+import type { LangCode, Note, SessionInfo } from "../../shared/types.ts";
 import { ApiFailure, api } from "../api.ts";
 
-export type NoteSyncOptions = {
+/** Whose notes these are: a profile's, or the one library's when there are no profiles. */
+export type NoteOwner = {
+  /** The signed-in profile (the one being read as, when the admin views another); null when there are no profiles. */
+  profileId: string | null;
+  /**
+   * Whether the library is the one that existed before profiles: with no profiles, or for the admin's profile, which
+   * inherited it. Only then are the notes older versions kept here, with no profile on them, this reader's to adopt.
+   */
+  inheritsOldNotes: boolean;
+};
+
+export type NoteSyncOptions = NoteOwner & {
   bookId: string;
   /** The language for notes saved before each one kept its own: they were shown in the current one. */
   lang: LangCode;
@@ -29,9 +42,20 @@ export type NoteSync = {
   close(): void;
 };
 
-const outboxKey = (bookId: string) => `deepread.pendingNotes.${bookId}`;
+const outboxKey = (owner: NoteOwner, bookId: string) => `deepread.pendingNotes.${owner.profileId ?? "single"}.${bookId}`;
+// Where the previous version kept the outbox, before it was filed under a profile.
+const unfiledOutboxKey = (bookId: string) => `deepread.pendingNotes.${bookId}`;
 // Where this browser kept the notes before they were kept with the book: per book, and before that per chapter.
 const oldKey = (bookId: string) => `deepread.notes.${bookId}`;
+
+/** Who is reading, from what DeepRead says about the session. */
+export function noteOwner(info: SessionInfo | null): NoteOwner {
+  const profile = info?.mode === "profiles" ? info.session?.profile : null;
+  return profile ? { profileId: profile.id, inheritsOldNotes: profile.admin } : { profileId: null, inheritsOldNotes: true };
+}
+
+/** Answers that mean "try again later", not "never": the session ended, the request timed out, too many requests. */
+const NOT_NOW: readonly number[] = [401, 408, 429];
 
 /** localStorage, or null where the browser refuses it (blocked site data, some private windows). */
 function browserStorage(): Storage | null {
@@ -52,10 +76,12 @@ function oldKeys(storage: Storage, bookId: string): string[] {
   return keys;
 }
 
-/** Clears what this browser holds of a removed book's notes. */
-export function forgetHeldNotes(bookId: string, storage = browserStorage()): void {
+/** Clears what this browser holds of a removed book's notes for this reader: other profiles' copies are theirs. */
+export function forgetHeldNotes(bookId: string, owner: NoteOwner, storage = browserStorage()): void {
   try {
-    if (storage) for (const key of [outboxKey(bookId), ...oldKeys(storage, bookId)]) storage.removeItem(key);
+    if (!storage) return;
+    const keys = owner.inheritsOldNotes ? [unfiledOutboxKey(bookId), ...oldKeys(storage, bookId)] : [];
+    for (const key of [outboxKey(owner, bookId), ...keys]) storage.removeItem(key);
   } catch (error) {
     // The book is already gone; notes that could not be cleared are only wasted space.
     console.warn("could not remove the notes of a deleted book:", error);
@@ -64,6 +90,7 @@ export function forgetHeldNotes(bookId: string, storage = browserStorage()): voi
 
 export function createNoteSync(options: NoteSyncOptions): NoteSync {
   const { bookId, lang, onChange } = options;
+  const owner: NoteOwner = { profileId: options.profileId, inheritsOldNotes: options.inheritsOldNotes };
   const server = options.api ?? api;
   const storage = options.storage === undefined ? browserStorage() : options.storage;
 
@@ -78,13 +105,16 @@ export function createNoteSync(options: NoteSyncOptions): NoteSync {
   function readOutbox(): NoteChange[] {
     if (!storage) return [];
     try {
-      const old = oldKeys(storage, bookId).flatMap((key) => {
+      const read = (key: string) => JSON.parse(storage.getItem(key) ?? "[]") as NoteChange[];
+      // What older versions kept belongs to the library from before profiles, so only that library's reader takes it.
+      const inherited = owner.inheritsOldNotes ? read(unfiledOutboxKey(bookId)) : [];
+      const old = (owner.inheritsOldNotes ? oldKeys(storage, bookId) : []).flatMap((key) => {
         const saved = JSON.parse(storage.getItem(key) ?? "[]") as Note[];
         const chapterId = key.slice(oldKey(bookId).length + 1);
         return chapterId ? saved.map((note) => ({ ...note, chapterId })) : saved;
       });
       const adopted = old.map((note): NoteChange => ({ kind: "put", note: note.lang ? note : { ...note, lang }, before: null }));
-      return [...adopted, ...(JSON.parse(storage.getItem(outboxKey(bookId)) ?? "[]") as NoteChange[])];
+      return [...adopted, ...inherited, ...read(outboxKey(owner, bookId))];
     } catch {
       return [];
     }
@@ -93,10 +123,10 @@ export function createNoteSync(options: NoteSyncOptions): NoteSync {
   function writeOutbox(): void {
     if (!storage) return;
     try {
-      if (outbox.length > 0) storage.setItem(outboxKey(bookId), JSON.stringify(outbox));
-      else storage.removeItem(outboxKey(bookId));
-      // Only once the outbox holds them (or they are sent) do the old notes give up their keys.
-      for (const key of oldKeys(storage, bookId)) storage.removeItem(key);
+      if (outbox.length > 0) storage.setItem(outboxKey(owner, bookId), JSON.stringify(outbox));
+      else storage.removeItem(outboxKey(owner, bookId));
+      // Only once the outbox holds them (or they are sent) do the old notes give up their keys, and only ones that were read.
+      if (owner.inheritsOldNotes) for (const key of [unfiledOutboxKey(bookId), ...oldKeys(storage, bookId)]) storage.removeItem(key);
     } catch {
       // Storage full or unavailable: changes are still sent while the page is open.
     }
@@ -117,7 +147,8 @@ export function createNoteSync(options: NoteSyncOptions): NoteSync {
         kept = applyNoteChange(kept, change);
       } catch (error) {
         // DeepRead answered that it never will (the book is gone, or the note is not one): dropped, not retried.
-        const refused = error instanceof ApiFailure && error.status >= 400 && error.status < 500;
+        // Not 401 (the session ended: the same profile signing in again sends it), 408 or 429: those say "not now".
+        const refused = error instanceof ApiFailure && error.status >= 400 && error.status < 500 && !NOT_NOW.includes(error.status);
         if (!refused) return;
       }
       outbox = outbox.slice(1);

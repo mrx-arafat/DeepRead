@@ -1,7 +1,9 @@
 // Copies books from one store into another: how a library on this computer moves into an R2 bucket.
-import { rm } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { isRecord } from "./http.ts";
 import { isBookId } from "./library.ts";
+import { scopedStore } from "./storage.ts";
 import type { ObjectStore, StoredObject } from "./storage.ts";
 
 export type CopyReport = {
@@ -74,4 +76,119 @@ export async function copyBooks(from: ObjectStore, to: ObjectStore, options: Cop
     options.onBook?.(id, outcome, bytes);
   }
   return report;
+}
+
+/** Where profiles.ts keeps the list of profiles, and the names it gives a profile's photo (one or the other at a time). */
+const PROFILES_KEY = "profiles.json";
+const PHOTO_FILES = ["avatar.webp", "avatar.jpg"];
+
+export type ProfileRef = { id: string; name: string };
+
+export type ProfileCopy = ProfileRef & {
+  books: CopyReport;
+  /** The profile's photo was there and is now in the other store too. */
+  photo: boolean;
+};
+
+export type LibraryReport = {
+  /** The books at the root: a library from before profiles, or one that profiles have not moved yet. */
+  books: CopyReport;
+  profiles: {
+    /**
+     * none: the source has no profiles.
+     * refused: the other store already has its own profiles.json, so nothing was copied for profiles.
+     * copied: every profile is over with its books and photo, and profiles.json with them.
+     * unfinished: some book had no room, so profiles.json was left out and a later run can finish the job.
+     */
+    outcome: "none" | "refused" | "copied" | "unfinished";
+    list: ProfileCopy[];
+  };
+};
+
+export type LibraryOptions = Omit<CopyOptions, "onBook"> & {
+  /** `profile` is null for a book at the root. */
+  onBook?: (id: string, outcome: keyof CopyReport, bytes: number, profile: ProfileRef | null) => void;
+};
+
+const sizeOf = async (store: ObjectStore, prefix: string): Promise<number> =>
+  (await store.list(prefix)).reduce((sum, object) => sum + object.size, 0);
+
+/** The profiles in a profiles.json, read as little as needed: copying them must not drop one because of a field added later. */
+function profilesIn(data: Buffer): ProfileRef[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data.toString("utf8"));
+  } catch {
+    parsed = null;
+  }
+  const list = isRecord(parsed) ? parsed.profiles : null;
+  const valid =
+    Array.isArray(list) &&
+    list.every((profile) => isRecord(profile) && typeof profile.id === "string" && isBookId(profile.id) && typeof profile.name === "string");
+  // Never guessed at: copying around a damaged list would leave profiles behind without a word.
+  if (!valid) throw new Error(`${PROFILES_KEY} is damaged, so the profiles cannot be copied. Restore it from a copy, or mend it by hand.`);
+  return list.map((profile) => ({ id: profile.id, name: profile.name }));
+}
+
+/** The photo bytes copied, or null when the profile has none. Through a file like the books, and removed once it is over. */
+async function copyPhoto(from: ObjectStore, to: ObjectStore, id: string, tempDir: string): Promise<number | null> {
+  let bytes: number | null = null;
+  for (const name of PHOTO_FILES) {
+    const path = join(tempDir, `${id}-${name}`);
+    try {
+      if (!(await from.download(name, path))) continue;
+      // Measured first: the local store moves the file rather than copying it.
+      const { size } = await stat(path);
+      await to.putFile(name, path);
+      bytes = (bytes ?? 0) + size;
+    } finally {
+      await rm(path, { force: true });
+    }
+  }
+  return bytes;
+}
+
+/**
+ * Copies the root books like copyBooks, then the profiles in profiles.json when the other store has none of its own:
+ * each profile's books and photo, and profiles.json last, so the other store never lists a profile whose books are missing.
+ * With profiles of its own the other store keeps them untouched (two lists are not merged): the user decides which to keep.
+ * The limit counts everything the other store holds, wherever it sits, plus what this run has copied so far. Never changes `from`.
+ */
+export async function copyLibrary(from: ObjectStore, to: ObjectStore, options: LibraryOptions): Promise<LibraryReport> {
+  const listed = await from.read(PROFILES_KEY);
+  const refused = listed !== null && (await to.size(PROFILES_KEY)) !== null;
+  // Read before anything is copied: a damaged list stops the run while the other store is still as it was.
+  const profiles = listed !== null && !refused ? profilesIn(listed) : [];
+  let used = (await sizeOf(to, "books/")) + (await sizeOf(to, "profiles/"));
+
+  async function copyShelf(source: ObjectStore, target: ObjectStore, profile: ProfileRef | null): Promise<CopyReport> {
+    const own = await sizeOf(target, "books/");
+    return copyBooks(source, target, {
+      tempDir: options.tempDir,
+      // copyBooks counts only this shelf's books, so the room it is given is what the limit leaves after everything else.
+      limit: options.limit === null ? null : options.limit - (used - own),
+      onBook: (id, outcome, bytes) => {
+        if (outcome === "copied") used += bytes;
+        options.onBook?.(id, outcome, bytes, profile);
+      },
+    });
+  }
+
+  const books = await copyShelf(from, to, null);
+  if (listed === null) return { books, profiles: { outcome: "none", list: [] } };
+  if (refused) return { books, profiles: { outcome: "refused", list: [] } };
+
+  const list: ProfileCopy[] = [];
+  for (const profile of profiles) {
+    const folder = `profiles/${profile.id}/`;
+    const [source, target] = [scopedStore(from, folder), scopedStore(to, folder)];
+    const shelf = await copyShelf(source, target, profile);
+    // A photo is small and its profile is no use without it, so it is not held to the limit, only counted in it.
+    const photo = await copyPhoto(source, target, profile.id, options.tempDir);
+    used += photo ?? 0;
+    list.push({ ...profile, books: shelf, photo: photo !== null });
+  }
+  const complete = list.every((profile) => profile.books.noRoom.length === 0);
+  if (complete) await to.write(PROFILES_KEY, listed);
+  return { books, profiles: { outcome: complete ? "copied" : "unfinished", list } };
 }

@@ -12,7 +12,9 @@ import type {
   QuizQuestion,
 } from "../shared/types.ts";
 import { buildChapterText, buildPassage, cacheKey } from "./ai-inputs.ts";
+import type { AppEnv } from "./app-env.ts";
 import {
+  adminOnly,
   apiError,
   blockNotFound,
   bookNotFound,
@@ -146,9 +148,10 @@ async function locate(c: Context, library: Library, bookId: string, chapterId: s
   return chapter ? { book, chapter } : chapterNotFound(c);
 }
 
-export function aiRoutes(deps: { library: Library; llm: Ai }): Hono {
-  const { library, llm } = deps;
-  const routes = new Hono();
+/** The answers are cached with the book, in c.var.library: the books of whoever is reading. */
+export function aiRoutes(deps: { llm: Ai }): Hono<AppEnv> {
+  const { llm } = deps;
+  const routes = new Hono<AppEnv>();
 
   routes.use(
     "*",
@@ -156,6 +159,7 @@ export function aiRoutes(deps: { library: Library; llm: Ai }): Hono {
   );
 
   routes.post("/explain", async (c) => {
+    const { library } = c.var;
     const body = await readJsonObject(c);
     if (!body) return invalidBody(c, "send a JSON object.");
     const bookId = readString(body, "bookId", MAX_ID_FIELD);
@@ -205,6 +209,7 @@ export function aiRoutes(deps: { library: Library; llm: Ai }): Hono {
   });
 
   routes.post("/chapter", async (c) => {
+    const { library } = c.var;
     const body = await readJsonObject(c);
     if (!body) return invalidBody(c, "send a JSON object.");
     const bookId = readString(body, "bookId", MAX_ID_FIELD);
@@ -257,6 +262,7 @@ export function aiRoutes(deps: { library: Library; llm: Ai }): Hono {
   });
 
   routes.post("/ask", async (c) => {
+    const { library } = c.var;
     const body = await readJsonObject(c);
     if (!body) return invalidBody(c, "send a JSON object.");
     const bookId = readString(body, "bookId", MAX_ID_FIELD);
@@ -297,6 +303,9 @@ export function aiRoutes(deps: { library: Library; llm: Ai }): Hono {
   routes.get("/providers", async (c) => c.json(await llm.status()));
 
   routes.put("/provider", async (c) => {
+    // One AI helper answers for every profile, so with profiles only the admin picks it (also while viewing as someone).
+    const { session } = c.var;
+    if (session && !session.actor.admin) return adminOnly(c);
     const body = await readJsonObject(c);
     if (!body) return invalidBody(c, "send a JSON object.");
     const { id } = body;

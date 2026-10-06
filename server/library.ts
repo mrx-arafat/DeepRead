@@ -44,7 +44,8 @@ export function isBookId(id: string): boolean {
   return id.length <= 96 && BOOK_ID.test(id);
 }
 
-export function slugify(title: string): string {
+/** `fallback` names what has no Latin letters at all (a Bangla or Arabic title). */
+export function slugify(title: string, fallback = "book"): string {
   const slug = title
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
@@ -54,7 +55,7 @@ export function slugify(title: string): string {
     .slice(0, MAX_SLUG)
     .replace(/-+$/g, "");
   // Titles with no Latin letters (Bangla, Arabic...) still get a usable id.
-  return slug === "" ? "book" : slug;
+  return slug === "" ? fallback : slug;
 }
 
 function countWords(text: string): number {
@@ -93,12 +94,25 @@ export class StorageFullError extends Error {
   readonly needed: number;
 
   constructor(usage: StorageUsage, needed: number) {
+    // With profiles the limit is shared, so other readers' books can be what fills it.
+    const taken =
+      usage.total > usage.used
+        ? `everyone's books together take ${formatBytes(usage.total)} (yours ${formatBytes(usage.used)})`
+        : `your books take ${formatBytes(usage.total)}`;
     super(
-      `There is no room for it: your books take ${formatBytes(usage.used)} of the ${formatBytes(usage.limit ?? 0)} they may use, and this one needs ${formatBytes(needed)}. Remove a book to make room.`,
+      `There is no room for it: ${taken} of the ${formatBytes(usage.limit ?? 0)} they may use, and this one needs ${formatBytes(needed)}. Remove a book to make room.`,
     );
     this.name = "StorageFullError";
     this.usage = usage;
     this.needed = needed;
+  }
+}
+
+/** The library was closed (its profile removed) while a request still held it, so it takes no more changes. */
+export class LibraryClosedError extends Error {
+  constructor() {
+    super("This library is closed: its profile was removed.");
+    this.name = "LibraryClosedError";
   }
 }
 
@@ -117,11 +131,26 @@ export type StoredPdf = {
   stream(range?: ByteRange): Promise<ReadableStream<Uint8Array> | null>;
 };
 
+/** One limit for several libraries: each profile's books count against the room everyone shares. */
+export type SharedLimit = {
+  /** Bytes the books of every library sharing the limit take together. */
+  total(): Promise<number>;
+  /** Runs `work` once no library sharing the limit is adding a book, so two cannot both fit in the room left for one. */
+  adding<T>(work: () => Promise<T>): Promise<T>;
+};
+
 export type LibraryOptions = {
   /** Where the books are kept. The data folder when not given. */
   store?: ObjectStore;
   /** The most bytes the books may take; null or absent for no limit. */
   limit?: number | null;
+  /**
+   * The folder on this computer that uploads pass through, <dataDir>/tmp when not given. It is emptied on first use, so
+   * two libraries must never share one: each would delete the other's upload in flight.
+   */
+  tempDir?: string;
+  /** Absent: this library has the limit to itself. */
+  shared?: SharedLimit;
 };
 
 export type Library = {
@@ -160,12 +189,19 @@ export type Library = {
   usage(): Promise<StorageUsage>;
   readCache(id: string, key: string): Promise<unknown>;
   writeCache(id: string, key: string, value: unknown): Promise<void>;
+  /**
+   * Stops every change to the books, before a removed profile's files are cleared: resolves once the changes under way
+   * (an upload being added, a place being saved) have finished, and every change after that throws LibraryClosedError
+   * before it writes anything. Must not be called from inside one of those changes, which it would wait for forever.
+   */
+  close(): Promise<void>;
 };
 
 export function createLibrary(dataDir: string, options: LibraryOptions = {}): Library {
   const store = options.store ?? createLocalStore(dataDir);
   const limit = options.limit ?? null;
-  const tempDir = join(dataDir, "tmp");
+  const tempDir = options.tempDir ?? join(dataDir, "tmp");
+  const shared = options.shared;
 
   const keyOf = (id: string, name: string): string => {
     if (!isBookId(id)) throw new Error(`invalid book id: ${JSON.stringify(id)}`);
@@ -199,9 +235,16 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
     }));
 
   // Progress saves, deletes and adds on one book must not interleave their read-modify-write.
+  // Every write to the store goes through here, so this is also where a closed library refuses them.
+  let closed = false;
   const tails = new Map<string, Promise<unknown>>();
   function serialized<T>(id: string, work: () => Promise<T>): Promise<T> {
-    const run = (tails.get(id) ?? Promise.resolve()).then(work, work);
+    // Checked when the work's turn comes, not when it is queued: it may have been waiting while the library closed.
+    const guarded = (): Promise<T> => {
+      if (closed) throw new LibraryClosedError();
+      return work();
+    };
+    const run = (tails.get(id) ?? Promise.resolve()).then(guarded, guarded);
     const tail = run.catch(() => {});
     tails.set(id, tail);
     void tail.then(() => {
@@ -278,13 +321,14 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
   async function usage(): Promise<StorageUsage> {
     await ready();
     const objects = await store.list("books/");
-    return { used: objects.reduce((sum, object) => sum + object.size, 0), limit, where: store.kind };
+    const used = objects.reduce((sum, object) => sum + object.size, 0);
+    return { used, total: shared ? await shared.total() : used, limit, where: store.kind };
   }
 
   async function assertRoom(bytes: number): Promise<void> {
     if (limit === null) return;
     const now = await usage();
-    if (now.used + bytes > limit) throw new StorageFullError(now, bytes);
+    if (now.total + bytes > limit) throw new StorageFullError(now, bytes);
   }
 
   /** The book's PDF as a file on this computer (tmp/<random>/<id>/source.pdf) while `work` runs. Null when it has none. */
@@ -344,7 +388,8 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
 
     add({ uploadPath, sha256, parsed, cover }) {
       // One at a time, so two uploads cannot both fit in the room that is left for one.
-      return serialized(ADDING, async () => {
+      const oneAtATime = shared ? shared.adding : <T>(work: () => Promise<T>) => serialized(ADDING, work);
+      return oneAtATime(async () => {
         await ready();
         const bookJson = JSON.stringify(parsed);
         const chapterWordCounts = Object.fromEntries(parsed.chapters.map((c) => [c.id, chapterWords(c)]));
@@ -441,6 +486,8 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
     async addMissingCovers(renderCover) {
       try {
         for (const id of await bookIds()) {
+          // Its profile was removed meanwhile: every book left would only refuse.
+          if (closed) return;
           try {
             if ((await readMeta(id))?.cover !== undefined) continue;
             // Drawn outside the queue: a reader saving their place in this book does not wait for the drawing.
@@ -545,6 +592,14 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
         // A cache that cannot be written only costs a regeneration next time.
         console.warn(`could not cache answer for ${id}:`, error);
       }
+    },
+
+    async close() {
+      closed = true;
+      // With a shared limit, adds wait in a queue of their own before they reach their book's: drained first, so an
+      // add under way has finished (or refused) and whatever it queued on its book is among the tails awaited next.
+      if (shared) await shared.adding(async () => {});
+      await Promise.all(tails.values());
     },
   };
 }

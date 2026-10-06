@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { BookUpdate, Note, ParsedBook, ReadingProgress } from "../shared/types.ts";
+import type { AppEnv } from "./app-env.ts";
 import type { ParsePdf, RenderCover } from "./deps.ts";
 import {
   apiError,
@@ -22,7 +23,7 @@ import {
   readString,
 } from "./http.ts";
 import { isBookId, StorageFullError } from "./library.ts";
-import type { Library, StoredPdf } from "./library.ts";
+import type { StoredPdf } from "./library.ts";
 import { ParseError } from "./parser/errors.ts";
 import { titleFromFileName } from "./upload-name.ts";
 
@@ -149,11 +150,12 @@ async function sendPdf(c: Context, pdf: StoredPdf): Promise<Response> {
   return c.body(body, status, partial);
 }
 
-export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; renderCover: RenderCover }): Hono {
-  const { library, parsePdf, renderCover } = deps;
-  const routes = new Hono();
+/** The books of whoever is reading: every route works on c.var.library. */
+export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover }): Hono<AppEnv> {
+  const { parsePdf, renderCover } = deps;
+  const routes = new Hono<AppEnv>();
 
-  routes.get("/", async (c) => c.json(await library.list()));
+  routes.get("/", async (c) => c.json(await c.var.library.list()));
 
   routes.post(
     "/",
@@ -162,6 +164,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
       onError: (c) => apiError(c, 413, "too_large", "This PDF is larger than 300 MB. Try a smaller file."),
     }),
     async (c) => {
+      const { library } = c.var;
       // SHORTCUT: Hono parses the multipart body in memory (bounded by the 300 MB cap); move to a streaming parser if uploads that large become routine.
       let form: Record<string, unknown>;
       try {
@@ -221,6 +224,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
   );
 
   routes.get("/:id", async (c) => {
+    const { library } = c.var;
     const id = c.req.param("id");
     if (!isBookId(id)) return invalidId(c);
     const detail = await library.detail(id);
@@ -234,6 +238,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
       onError: (c) => invalidBody(c, "the body is too large."),
     }),
     async (c) => {
+      const { library } = c.var;
       const id = c.req.param("id");
       if (!isBookId(id)) return invalidId(c);
       const body = await readJsonObject(c);
@@ -248,12 +253,14 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
   );
 
   routes.delete("/:id", async (c) => {
+    const { library } = c.var;
     const id = c.req.param("id");
     if (!isBookId(id)) return invalidId(c);
     return (await library.remove(id)) ? c.body(null, 204) : bookNotFound(c);
   });
 
   routes.get("/:id/chapters/:chapterId", async (c) => {
+    const { library } = c.var;
     const id = c.req.param("id");
     if (!isBookId(id)) return invalidId(c);
     const book = await library.book(id);
@@ -263,6 +270,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
   });
 
   routes.get("/:id/pdf", async (c) => {
+    const { library } = c.var;
     const id = c.req.param("id");
     if (!isBookId(id)) return invalidId(c);
     const pdf = await library.pdf(id);
@@ -270,6 +278,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
   });
 
   routes.get("/:id/cover", async (c) => {
+    const { library } = c.var;
     const id = c.req.param("id");
     if (!isBookId(id)) return invalidId(c);
     const cover = await library.cover(id);
@@ -285,6 +294,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
   });
 
   routes.get("/:id/notes", async (c) => {
+    const { library } = c.var;
     const id = c.req.param("id");
     if (!isBookId(id)) return invalidId(c);
     const notes = await library.notes(id);
@@ -299,6 +309,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
       onError: (c) => invalidBody(c, "the body is too large."),
     }),
     async (c) => {
+      const { library } = c.var;
       const id = c.req.param("id");
       if (!isBookId(id)) return invalidId(c);
       const body = await readJsonObject(c);
@@ -312,6 +323,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
   );
 
   routes.delete("/:id/notes/:noteId", async (c) => {
+    const { library } = c.var;
     const id = c.req.param("id");
     if (!isBookId(id)) return invalidId(c);
     const noteId = c.req.param("noteId");
@@ -326,6 +338,7 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
       onError: (c) => invalidBody(c, "the body is too large."),
     }),
     async (c) => {
+      const { library } = c.var;
       const id = c.req.param("id");
       if (!isBookId(id)) return invalidId(c);
       const body = await readJsonObject(c);
@@ -347,7 +360,9 @@ export function booksRoutes(deps: { library: Library; parsePdf: ParsePdf; render
       if (offset > block.text.length) return invalidBody(c, "offset is past the end of that paragraph.");
 
       const progress: ReadingProgress | null = await library.setProgress(id, chapterId, blockId, offset);
-      return progress ? c.json(progress) : bookNotFound(c);
+      if (progress) return c.json(progress);
+      // The book was there a moment ago: null means the block holds no reading position (a heading), unless it just went.
+      return (await library.book(id)) ? blockNotFound(c) : bookNotFound(c);
     },
   );
 

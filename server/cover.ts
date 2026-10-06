@@ -130,7 +130,8 @@ function largestImage(corners: ArrayLike<number> | null): number {
   return largest;
 }
 
-async function encode(canvas: Canvas): Promise<CoverImage> {
+/** The picture as WebP, or JPEG where this computer's image library cannot write WebP. */
+export async function encodePicture(canvas: Canvas): Promise<CoverImage> {
   try {
     return { data: new Uint8Array(await canvas.encode("webp", 82)), type: "image/webp" };
   } catch {
@@ -174,12 +175,12 @@ async function drawCover(pdfPath: string): Promise<CoverImage | null> {
     const { ink, colour, board } = measure(data, canvas.width, canvas.height);
     const look: PageLook = { aspect, ink, colour, image: largestImage(page.imageCoordinates as ArrayLike<number> | null), words };
     if (!isCover(look)) return null;
-    if (!board) return encode(canvas);
+    if (!board) return encodePicture(canvas);
     const boardWidth = board.right - board.left;
     const boardHeight = board.bottom - board.top;
     const cut = createCanvas(COVER_WIDTH, Math.round(COVER_WIDTH * boardHeight / boardWidth));
     cut.getContext("2d").drawImage(canvas, board.left, board.top, boardWidth, boardHeight, 0, 0, cut.width, cut.height);
-    return encode(cut);
+    return encodePicture(cut);
   } finally {
     await task.destroy();
   }

@@ -116,6 +116,7 @@ It explains words and passages through an AI tool you already use, signed in wit
 | **Codex** | ChatGPT Plus or Pro | `npm install -g @openai/codex` | run `codex` and choose **Sign in with ChatGPT** |
 
 If you have both, open **Aa** in the reader and pick one under **AI helper**.
+With profiles on, only the admin can change it, because it is the same helper for everyone.
 DeepRead remembers your choice.
 If you install one later, it shows up there the next time you open the menu.
 
@@ -130,6 +131,16 @@ Only the explanations (the meaning, the example sentence and the passage notes) 
 > Claude Code and Codex are both run with their tools switched off.
 
 ## How to use DeepRead
+
+DeepRead opens straight to your library, with no sign-in, unless the person who set it up turned on profiles (see [Profiles and the admin dashboard](#profiles-and-the-admin-dashboard)).
+With profiles on, DeepRead opens on **Who's reading?** first.
+Click your picture and name, then type your code to open your own library.
+You stay signed in on that browser for 30 days, so next time DeepRead opens straight to your books.
+Sign in as the same profile on another device and the same books and notes are there.
+To read as someone else, open the profile menu at the top of the library (your picture and name) and choose **Switch profile**.
+It signs you out and shows the profiles again.
+Your books, your place in each book, your notes and your saved answers belong to your profile, and other profiles cannot see them.
+The steps below are the same for every profile.
 
 ### 1. Add a book
 
@@ -296,6 +307,54 @@ Copy that folder to back them up.
 `deepread update` never touches it.
 If you chose Cloudflare R2, they are in your bucket instead (see [Keep your books in Cloudflare R2](#keep-your-books-in-cloudflare-r2)).
 The `data` folder then holds only a few small things, such as your AI helper choice.
+With profiles on, each profile's books are in a folder of their own, under `profiles`.
+
+</details>
+
+<details>
+<summary><b>I forgot a profile's code</b></summary>
+
+The admin can set a new one.
+Open http://127.0.0.1:8787/admin, sign in with the admin passkey, choose **Edit** on that profile, and type a new code (see [Profiles and the admin dashboard](#profiles-and-the-admin-dashboard)).
+That profile is signed out everywhere, and it opens again with the new code.
+DeepRead keeps each code only in a scrambled form, so the old one cannot be read back.
+
+</details>
+
+<details>
+<summary><b>I forgot the admin passkey</b></summary>
+
+The admin passkey is the `ADMIN_PASSKEY` line in the `.env` or `.env.local` file in your DeepRead folder.
+Open that file in a text editor to read it.
+To choose a new one, change that line and restart DeepRead.
+Everyone is then signed out and signs in again.
+This is the only place the admin's code can be changed: /admin cannot do it.
+
+</details>
+
+<details>
+<summary><b>Everyone was signed out</b></summary>
+
+The most likely reason is that the sign-in secret was removed.
+It is the file `session-secret` in the `data` folder, and deleting it signs everyone out at once.
+Changing `ADMIN_PASSKEY` does the same.
+
+If only one profile was signed out, its code was changed, which signs that profile out everywhere.
+A sign-in also ends by itself after 30 days.
+
+Either way, choose your profile and type its code again.
+
+</details>
+
+<details>
+<summary><b>A profile's sign-in is locked</b></summary>
+
+After 5 wrong codes in a row, DeepRead locks that profile's sign-in on that device for 5 minutes.
+Each further lock on the same device lasts twice as long, up to a day.
+Other devices are not locked, so someone guessing on one device cannot lock you out of yours.
+Wait, then type the right code.
+If the code was forgotten, the admin can set a new one in /admin.
+Restarting DeepRead also clears the lock.
 
 </details>
 
@@ -321,7 +380,8 @@ Then your library does not depend on this one computer.
 You can also set the most space your books may take, whether they are kept on your computer or in R2.
 
 What goes into the bucket: each book's PDF, its parsed text, its cover, the AI answers saved for it, and your notes.
-A few small things always stay on your computer: your AI helper choice, saved quick word translations, the folder DeepRead keeps for Codex, the phone key, and a book's file while it is being added.
+With profiles on (see [Profiles and the admin dashboard](#profiles-and-the-admin-dashboard)), the list of profiles goes there too.
+A few small things always stay on your computer: your AI helper choice, saved quick word translations, the folder DeepRead keeps for Codex, the phone key, the sign-in secret that profiles use, and a book's file while it is being added.
 
 1. In your Cloudflare account, create an R2 bucket.
 2. Still in Cloudflare, open **R2**, then **Manage API tokens**, then **Create API token**.
@@ -357,6 +417,7 @@ What each setting means:
   Here 1 GB is 1000 MB.
   Write `GiB` or `MiB` to count in 1024s instead.
   Leave it empty for no limit.
+  With profiles on, the limit is shared: every profile's books count toward it together.
 - `DEEPREAD_R2_ENDPOINT` is the endpoint Cloudflare showed you.
   If your bucket belongs to a region group such as the EU, use the endpoint that has it, like `https://<account_id>.eu.r2.cloudflarestorage.com`.
 - `DEEPREAD_R2_BUCKET` is your bucket's name.
@@ -398,9 +459,119 @@ If you already have books on your computer, copy them into the bucket once:
 4. Start DeepRead again.
 
 It copies every book the bucket does not have yet, with its notes and saved AI answers.
+With profiles on, it also copies the profiles, each with its books and photo, and the list of profiles last.
+If the bucket already has profiles of its own, it copies none from your computer: the two lists are not merged.
 It skips books that are already in the bucket, and books that would not fit under your limit.
 It never changes or removes anything on your computer, so your `data` folder stays as it was.
 Run it only while DeepRead is stopped.
+
+## Profiles and the admin dashboard
+
+By default DeepRead has one library and no sign-in.
+That suits one person on one computer, and it stays that way until you turn profiles on.
+If several people read on the same DeepRead, you can give each of them a profile, like "Who's watching?" on a streaming service.
+Everyone picks their own picture, types their own code, and reads in their own library.
+
+### Turn profiles on
+
+1. Think of a long passphrase for the admin, such as several unrelated words in a row.
+   Anyone who knows it can manage every profile, so keep it to yourself.
+2. Open Terminal and make your settings file from the template that comes with DeepRead:
+
+   ```bash
+   cd ~/DeepRead
+   cp .env.example .env.local
+   ```
+
+   Skip this step if you already have a `.env.local` or `.env` file in that folder, for example from the R2 steps above: the copy would replace it.
+   If you installed DeepRead into another folder, use that folder instead of `~/DeepRead`.
+3. Open the file in a text editor (on a Mac, `open -e .env.local` does it) and add these lines, with your own values in place of the `<...>` parts:
+
+   ```bash
+   ADMIN_PASSKEY=<a long passphrase>
+   ADMIN_NAME=<your name>
+   ```
+
+4. Stop DeepRead (press `Control` and `C` in its Terminal window) and start it again with `deepread`.
+
+`ADMIN_PASSKEY` turns profiles on, and it is also the admin's code.
+`ADMIN_NAME` is the name on the admin's profile.
+It is optional: when you leave it out, the name is `Admin`.
+DeepRead reads these two settings the same way as the R2 ones: `.env.local` first, then `.env`, and a value you already set in Terminal wins over both.
+
+The first time DeepRead starts with profiles on, the books already in your library move into the admin's profile.
+Nothing is lost, and the other profiles you add later start empty.
+
+Without `ADMIN_PASSKEY`, DeepRead works exactly as before: one library, no sign-in.
+
+### Who's reading?
+
+With profiles on, DeepRead opens on **Who's reading?**, which shows every profile's picture and name.
+Click yours and type its code.
+You stay signed in on that browser for 30 days.
+To read as someone else, open the profile menu at the top of the library and choose **Switch profile**.
+It signs you out and shows the profiles again.
+
+### What each profile gets
+
+- Its own library: its own books, reading progress, notes and saved answers.
+  Other profiles cannot see them.
+- Its own picture: one of the built-in ones, or a photo the admin uploads.
+- Its own code, which it types to sign in.
+- The same storage limit as everyone else.
+  `DEEPREAD_STORAGE_LIMIT` is shared by all profiles, so the books of every profile count toward it together.
+  The line under the shelf shows both numbers, such as "Your books take 1.2 GB; everyone's together take 3.4 GB of 8 GB, kept on this computer."
+
+### The admin dashboard
+
+The admin adds and changes profiles on one page.
+Open http://127.0.0.1:8787/admin, or choose **Admin** in the profile menu (only the admin sees it).
+Sign in with the admin passkey.
+From there you can:
+
+- **Add a profile.**
+  Give it a name, a code of 6 to 64 characters, and one of the built-in pictures.
+- **Edit a profile.**
+  Rename it, give it a new code, pick another picture, upload a photo (a PNG, JPEG or WebP of up to 5 MB), or remove the photo.
+  A new code signs that profile out everywhere.
+- **Sign a profile out everywhere.**
+  Every phone and computer it is signed in on goes back to **Who's reading?**.
+  Use it when a device is lost or was borrowed: pressing **Switch profile** only signs out the device you are on.
+- **Delete a profile.**
+  Its books, notes and saved answers are removed for good, so DeepRead asks you to confirm first.
+  The admin's own profile cannot be deleted.
+- **Read as a profile.**
+  You see DeepRead the way that person does, with a banner at the top that says who you are reading as.
+  Press **Back to** and your own name in the banner (for example **Back to Admin**) to return to your own library.
+
+DeepRead keeps each code only in a scrambled form, so nobody, the admin included, can read one back.
+If someone forgets theirs, give that profile a new one.
+The admin's code is the one exception: it can only be changed by editing `ADMIN_PASSKEY` in `.env` or `.env.local` and restarting DeepRead.
+That signs everyone out, so they type their codes again.
+
+### The passkey and the lock
+
+- Choose a long `ADMIN_PASSKEY`.
+  When DeepRead starts, it warns you if the passkey is shorter than 12 characters.
+- The passkey lives only in `.env` or `.env.local` on this computer, and Git ignores both.
+  Do not commit it, paste it into a chat, or share it.
+- 5 wrong codes in a row lock that profile's sign-in on that device for 5 minutes, and each further lock there lasts twice as long, up to a day.
+  Wait, and then type the right code.
+
+### Where it is kept
+
+- `profiles.json` is the list of profiles.
+  It sits next to the books: in the `data` folder, or in your R2 bucket folder.
+- Each profile's books are under `profiles/<id>/books/`, in the same place.
+- The sign-in secret is a file named `session-secret` in the `data` folder, on this computer even when your books are in R2.
+  Deleting it signs everyone out.
+
+### Turn profiles off
+
+Remove the `ADMIN_PASSKEY` line from `.env.local` or `.env` and restart DeepRead.
+It then works exactly as before: one library, no sign-in.
+Nothing is deleted by this: `profiles.json` and the profiles' books stay where they are, and setting `ADMIN_PASSKEY` again brings the profiles back.
+The one library you see without profiles does not include the books kept in profiles.
 
 ## How it works
 
@@ -468,9 +639,39 @@ Adding books runs one at a time, so two uploads cannot both fit in the room left
 Each add also runs in its own book's queue, so it never meets a removal of the same book that is still clearing files.
 
 Usage is the sum of the sizes of the objects under `books/`.
-`GET /api/storage` returns `{ used, limit, where }`, which the library page shows under the shelf.
+`GET /api/storage` returns `{ used, total, limit, where }`, which the library page shows under the shelf.
+`total` is the same as `used` unless profiles are on (see below).
 When an upload would go past `DEEPREAD_STORAGE_LIMIT`, it is refused with HTTP 507 and the code `storage_full`.
 The check runs when the file arrives, before the slow parse, and again just before the book is stored.
+
+With profiles on (`ADMIN_PASSKEY` is set), the store holds a list of the profiles and one library for each:
+
+```text
+profiles.json
+profiles/<id>/books/<book id>/...    (the same keys as books/<id>/ above)
+```
+
+Each profile has its own `Library`, which sees the store only through its own `profiles/<id>/` folder, and its own `tmp` folder for uploads.
+So one profile's books, notes and saved answers never mix with another's.
+The first time profiles are on, the books already under `books/` move into the admin's profile.
+The limit is shared: each `Library` reports its own `used` and also `total`, the books of every profile together, and an upload is checked against `total`.
+Adding books still runs one at a time across all profiles, so two uploads cannot both fit in the room left for one.
+
+[`shared/types.ts`](shared/types.ts) defines what the browser and the server say about profiles: `PublicProfile`, `AdminProfile`, `Session` and `SessionInfo`.
+`GET /api/session` tells the web app which mode it is in: `{ mode: "single" }` opens the library, and `{ mode: "profiles", session: null }` shows **Who's reading?**.
+`GET /api/profiles` lists every profile's name and picture for that page, `POST /api/session` with `{ profileId, code }` signs in, and `DELETE /api/session` signs out.
+A session is a signed cookie that lasts 30 days.
+It says who signed in and until when, and its signature stops anyone forging or editing it, so the server keeps nothing for each session.
+The signing key comes from the secret in `session-secret` in the data folder together with `ADMIN_PASSKEY`, so deleting that file or changing the passkey ends every session.
+Changing a profile's code ends that profile's sessions.
+When a session ends, the web app goes back to **Who's reading?**.
+The server counts wrong codes for each profile and device (the tunnel's `cf-connecting-ip`, or this computer) while it runs: after 5 in a row it refuses that pair for 5 minutes, doubling with each further lock up to a day, and a restart clears the count.
+**Switch profile** only clears the cookie on that device; `POST /api/admin/profiles/:id/sign-out` ends every session of a profile.
+
+The admin is a profile like the others, named `ADMIN_NAME`, whose code is `ADMIN_PASSKEY` and which cannot be deleted.
+Its routes are under `/api/admin/` and need an admin session: `GET` and `POST /api/admin/profiles`, `PATCH` and `DELETE /api/admin/profiles/:id`, `PUT` and `DELETE /api/admin/profiles/:id/photo`, and `POST /api/admin/profiles/:id/sign-out`.
+Changing the AI helper (`PUT /api/ai/provider`) also needs the admin when profiles are on.
+**Read as** is a session for the profile being read, with `impersonatedBy` set to the admin: `POST /api/admin/impersonate/:id` starts it and `DELETE /api/admin/impersonate` goes back.
 
 Notes are kept one change at a time.
 [`shared/notes.ts`](shared/notes.ts) defines a `NoteChange` (`put` or `remove`) and `applyNoteChange`, and the server and the browser both apply each change with that one function, so what the reader sees is what is kept.
@@ -482,7 +683,7 @@ It drops a change the server refuses with a 4xx, and retries the others on the n
 It also adopts notes from the old `localStorage` keys, `deepread.notes.<bookId>` and `deepread.notes.<bookId>.<chapterId>`.
 [`src/reader/useNotes.ts`](src/reader/useNotes.ts) is a thin React hook around it.
 
-Whatever the store, a few small things stay in the data folder on this computer: `tmp/`, `settings.json` (your AI helper choice), `translate-cache.json` (quick word translations), `codex-home/`, and the phone key `remote-key`.
+Whatever the store, a few small things stay in the data folder on this computer: `tmp/`, `settings.json` (your AI helper choice), `translate-cache.json` (quick word translations), `codex-home/`, the phone key `remote-key`, and the sign-in secret `session-secret` when profiles are on.
 
 ### The tutor
 
@@ -514,6 +715,10 @@ Explanations sit in the margin beside their paragraph on wide screens and direct
   If you choose Cloudflare R2, those go to your own bucket instead (see [Keep your books in Cloudflare R2](#keep-your-books-in-cloudflare-r2)).
 - The server listens on `127.0.0.1` only and rejects requests from other websites.
   With `pnpm phone`, remote devices are refused until they open the link with the secret key.
+- With profiles on, each profile's code is stored in a scrambled (hashed) form, never as it was typed.
+  The admin passkey lives only in `.env` or `.env.local` on this computer, which Git ignores, and is never committed.
+- With profiles on, other profiles cannot see your books, notes or saved answers.
+  The admin can, by choosing **Read as** your profile.
 - The text you ask about goes to Anthropic (Claude Code) or OpenAI (Codex) through your own sign-in, the same as any session you start yourself.
 - A fallback word translation uses an unofficial Google endpoint, and only if the AI answer fails or there is no AI helper.
 
@@ -536,7 +741,7 @@ You need [Node.js](https://nodejs.org) 24 or newer and [pnpm](https://pnpm.io).
 | `pnpm dev` | Server on 8787 and web app on 5173, with reload |
 | `pnpm phone` | The same, plus a locked tunnel link for reading on your phone |
 | `pnpm build` then `pnpm start` | Production build, served by the server on 8787 (what `deepread` runs) |
-| `pnpm storage:migrate` | Copies the books in your data folder into your R2 bucket (see [Keep your books in Cloudflare R2](#keep-your-books-in-cloudflare-r2)) |
+| `pnpm storage:migrate` | Copies the books in your data folder, and the profiles with theirs, into your R2 bucket (see [Keep your books in Cloudflare R2](#keep-your-books-in-cloudflare-r2)) |
 | `pnpm test` | Unit and functional tests |
 | `pnpm typecheck` | TypeScript check |
 
@@ -557,7 +762,11 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 | `server/env.ts`, `.env.example` | Loading `.env.local`, then `.env`; the template for the settings |
 | `server/copy-books.ts`, `scripts/storage-migrate.ts` | Copying books from one store into another, and `pnpm storage:migrate`, which uses it |
 | `server/routes-*.ts` | HTTP routes |
+| `server/profiles.ts`, `server/codes.ts`, `server/throttle.ts`, `server/avatar.ts` | The list of profiles (`profiles.json`) and each one's library, hashed codes, the lock after wrong codes, profile photos, and moving the books from before profiles into the admin's |
+| `server/sessions.ts`, `server/session-token.ts`, `server/app-env.ts` | The signed 30-day session cookie, and the middleware that picks each request's library |
+| `server/routes-session.ts`, `server/routes-admin.ts` | The routes under `/api/session`, `/api/profiles` and `/api/admin` |
 | `src/` | The web app: library and reader |
+| `src/profiles/`, `src/admin/` | The **Who's reading?** page, the profile menu and the pictures; the `/admin` page where the admin adds, edits, deletes and reads as profiles |
 | `scripts/install.sh`, `scripts/deepread.mjs` | The one-line installer and the `deepread` command |
 | `e2e/` | End-to-end browser tests of reader journeys |
 
@@ -572,6 +781,10 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
   When it starts, it removes any book folder that has no `meta.json`, which could be a book another server is adding at that moment.
 - A page you opened earlier shows notes added on another device only after you reload it.
 - With R2, the secret key sits in `.env.local` on this computer.
+- With profiles on, the lock after wrong codes is kept by the running server, so it starts over when DeepRead restarts.
+  Each DeepRead server keeps its own count.
+- Profiles keep readers apart inside DeepRead.
+  They do not encrypt anything, so anyone who can open the `data` folder or the R2 bucket can read the books in it.
 
 ## License
 

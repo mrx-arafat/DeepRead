@@ -2921,3 +2921,742 @@ h5[data-block] {
     gap: 0.5rem;
   }
 }
+
+/* Profiles: the "Who's reading?" page, avatars, the profile menu. */
+
+/* A picture is sized by whoever uses it: Avatar passes a starting size, and a page that wants more or less sets the
+   width and height of the box around it and lets the picture fill that. */
+.avatar {
+  display: block;
+  flex: none;
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  overflow: hidden;
+  border-radius: 8%;
+  background: var(--wash);
+}
+
+.avatar-art,
+.avatar-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.avatar-photo {
+  object-fit: cover;
+}
+
+.profiles-page {
+  --tile: 8.5rem;
+  --tile-large: 11rem;
+  --tile-shadow:
+    0 1px 2px rgb(0 0 0 / 0.3),
+    0 0.5rem 0.75rem -0.5rem rgb(0 0 0 / 0.4);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  /* The heading sits at the same height on every step (tiles, code, a failure), so it never moves under the reader. */
+  padding: clamp(3rem, 16vh, 8rem) 1.5rem 4rem;
+  text-align: center;
+}
+
+/* A shadow cannot be seen on the dark page, so the picture gets a thin light edge instead. */
+:root[data-theme="dark"] .profiles-page {
+  --tile-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.14),
+    0 0.5rem 0.75rem -0.5rem rgb(0 0 0 / 0.7);
+}
+
+.profiles-heading {
+  margin-bottom: 2.5rem;
+  font-family: var(--font-book);
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.profiles-page .avatar {
+  width: 100%;
+  height: 100%;
+}
+
+.profiles-empty {
+  max-width: 28rem;
+  color: var(--ink-soft);
+  font-size: 1.125rem;
+}
+
+/* As tall as a row of tiles with their names, so the page does not move when the profiles arrive. */
+.profile-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2rem 1.75rem;
+  width: 100%;
+  max-width: 46rem;
+  min-height: calc(var(--tile) + 3.5rem);
+}
+
+.profile-grid > li {
+  display: flex;
+}
+
+.profile-skeleton {
+  width: var(--tile);
+  height: var(--tile);
+  border-radius: 8%;
+}
+
+.profile-tile {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 0.75rem;
+  width: var(--tile);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+/* The ring goes round the picture, not the whole button, so it reads as "this one" and not as a box of text. */
+.profile-tile:focus-visible {
+  outline: none;
+}
+
+.profile-tile-art,
+.profile-code-art {
+  display: block;
+  border-radius: 8%;
+  box-shadow: var(--tile-shadow);
+}
+
+.profile-tile-art {
+  width: var(--tile);
+  height: var(--tile);
+  outline: 3px solid transparent;
+  outline-offset: 4px;
+  transition:
+    transform 0.15s ease-out,
+    outline-color 0.15s ease-out;
+}
+
+.profile-tile:focus-visible .profile-tile-art {
+  outline-color: var(--pen);
+}
+
+@media (hover: hover) {
+  .profile-tile:hover .profile-tile-art {
+    outline-color: var(--ink-faint);
+    transform: translateY(-3px);
+  }
+}
+
+.profile-tile-name {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.3;
+  transition: color 0.15s ease-out;
+}
+
+.profile-tile:hover .profile-tile-name,
+.profile-tile:focus-visible .profile-tile-name {
+  color: var(--ink);
+}
+
+/* Quiet on purpose: the admin is a person on the list first. */
+.profile-tile-mark {
+  margin-top: -0.25rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--ink-faint);
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* The code for one profile, in the place the tiles were. */
+.profile-code {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 22rem;
+}
+
+.profile-code-art {
+  width: var(--tile-large);
+  height: var(--tile-large);
+  margin-bottom: 0.5rem;
+}
+
+.profile-code-label {
+  font-family: var(--font-book);
+  font-size: 1.375rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.profile-code-field {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.profile-code-field input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  /* A control's edge must clear 3:1 against the page; the hairline --rule is only for dividers. */
+  border: 1px solid var(--ink-faint);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  text-align: center;
+}
+
+.profile-code-field input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+/* One line is kept for it, so the buttons stay where they are when a wrong code is reported. */
+.profile-code-error {
+  min-height: 1.5rem;
+}
+
+.profile-code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.profile-code-actions .quiet-button {
+  min-height: 2.75rem;
+  border-color: var(--ink-faint);
+}
+
+.profile-code-actions .button:disabled {
+  opacity: 0.7;
+  cursor: progress;
+  filter: none;
+}
+
+.profile-code-actions .quiet-button:disabled {
+  background: transparent;
+  opacity: 0.5;
+  cursor: default;
+}
+
+.profile-spinner {
+  animation: drop-spin 1s linear infinite;
+}
+
+/* Said only if DeepRead is slow to answer: a quick answer replaces the page before this has appeared. */
+.startup-note {
+  margin-top: 25vh;
+  color: var(--ink-soft);
+  opacity: 0;
+  animation: startup-note-in 0.2s ease-out 0.6s forwards;
+}
+
+@keyframes startup-note-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 40rem) {
+  .profiles-page {
+    --tile: 6.5rem;
+    --tile-large: 8rem;
+
+    padding-top: 3rem;
+  }
+
+  .profiles-heading {
+    margin-bottom: 2rem;
+    font-size: 1.75rem;
+  }
+
+  .profile-grid {
+    gap: 1.5rem 1.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-tile-art,
+  .profile-tile-name {
+    transition: none;
+  }
+
+  .profile-tile:hover .profile-tile-art {
+    transform: none;
+  }
+
+  .profile-spinner {
+    animation: none;
+  }
+
+  .startup-note {
+    animation-duration: 0s;
+  }
+}
+
+/* Who is reading, in the library's top margin above the add button. The first-visit rule for the top margin is more
+   specific than this one, so a first visit keeps its own, lower, start. */
+.library:has(> .profile-menu) {
+  position: relative;
+  padding-top: 4.25rem;
+}
+
+.profile-menu {
+  position: absolute;
+  top: 0.75rem;
+  right: 1rem;
+  z-index: 10;
+}
+
+.profile-menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0 0.5rem 0 0.375rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.profile-menu-button:hover,
+.profile-menu-button[aria-expanded="true"] {
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.profile-menu-name {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A long name gives way before the add button does, so the corner stays one line on a phone. */
+@media (max-width: 40rem) {
+  .profile-menu-name {
+    max-width: 6.5rem;
+  }
+}
+
+.profile-menu-panel {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  display: grid;
+  min-width: 12.5rem;
+  padding: 0.25rem;
+  border: 1px solid var(--ink-faint);
+  border-radius: var(--radius);
+  background: var(--raised);
+  box-shadow: 0 0.5rem 1rem -0.5rem rgb(0 0 0 / 0.4);
+}
+
+.profile-menu-panel button,
+.profile-menu-panel a {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.profile-menu-panel button:hover:not(:disabled),
+.profile-menu-panel a:hover {
+  background: var(--wash);
+}
+
+.profile-menu-panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.profile-menu-panel .inline-error {
+  max-width: 16rem;
+  padding: 0.5rem 0.75rem;
+}
+
+/* The admin reading as someone else: a strip across the top of the library, in the pen's wash, with the way back. */
+.reading-as {
+  border-bottom: 1px solid var(--rule);
+  background: var(--pen-wash);
+}
+
+.reading-as-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 0.5rem 1.5rem;
+  font-size: 0.9375rem;
+}
+
+.reading-as .quiet-button {
+  border-color: var(--ink-faint);
+}
+
+.reading-as .quiet-button:disabled {
+  background: transparent;
+  opacity: 0.5;
+  cursor: default;
+}
+
+.reading-as .inline-error {
+  flex-basis: 100%;
+}
+
+/* Admin: /admin, where the admin manages profiles. */
+
+.admin {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 6rem;
+}
+
+.admin h1 {
+  font-family: var(--font-book);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+/* The sign-in card and the "profiles are off" page are one short column, set a little lower than the list is. */
+.admin-narrow {
+  display: grid;
+  justify-items: start;
+  gap: 1rem;
+  max-width: 28rem;
+  padding-top: 5rem;
+}
+
+.admin-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+}
+
+.admin-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 2.75rem;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+  text-underline-offset: 0.15em;
+}
+
+.admin-back:hover {
+  color: var(--ink);
+}
+
+.admin-note {
+  max-width: 34rem;
+  color: var(--ink-soft);
+}
+
+.admin-hint {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* A field's name where the field itself is a sentence, not an input. */
+.admin-label {
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.admin-quiet {
+  margin-top: 1.5rem;
+  color: var(--ink-soft);
+}
+
+.admin-error {
+  margin-top: 1rem;
+}
+
+.admin-empty {
+  max-width: 34rem;
+  margin-top: 1.25rem;
+  color: var(--ink-soft);
+}
+
+/* The sign-in card: the admin's picture over the one field it needs. */
+.admin-narrow > .admin-card {
+  justify-self: stretch;
+}
+
+.admin-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--raised);
+}
+
+.admin-card > :is(.avatar, h1, .admin-back) {
+  justify-self: center;
+}
+
+.admin-card h1 {
+  text-align: center;
+}
+
+.admin-card > .quiet-button {
+  justify-self: start;
+}
+
+.admin-card .button {
+  justify-content: center;
+}
+
+/* Who the admin is reading as, with the way back. */
+.admin-viewing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-top: 1.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--pen-wash);
+}
+
+.admin-viewing .quiet-button,
+.admin-actions .quiet-button {
+  border-color: var(--ink-faint);
+}
+
+/* A ruled list, as in a ledger: one rule at the top in ink, a hairline under each profile. */
+.admin-list {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--ink);
+}
+
+.admin-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.admin-who {
+  min-width: 0;
+}
+
+.admin-name {
+  font-family: var(--font-book);
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* An outline, not a fill, so it reads as a label on the name whatever the theme. */
+.admin-mark {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--ink-faint);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  vertical-align: 0.1em;
+}
+
+.admin-meta {
+  margin-top: 0.125rem;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.admin-actions .admin-delete {
+  color: var(--danger);
+}
+
+/* Under the profile it asks about, across the whole row. */
+.admin-confirm {
+  grid-column: 1 / -1;
+  margin-top: 0;
+  font-size: 0.9375rem;
+}
+
+.admin-row-error {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 40rem) {
+  .admin h1 {
+    font-size: 1.5rem;
+  }
+
+  .admin-narrow {
+    padding-top: 3rem;
+  }
+
+  /* The buttons take a row of their own under the name, so a long name keeps its width. */
+  .admin-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+/* The picture: eight built-in tiles as one group of radio buttons, and for a saved profile the photo that replaces it. */
+.admin-picture {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.admin-picture:disabled {
+  opacity: 0.6;
+}
+
+.admin-picture legend {
+  margin-bottom: 0.5rem;
+  padding: 0;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.admin-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 4.5rem));
+  gap: 0.75rem;
+}
+
+/* The ring is drawn in a space of its own around the picture, so choosing a tile never shifts or shrinks the art. */
+.admin-tile {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  padding: 3px;
+  border: 2px solid transparent;
+  border-radius: 14%;
+  cursor: pointer;
+}
+
+.admin-tile:hover {
+  border-color: var(--ink-faint);
+}
+
+.admin-tile:has(input:checked) {
+  border-color: var(--pen);
+}
+
+.admin-tile:has(input:focus-visible) {
+  outline: 2px solid var(--pen);
+  outline-offset: 2px;
+}
+
+.admin-tile-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 8%;
+}
+
+.admin-tile-art > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.admin-photo {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.admin-photo-thumb {
+  flex: none;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 8%;
+  object-fit: cover;
+}
+
+.admin-photo-body {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.admin-photo-body .quiet-button {
+  border-color: var(--ink-faint);
+}
+
+.admin-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.75rem;
+  cursor: pointer;
+}
+
+.admin-check input {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--pen);
+}

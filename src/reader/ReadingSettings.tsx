@@ -3,6 +3,7 @@ import { useEffect, useState, type FocusEvent, type ReactNode, type ToggleEvent 
 import { LANGUAGES, type AiProviderId, type AiStatus, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { FONT_SIZES, setPrefs, type Prefs } from "../prefs.ts";
+import { useSession } from "../profiles/session.tsx";
 import { keepingLine } from "./useReadingPosition.ts";
 
 const PANEL = "reading-settings";
@@ -138,8 +139,11 @@ function closeWhenTabbedAway(event: FocusEvent<HTMLElement>) {
 
 const SETUP_HELP = "https://github.com/mrx-arafat/DeepRead#ai-helpers";
 
-/** Which AI tool explains words and passages. Looked up each time the menu opens: one may have been installed since. */
-function AiHelper({ open }: { open: boolean }) {
+/**
+ * Which AI tool explains words and passages. Looked up each time the menu opens: one may have been installed since.
+ * It is one tool for everyone, so with profiles only the admin can change it; the others are told which one it is.
+ */
+function AiHelper({ open, canChoose }: { open: boolean; canChoose: boolean }) {
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -169,16 +173,17 @@ function AiHelper({ open }: { open: boolean }) {
   }
 
   const active = status?.providers.find((provider) => provider.id === status.active);
+  const choosing = canChoose && active && status;
   return (
     <div className="settings-group">
-      {active ? (
+      {choosing ? (
         <label className="settings-label" htmlFor={`${PANEL}-ai`}>
           AI helper
         </label>
       ) : (
         <p className="settings-label">AI helper</p>
       )}
-      {active && status && (
+      {choosing && (
         <select
           id={`${PANEL}-ai`}
           value={active.id}
@@ -198,14 +203,18 @@ function AiHelper({ open }: { open: boolean }) {
         ) : !status ? (
           "Looking for AI helpers on this computer..."
         ) : active ? (
-          `${active.name} explains words and passages, signed in with your own account.`
-        ) : (
+          canChoose
+            ? `${active.name} explains words and passages, signed in with your own account.`
+            : `${active.name} explains words and passages. Only the admin can change it.`
+        ) : canChoose ? (
           <>
             None found. Install Claude Code or Codex and sign in to get explanations; reading and listening work without one.{" "}
             <a href={SETUP_HELP} target="_blank" rel="noreferrer">
               How to set one up
             </a>
           </>
+        ) : (
+          "No AI helper is set up, so there are no explanations. Ask the admin to set one up; reading and listening work without one."
         )}
       </p>
     </div>
@@ -220,6 +229,9 @@ function AiHelper({ open }: { open: boolean }) {
  */
 export function ReadingSettings({ prefs }: { prefs: Prefs }) {
   const [open, setOpen] = useState(false);
+  const { info } = useSession();
+  // The server refuses the change to anyone else, so the choice is only offered where it can be made.
+  const canChooseAi = info?.mode === "single" || (info?.mode === "profiles" && info.session?.admin === true);
   return (
     <>
       <button type="button" className="icon-button settings-button" popoverTarget={PANEL} aria-label="Reading settings">
@@ -333,7 +345,7 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
           </p>
         </div>
 
-        <AiHelper open={open} />
+        <AiHelper open={open} canChoose={canChooseAi} />
       </section>
     </>
   );

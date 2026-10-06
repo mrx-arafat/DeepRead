@@ -56,3 +56,10 @@ export const chapterNotFound = (c: Context): Response =>
 
 export const blockNotFound = (c: Context): Response =>
   apiError(c, 404, "block_not_found", "That paragraph was not found in this chapter.");
+
+/** With profiles: nobody signed in, or the profile signed in as has been removed. */
+export const signInRequired = (c: Context): Response =>
+  apiError(c, 401, "sign_in_required", "Choose your profile to keep reading.");
+
+/** With profiles: something only the admin may do, asked by someone else. */
+export const adminOnly = (c: Context): Response => apiError(c, 403, "admin_only", "Only the admin can do that.");

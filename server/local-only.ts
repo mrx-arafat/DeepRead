@@ -59,7 +59,8 @@ function isRemote(c: Context): boolean {
 }
 
 /**
- * The API has no login, so by default only the reader's own browser tab may use it.
+ * Without profiles the API has no login, and with them a profile's code is all that guards its books, so by default
+ * only the reader's own browser tab may use it at all. This runs before any sign-in is looked at.
  * - Host check: stops DNS rebinding, where a hostile site points its own name at 127.0.0.1.
  * - Origin check: stops other websites from posting uploads or model requests (which spend the
  *   reader's Claude usage) from the reader's browser; browsers always send Origin on those requests.

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadEnvFiles } from "./env.ts";
 import { readStorageConfig } from "./storage-config.ts";
-import { createLocalStore } from "./storage.ts";
+import { createLocalStore, scopedStore } from "./storage.ts";
 import type { ObjectStore } from "./storage.ts";
 
 type Setup = { store: ObjectStore; cleanup: () => Promise<void> };
@@ -15,6 +15,12 @@ type Setup = { store: ObjectStore; cleanup: () => Promise<void> };
 async function localSetup(): Promise<Setup> {
   const root = await mkdtemp(join(tmpdir(), "deepread-store-"));
   return { store: createLocalStore(root), cleanup: () => rm(root, { recursive: true, force: true }) };
+}
+
+// A profile's library: the same contract, inside profiles/<id>/ of a store that holds other things too.
+async function scopedSetup(): Promise<Setup> {
+  const { store, cleanup } = await localSetup();
+  return { store: scopedStore(store, "profiles/reader-a1b2c3/"), cleanup };
 }
 
 async function r2Setup(): Promise<Setup> {
@@ -26,7 +32,10 @@ async function r2Setup(): Promise<Setup> {
   return { store, cleanup: () => store.removeAll("") };
 }
 
-const stores: Array<[string, () => Promise<Setup>]> = [["local", localSetup]];
+const stores: Array<[string, () => Promise<Setup>]> = [
+  ["local", localSetup],
+  ["scoped local", scopedSetup],
+];
 if (process.env.DEEPREAD_TEST_R2 === "1") stores.push(["r2", r2Setup]);
 
 async function text(stream: ReadableStream<Uint8Array> | null): Promise<string | null> {
@@ -96,4 +105,27 @@ describe.each(stores)("%s store", (_name, setup) => {
     expect(await readFile(copy, "utf8")).toBe("%PDF-1.7 a whole book");
     await store.removeAll("books/c/");
   }, 30_000);
+});
+
+describe("scopedStore", () => {
+  it("should keep a scope's objects inside its folder and out of reach of its neighbours", async () => {
+    const { store, cleanup } = await localSetup();
+    try {
+      const mine = scopedStore(store, "profiles/me-111111/");
+      const theirs = scopedStore(store, "profiles/them-222222/");
+      await mine.write("books/a/meta.json", "{}");
+      await theirs.write("books/b/meta.json", "{}");
+
+      expect(await store.list("profiles/")).toHaveLength(2);
+      expect((await store.read("profiles/me-111111/books/a/meta.json"))?.toString()).toBe("{}");
+      expect(await mine.list("")).toEqual([{ key: "books/a/meta.json", size: 2 }]);
+      expect(await mine.read("books/b/meta.json")).toBeNull();
+      await expect(mine.read("../them-222222/books/b/meta.json")).rejects.toThrow(/invalid storage key/);
+
+      await mine.removeAll("");
+      expect(await theirs.list("")).toEqual([{ key: "books/b/meta.json", size: 2 }]);
+    } finally {
+      await cleanup();
+    }
+  });
 });

@@ -42,6 +42,34 @@ function isMissing(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
+/**
+ * `store` seen from inside the folder `prefix` (which ends in "/"): keys are relative to it, and nothing outside it can
+ * be read, listed or removed. Each profile's library lives in one, so it cannot reach another profile's books.
+ */
+export function scopedStore(store: ObjectStore, prefix: string): ObjectStore {
+  if (prefix === "" || !isFolderPrefix(prefix)) throw new Error(`a scope is a folder ending in "/": ${JSON.stringify(prefix)}`);
+  const full = (key: string): string => {
+    // The local store resolves paths, so a ".." would climb out of the scope into a neighbour's folder.
+    if (key.split("/").some((part) => part === ".." || part === ".")) throw new Error(`invalid storage key: ${JSON.stringify(key)}`);
+    return prefix + key;
+  };
+  // Async throughout, so a refused key is a rejected promise like any other storage failure.
+  return {
+    kind: store.kind,
+    read: async (key) => store.read(full(key)),
+    size: async (key) => store.size(full(key)),
+    stream: async (key, range) => store.stream(full(key), range),
+    write: async (key, data) => store.write(full(key), data),
+    putFile: async (key, path) => store.putFile(full(key), path),
+    download: async (key, path) => store.download(full(key), path),
+    async list(folder) {
+      return (await store.list(full(folder))).map((object) => ({ key: object.key.slice(prefix.length), size: object.size }));
+    },
+    remove: async (keys) => store.remove(keys.map(full)),
+    removeAll: async (folder) => store.removeAll(full(folder)),
+  };
+}
+
 // writeFileAtomic's file in flight, which is not an object of its own.
 const IN_FLIGHT = /\.[0-9a-f-]{36}\.tmp$/;
 
