@@ -3474,16 +3474,23 @@ h5[data-block] {
   border-top: 1px solid var(--ink);
 }
 
+/* Picture, name and buttons on one line when they fit; when the buttons are too wide to leave the name its room, they
+   drop to a line of their own under it, and each profile settles that for itself. */
 .admin-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem 1rem;
   padding: 1rem 0;
   border-bottom: 1px solid var(--rule);
 }
 
+.admin-row > :first-child {
+  flex: none;
+}
+
 .admin-who {
+  flex: 1 1 18rem;
   min-width: 0;
 }
 
@@ -3518,6 +3525,7 @@ h5[data-block] {
 
 .admin-actions {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.5rem;
@@ -3529,13 +3537,13 @@ h5[data-block] {
 
 /* Under the profile it asks about, across the whole row. */
 .admin-confirm {
-  grid-column: 1 / -1;
+  flex: 1 0 100%;
   margin-top: 0;
   font-size: 0.9375rem;
 }
 
 .admin-row-error {
-  grid-column: 1 / -1;
+  flex: 1 0 100%;
 }
 
 @media (max-width: 40rem) {
@@ -3549,7 +3557,7 @@ h5[data-block] {
 
   /* The buttons take a row of their own under the name, so a long name keeps its width. */
   .admin-actions {
-    grid-column: 1 / -1;
+    flex-basis: 100%;
     justify-content: flex-start;
   }
 }

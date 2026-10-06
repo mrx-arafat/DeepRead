@@ -733,7 +733,8 @@ pnpm install
 pnpm dev
 ```
 
-Open http://localhost:5173.
+Open http://127.0.0.1:5173.
+Typing `localhost` works too: it moves to this address, so a profile's 30-day sign-in is kept whichever name you use.
 You need [Node.js](https://nodejs.org) 24 or newer and [pnpm](https://pnpm.io).
 
 | Command | Does |

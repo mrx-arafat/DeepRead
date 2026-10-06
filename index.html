@@ -9,6 +9,13 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%231d3bb8'/%3E%3Crect x='7' y='13' width='18' height='7' fill='%23ffe94a'/%3E%3Cpath d='M7 10h18M7 23h12' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"
     />
     <title>DeepRead</title>
+    <script>
+      // DeepRead answers on 127.0.0.1 only, and a browser keeps a separate sign-in for "localhost". So one address:
+      // whichever name is typed, the reader lands on the one where their 30-day sign-in lives.
+      if (location.hostname === "localhost" || location.hostname === "[::1]") {
+        location.replace("http://127.0.0.1" + (location.port ? ":" + location.port : "") + location.pathname + location.search + location.hash);
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
