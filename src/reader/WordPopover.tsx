@@ -3,6 +3,7 @@ import { Headphones, Volume2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { LANGUAGES, type ExplainRequest, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
+import { HighlightGroup, type HighlightChoice } from "./HighlightGroup.tsx";
 import { inline } from "./RichText.tsx";
 import { BOTTOM_EDGE, clearSpan, TOP_EDGE } from "./sentenceView.ts";
 import { canSpeak, speak } from "./speech.ts";
@@ -24,6 +25,8 @@ type Props = {
   lang: LangCode;
   onListenFromHere: () => void;
   onClose: () => void;
+  /** Highlighting the word or term, as the selection bar highlights a passage; absent when it cannot be painted. */
+  highlight?: HighlightChoice;
 };
 
 /** Pull "Label: value" lines out of the tutor's word answer, tolerating a half-streamed reply. */
@@ -105,7 +108,7 @@ function sentencesToKeep(lookup: Lookup): Range[] {
   return [highlighted("dr-sentence"), own ? rangeInBlock(lookup.blockId, own) : null].filter((range) => range !== null);
 }
 
-export function WordPopover({ lookup, bookId, lang, onListenFromHere, onClose }: Props) {
+export function WordPopover({ lookup, bookId, lang, onListenFromHere, onClose, highlight }: Props) {
   const margin = useSyncExternalStore(watchMargin, hasMargin);
   // Taken as the card opens, so it stays put while the voice moves on to the next sentence.
   const [keep] = useState(() => sentencesToKeep(lookup));
@@ -214,6 +217,9 @@ export function WordPopover({ lookup, bookId, lang, onListenFromHere, onClose }:
           <Headphones size={16} aria-hidden /> Listen from here
         </button>
       )}
+
+      {/* A word or a short term opens this card rather than the selection bar, so it is highlighted from here. */}
+      {highlight && <HighlightGroup {...highlight} />}
     </div>
   );
 }

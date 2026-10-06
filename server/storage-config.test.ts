@@ -25,14 +25,15 @@ describe("parseBytes", () => {
 });
 
 describe("readStorageConfig", () => {
-  it("should keep books on this computer with no limit when nothing is set", () => {
-    expect(readStorageConfig({})).toEqual({ kind: "local", limit: null });
+  it("should keep books on this computer with no limit and no encryption when nothing is set", () => {
+    expect(readStorageConfig({})).toEqual({ kind: "local", limit: null, encryptionKey: null });
   });
 
   it("should read the limit and the R2 bucket, keeping DeepRead in a folder of its own", () => {
     expect(readStorageConfig({ ...R2, DEEPREAD_STORAGE_LIMIT: "8GB" })).toEqual({
       kind: "r2",
       limit: 8_000_000_000,
+      encryptionKey: null,
       endpoint: "https://abc123.r2.cloudflarestorage.com",
       bucket: "books",
       accessKeyId: "key",
@@ -51,5 +52,40 @@ describe("readStorageConfig", () => {
     expect(() => readStorageConfig({ ...R2, DEEPREAD_R2_BUCKET: "<bucket-name>" })).toThrow(/still has the example value/);
     expect(() => readStorageConfig({ ...R2, DEEPREAD_R2_ENDPOINT: "abc123.r2.cloudflarestorage.com" })).toThrow(/https:\/\//);
     expect(() => readStorageConfig({ DEEPREAD_STORAGE: "s3" })).toThrow(ConfigError);
+  });
+});
+
+describe("DEEPREAD_ENCRYPTION_KEY", () => {
+  const HEX = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+  const KEY = Buffer.from(HEX, "hex");
+
+  it("should read 32 bytes written as hex or base64, and no key when it is unset or empty", () => {
+    expect(readStorageConfig({ DEEPREAD_ENCRYPTION_KEY: HEX }).encryptionKey).toEqual(KEY);
+    expect(readStorageConfig({ DEEPREAD_ENCRYPTION_KEY: ` ${HEX.toUpperCase()} ` }).encryptionKey).toEqual(KEY);
+    // What `openssl rand -base64 32` prints: 44 characters, the last one "=".
+    expect(readStorageConfig({ DEEPREAD_ENCRYPTION_KEY: "ABEiM0RVZneImaq7zN3u/wARIjNEVWZ3iJmqu8zd7v8=" }).encryptionKey).toEqual(KEY);
+    expect(readStorageConfig({ ...R2, DEEPREAD_ENCRYPTION_KEY: HEX })).toMatchObject({ kind: "r2", encryptionKey: KEY });
+    expect(readStorageConfig({ DEEPREAD_ENCRYPTION_KEY: "  " }).encryptionKey).toBeNull();
+  });
+
+  it("should refuse what is not 32 bytes in hex or base64, saying how to make a key and never repeating the value", () => {
+    const wrong = [
+      HEX.slice(2), // 31 bytes
+      "g".repeat(64), // the right length, not hex
+      Buffer.alloc(16, 1).toString("base64"), // base64, but 16 bytes
+      "correct horse battery staple",
+      "<64 hex characters>",
+    ];
+    for (const value of wrong) {
+      let message = "";
+      try {
+        readStorageConfig({ DEEPREAD_ENCRYPTION_KEY: value });
+      } catch (error) {
+        expect(error).toBeInstanceOf(ConfigError);
+        message = (error as Error).message;
+      }
+      expect(message).toMatch(/^DEEPREAD_ENCRYPTION_KEY .*openssl rand -hex 32/);
+      expect(message).not.toContain(value);
+    }
   });
 });

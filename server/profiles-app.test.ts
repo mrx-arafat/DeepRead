@@ -1,11 +1,12 @@
 // Functional test of DeepRead with profiles (ADMIN_PASSKEY set): real routes, real disk storage in a temp dir, real
 // session cookies, with the PDF parser, the cover renderer, the model and the translator replaced by fakes.
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { formatBytes } from "../shared/bytes.ts";
 import type {
   AdminProfile,
   AdminShare,
@@ -21,7 +22,7 @@ import type {
   Session,
   SessionInfo,
   SharingOverview,
-  StorageUsage,
+  StorageView,
 } from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
 import type { AppEnv } from "./app-env.ts";
@@ -32,6 +33,7 @@ import { createLibrary } from "./library.ts";
 import { createOpenRouter } from "./openrouter.ts";
 import type { OpenRouter } from "./openrouter.ts";
 import { createProfiles } from "./profiles.ts";
+import type { Profiles } from "./profiles.ts";
 import { sessionKey } from "./session-token.ts";
 import { loadSessionSecret } from "./sessions.ts";
 import { createLocalStore } from "./storage.ts";
@@ -82,6 +84,9 @@ describe("DeepRead with profiles", () => {
   let dataDir: string;
   let app: Hono<AppEnv>;
   let admin: string;
+  // Every DeepRead started on this data folder: signing in saves the locks without waiting, so each is flushed before the folder goes.
+  const started: Profiles[] = [];
+  const flushed = (): Promise<unknown> => Promise.all(started.map((profiles) => profiles.flush()));
 
   /** DeepRead starting (again) on the same data folder: profiles.json, the books and the session secret carry over. */
   async function start({
@@ -90,6 +95,7 @@ describe("DeepRead with profiles", () => {
     ai = { llm: fakeLlm },
   }: { limit?: number | null; parsePdf?: ParsePdf; ai?: { llm: Ai; openrouter?: OpenRouter } } = {}): Promise<void> {
     const profiles = createProfiles({ store: createLocalStore(dataDir), dataDir, limit, adminPasskey: PASSKEY, adminName: "Arafat" });
+    started.push(profiles);
     const key = sessionKey(await loadSessionSecret(dataDir), PASSKEY);
     app = createApp({
       accounts: { profiles, sessionKey: key },
@@ -152,6 +158,8 @@ describe("DeepRead with profiles", () => {
   afterEach(async () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    await flushed();
+    started.length = 0;
     await rm(dataDir, { recursive: true, force: true });
   });
 
@@ -235,6 +243,71 @@ describe("DeepRead with profiles", () => {
     expect(signedOut.headers.get("set-cookie")).toMatch(/^deepread_session=; Max-Age=0;/);
   });
 
+  it("should save the locks so a restart keeps them until they end, and drop them with a right code or with the profile", async () => {
+    const adminCookie = await signIn(admin, PASSKEY);
+    const mina = await addProfile(adminCookie, "Mina", "246810");
+    const tryCode = (code: string) => call("POST", "/api/session", "", { profileId: mina.id, code });
+    const locksFile = join(dataDir, "locks.json");
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse("2026-10-06T10:00:00Z"));
+    // The right code as the fifth try locks the client in the same moment, and signs in: no lock is left behind in the file.
+    for (let attempt = 1; attempt <= 4; attempt++) expect((await tryCode("111111")).status).toBe(401);
+    expect((await tryCode("246810")).status).toBe(200);
+    await flushed();
+    expect(await readFile(locksFile, "utf8")).not.toContain(mina.id);
+
+    for (let attempt = 1; attempt <= 5; attempt++) expect((await tryCode("111111")).status).toBe(401);
+    await flushed();
+
+    // DeepRead stopped and started again, such as a crash someone caused to get fresh tries: the lock is still there, even for the right code.
+    await start();
+    vi.setSystemTime(Date.parse("2026-10-06T10:04:00Z"));
+    const locked = await tryCode("246810");
+    expect(locked.status).toBe(429);
+    expect(await json<ApiError>(locked)).toEqual({ error: "too_many_tries", message: "Too many wrong codes. Try again in 1 minute." });
+
+    // Once it has ended the right code signs in, and clears the count of locks too: the next lock is 5 minutes again, not 10.
+    vi.setSystemTime(Date.parse("2026-10-06T10:05:00Z"));
+    expect((await tryCode("246810")).status).toBe(200);
+    await flushed();
+    expect(await readFile(locksFile, "utf8")).not.toContain(mina.id);
+    for (let attempt = 1; attempt <= 5; attempt++) expect((await tryCode("111111")).status).toBe(401);
+    expect(await json<ApiError>(tryCode("246810"))).toEqual({ error: "too_many_tries", message: "Too many wrong codes. Try again in 5 minutes." });
+    await flushed();
+    // The file holds when the lock ends as a point in time, so it is right whenever DeepRead starts again; and only its owner reads it.
+    expect(await readFile(locksFile, "utf8")).toContain(String(Date.parse("2026-10-06T10:10:00Z")));
+    expect((await stat(locksFile)).mode & 0o777).toBe(0o600);
+
+    // The profile's locks leave the file with it.
+    vi.useRealTimers();
+    expect((await call("DELETE", `/api/admin/profiles/${mina.id}`, adminCookie)).status).toBe(204);
+    await flushed();
+    expect(await readFile(locksFile, "utf8")).not.toContain(mina.id);
+  });
+
+  it("should count wrong codes from one IPv6 /64 together, so another address inside it gives no fresh tries", async () => {
+    const from = (address: string, code: string) =>
+      call("POST", "/api/session", `deepread_key=${REMOTE_KEY}`, { profileId: admin, code }, { "cf-connecting-ip": address });
+    for (let attempt = 1; attempt <= 5; attempt++) expect((await from(`2001:db8:0:1::${attempt}`, "a guess")).status).toBe(401);
+    expect((await from("2001:db8:0:1:ffff:eeee:dddd:cccc", PASSKEY)).status).toBe(429);
+    // Another /64 is another client; the first one written another way is still the guesser.
+    expect((await from("2001:db8:0:2::1", PASSKEY)).status).toBe(200);
+    expect((await from("2001:0DB8:0000:0001::9", PASSKEY)).status).toBe(429);
+  });
+
+  it("should open with no locks when locks.json is damaged, say so when it cannot be read, and sign in", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    for (const damaged of ["{ not json", JSON.stringify({ profiles: { [admin]: { local: "locked" }, nobody: [1, 2] } }), "[]"]) {
+      await writeFile(join(dataDir, "locks.json"), damaged);
+      await start();
+      expect((await call("GET", "/api/profiles")).status).toBe(200);
+      expect(await signIn(admin, PASSKEY)).not.toBe("");
+    }
+    // Only the first is not JSON at all; the others are read and found to hold no usable lock.
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
   it("should keep each profile's books to itself while counting everyone's against the shared limit", async () => {
     const adminCookie = await signIn(admin, PASSKEY);
     const mina = await addProfile(adminCookie, "Mina", "246810");
@@ -255,11 +328,12 @@ describe("DeepRead with profiles", () => {
     expect(await titles(rafiCookie)).toEqual(["Rafi Reads"]);
     expect(await readdir(join(dataDir, "profiles", mina.id, "books"))).toEqual([minaBook]);
 
-    const minaUsage = await json<StorageUsage>(call("GET", "/api/storage", minaCookie));
-    const rafiUsage = await json<StorageUsage>(call("GET", "/api/storage", rafiCookie));
+    const minaUsage = await json<StorageView>(call("GET", "/api/storage", minaCookie));
+    const rafiUsage = await json<StorageView>(call("GET", "/api/storage", rafiCookie));
     expect(minaUsage.used).toBeGreaterThan(pdfBytes("Mina Reads").length);
-    expect(minaUsage.total).toBe(minaUsage.used + rafiUsage.used);
-    expect(rafiUsage.total).toBe(minaUsage.total);
+    // A reader is told their own books, never the sum of everyone's.
+    expect(minaUsage).not.toHaveProperty("total");
+    expect(rafiUsage).not.toHaveProperty("total");
     const board = await json<AdminProfile[]>(call("GET", "/api/admin/profiles", adminCookie));
     expect(board.map((p) => [p.name, p.bookCount, p.used])).toEqual([
       ["Arafat", 0, 0],
@@ -273,8 +347,11 @@ describe("DeepRead with profiles", () => {
     await start({ limit });
     const full = await uploadOf(minaCookie, "Mina Again");
     expect(full.status).toBe(507);
-    expect((await json<ApiError>(full)).message).toMatch(/^There is no room for it: everyone's books together take .+ \(yours .+\) of the .+ they may use/);
-    expect(await json<StorageUsage>(call("GET", "/api/storage", minaCookie))).toEqual({ ...minaUsage, limit });
+    const { message } = await json<ApiError>(full);
+    expect(message).toMatch(/^There is no room for it: the space everyone shares is full \(your books take .+\), and this one needs /);
+    // Not what the others keep: Rafi's books are not Mina's business.
+    expect(message).not.toContain(formatBytes(minaUsage.used + rafiUsage.used));
+    expect(await json<StorageView>(call("GET", "/api/storage", minaCookie))).toEqual({ ...minaUsage, limit });
   });
 
   it("should keep the admin's dashboard to the admin", async () => {
@@ -564,7 +641,7 @@ describe("DeepRead with profiles", () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: "sign_in_required", message: "Choose your profile to keep reading." });
     expect(await readdir(join(dataDir, "profiles")).catch(() => [])).not.toContain(mina.id);
-    expect((await json<StorageUsage>(call("GET", "/api/storage", adminCookie))).total).toBe(0);
+    expect((await json<StorageView>(call("GET", "/api/storage", adminCookie))).used).toBe(0);
   });
   describe("sharing a book", () => {
     const note = (id: string): Note => ({ id, chapterId: "c1", blockId: "c1-b0", quote: "text", mode: "simple", lang: "bn" });
@@ -588,7 +665,8 @@ describe("DeepRead with profiles", () => {
 
       expect(await json<BookDetail>(call("GET", `/api/books/${id}`, minaCookie))).toMatchObject({ title: "No Longer Human", sharedBy: { name: "Arafat" } });
       expect((await call("GET", `/api/books/${id}/chapters/c1`, minaCookie)).status).toBe(200);
-      expect((await call("GET", `/api/books/${id}/pdf`, minaCookie)).status).toBe(200);
+      // She reads it here; the owner's PDF file stays with the owner.
+      expect((await call("GET", `/api/books/${id}/pdf`, minaCookie)).status).toBe(403);
 
       // Her place and her notes are hers: the owner's copy of the book is not touched.
       expect((await call("PUT", `/api/books/${id}/progress`, minaCookie, { chapterId: "c1", blockId: "c1-b0", offset: 4 })).status).toBe(200);

@@ -15,7 +15,7 @@ beforeAll(async () => {
 describe("readPrefs", () => {
   it("should keep known saved choices and replace unknown ones with the defaults", () => {
     const prefs = readPrefs(
-      { lang: "xx", fontSize: 23, theme: "neon", font: 3, margins: "wide", align: "justify", layout: "pages", rate: 1.2 },
+      { lang: "xx", fontSize: 23, theme: "neon", font: 3, margins: "wide", align: "justify", layout: "pages", rate: 1.2, highlight: "purple" },
       false,
     );
     expect(prefs).toEqual({
@@ -29,7 +29,9 @@ describe("readPrefs", () => {
       layout: "pages",
       voice: "device",
       rate: 1.2,
+      highlight: "yellow",
     });
+    expect(readPrefs({ highlight: "pink" }, false).highlight).toBe("pink");
   });
 
   it("should keep the natural voice when it was chosen, and fall back to the device voice for anything else", () => {

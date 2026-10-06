@@ -9,10 +9,12 @@ import { join, resolve } from "node:path";
 import { formatBytes } from "../shared/bytes.ts";
 import { copyLibrary } from "../server/copy-books.ts";
 import type { CopyReport } from "../server/copy-books.ts";
+import { createEncryptedStore, refuseEncryptedObjects } from "../server/encrypted-store.ts";
 import { loadEnvFiles } from "../server/env.ts";
 import { readStorageConfig } from "../server/storage-config.ts";
 import { openR2Store } from "../server/storage-r2.ts";
 import { createLocalStore } from "../server/storage.ts";
+import type { ObjectStore } from "../server/storage.ts";
 
 const OUTCOMES = { copied: "copied", skipped: "already in the bucket", noRoom: "no room left under the limit" } as const;
 
@@ -23,11 +25,16 @@ async function main(): Promise<void> {
     throw new Error("Set DEEPREAD_STORAGE=r2 and the R2 settings in .env.local first (.env.example shows how).");
   }
   const dataDir = resolve(process.env.DEEPREAD_DATA_DIR ?? "./data");
-  const target = await openR2Store(config);
+  // Both sides through DEEPREAD_ENCRYPTION_KEY when it is set, as DeepRead opens them: each object is opened here and
+  // encrypted again in the bucket. Without it, an encrypted library is refused with the setting to check.
+  const { encryptionKey } = config;
+  const protect = (store: ObjectStore): ObjectStore =>
+    encryptionKey ? createEncryptedStore(store, encryptionKey) : refuseEncryptedObjects(store);
+  const target = protect(await openR2Store(config));
   const tempDir = await mkdtemp(join(tmpdir(), "deepread-migrate-"));
   console.log(`Copying the library in ${dataDir} into the R2 bucket ${config.bucket} (${config.prefix || "whole bucket"})...`);
   try {
-    const report = await copyLibrary(createLocalStore(dataDir), target, {
+    const report = await copyLibrary(protect(createLocalStore(dataDir)), target, {
       tempDir,
       limit: config.limit,
       onBook: (id, outcome, bytes, profile) =>

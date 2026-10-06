@@ -25,7 +25,7 @@ import type {
   Session,
   SessionInfo,
   SharingOverview,
-  StorageUsage,
+  StorageView,
 } from "../shared/types.ts";
 
 export class ApiFailure extends Error {
@@ -127,7 +127,7 @@ export const api = {
     change.kind === "put"
       ? request<void>(`/api/books/${bookId}/notes/${encodeURIComponent(change.note.id)}`, json("PUT", { note: change.note, before: change.before }))
       : request<void>(`/api/books/${bookId}/notes/${encodeURIComponent(change.id)}`, { method: "DELETE" }),
-  storage: () => request<StorageUsage>("/api/storage"),
+  storage: () => request<StorageView>("/api/storage"),
 
   /** Who one of the reader's own books is shared with. */
   bookShares: (bookId: string) => request<BookShare[]>(`/api/books/${bookId}/shares`),

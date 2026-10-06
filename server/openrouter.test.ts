@@ -1,9 +1,9 @@
 // OpenRouter as an AI helper: the key and model the admin keeps, the streamed answers, and what goes wrong, with the
 // network replaced by a fake fetch.
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { completeText } from "./llm.ts";
 import { createOpenRouter } from "./openrouter.ts";
 
@@ -40,6 +40,10 @@ describe("createOpenRouter", () => {
   }) as typeof fetch;
   const make = (env: Record<string, string> = {}) => createOpenRouter({ dataDir, env, fetch: fetcher, retryDelaysMs: [0, 0] });
   const bodyOf = (call: Call) => JSON.parse(String(call.init.body)) as Record<string, unknown>;
+  const usageFile = () => join(dataDir, "openrouter-usage.json");
+  /** The day's counts are written in the background, so wait until the file says what is expected. */
+  const usageOnDisk = (expected: unknown) =>
+    vi.waitFor(async () => expect(JSON.parse(await readFile(usageFile(), "utf8"))).toEqual(expected), { timeout: 2_000, interval: 10 });
 
   beforeEach(async () => {
     dataDir = await mkdtemp(join(tmpdir(), "deepread-openrouter-"));
@@ -253,6 +257,50 @@ describe("createOpenRouter", () => {
     await expect(llm.save({ dailyLimit: -3 })).rejects.toMatchObject({ code: "invalid_limit" });
     await expect(llm.save({ dailyLimit: 1.5 })).rejects.toMatchObject({ code: "invalid_limit" });
     expect((await llm.save({ dailyLimit: null })).dailyLimit).toBe(2);
+
+    // The count is written in the background; let it land before the folder is removed.
+    await usageOnDisk({ day: "2026-10-08", counts: { mina: 51 } });
+  });
+
+  describe("the day's counts across a restart", () => {
+    const noon = () => Date.UTC(2026, 9, 7, 12);
+    const open = (now = noon) =>
+      createOpenRouter({ dataDir, env: { OPENROUTER_API_KEY: KEY, OPENROUTER_MODEL: MODEL, OPENROUTER_DAILY_LIMIT: "2" }, fetch: fetcher, now });
+
+    it("should keep each reader's count when the server starts again, so the limit still holds", async () => {
+      const first = open();
+      first.admit("mina");
+      first.admit("mina");
+      first.admit("sam");
+      // Nothing but reader ids and counts is kept: no key.
+      await usageOnDisk({ day: "2026-10-07", counts: { mina: 2, sam: 1 } });
+
+      const restarted = open();
+      expect((await restarted.describe()).usedToday).toEqual({ mina: 2, sam: 1 });
+      expect(() => restarted.admit("mina")).toThrowError(expect.objectContaining({ kind: "failed", message: expect.stringContaining("2 requests") }));
+      expect(() => restarted.admit("sam")).not.toThrow();
+      await usageOnDisk({ day: "2026-10-07", counts: { mina: 2, sam: 2 } });
+    });
+
+    it("should begin the day from zero when the counts kept are from an earlier day", async () => {
+      await writeFile(usageFile(), JSON.stringify({ day: "2026-10-06", counts: { mina: 2 } }));
+      const llm = open();
+      expect((await llm.describe()).usedToday).toEqual({});
+      expect(() => llm.admit("mina")).not.toThrow();
+      await usageOnDisk({ day: "2026-10-07", counts: { mina: 1 } });
+    });
+
+    it("should start empty, without failing, when the counts kept are unreadable or make no sense", async () => {
+      const unusable = ["{not json", "[]", JSON.stringify({ day: "2026-10-07", counts: "many" }), JSON.stringify({ day: "2026-10-07", counts: { mina: "lots", sam: -1 } })];
+      for (const content of unusable) {
+        await writeFile(usageFile(), content);
+        const llm = open();
+        expect((await llm.describe()).usedToday).toEqual({});
+        expect(() => llm.admit("mina")).not.toThrow();
+        // The next count writes a good file over it.
+        await usageOnDisk({ day: "2026-10-07", counts: { mina: 1 } });
+      }
+    });
   });
 
   it("should tell the admin how much of the key's credit is left, when the test is run", async () => {

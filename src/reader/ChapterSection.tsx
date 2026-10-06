@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import type { BookDetail, Chapter, LangCode, Note } from "../../shared/types.ts";
+import type { BookDetail, Chapter, LangCode, QuestionNote } from "../../shared/types.ts";
 import { chapterPosition, kindOf, minutes, readableBlocks } from "./book.ts";
 import { ChapterAid } from "./ChapterAid.tsx";
 import { ChapterText, type TextActions } from "./ChapterText.tsx";
@@ -9,7 +9,7 @@ import { LookupTip } from "./LookupTip.tsx";
 type Props = {
   chapter: Chapter;
   book: BookDetail;
-  notes: Note[];
+  notes: QuestionNote[];
   lang: LangCode;
   actions: TextActions;
   /** Shows the how-to-look-things-up tip above the text; closing it calls this. */

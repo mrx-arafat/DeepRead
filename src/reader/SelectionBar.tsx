@@ -3,6 +3,7 @@ import { HandHeart, Headphones } from "lucide-react";
 import { useLayoutEffect, type KeyboardEvent } from "react";
 import { LANGUAGES, type ExplainMode, type LangCode } from "../../shared/types.ts";
 import { useHelperCredit } from "./aiStatusStore.ts";
+import { HighlightGroup, type HighlightChoice } from "./HighlightGroup.tsx";
 import { canSpeak } from "./speech.ts";
 import { blockOf } from "./textRanges.ts";
 
@@ -15,6 +16,8 @@ type Props = {
   touch?: boolean;
   onExplain: (mode: ExplainMode) => void;
   onListen: () => void;
+  /** Highlighting the selection; absent when its words could not be found in the book's text to paint. */
+  highlight?: HighlightChoice;
 };
 
 // The end handle hangs about 24px below the last selected line on Android and iOS.
@@ -30,8 +33,8 @@ function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
   event.preventDefault();
 }
 
-/** The small bar that appears over selected text: how do you want this explained? */
-export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListen }: Props) {
+/** The small bar that appears over selected text: how do you want this explained, or highlighted? */
+export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListen, highlight }: Props) {
   // For a reader the admin shared an AI with: whose it is, where they choose to use it. Sharing is caring.
   const credit = useHelperCredit();
   const { refs, floatingStyles } = useFloating({
@@ -64,7 +67,7 @@ export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListe
       style={floatingStyles}
       className="popover selection-bar"
       role="toolbar"
-      aria-label="Explain selected text"
+      aria-label={highlight ? "Explain or highlight selected text" : "Explain selected text"}
       // Keep the text selected while a button is pressed.
       onMouseDown={(event) => event.preventDefault()}
       onKeyDown={moveFocus}
@@ -83,6 +86,7 @@ export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListe
           <Headphones size={16} aria-hidden /> Listen
         </button>
       )}
+      {highlight && <HighlightGroup {...highlight} />}
       {credit && (
         <p className="selection-credit">
           <HandHeart size={13} aria-hidden /> With {credit}, shared with you

@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { isHighlightColor } from "../shared/types.ts";
 import type { BookUpdate, Note, ParsedBook, ReadingProgress } from "../shared/types.ts";
 import type { AppEnv } from "./app-env.ts";
 import type { ParsePdf, RenderCover } from "./deps.ts";
@@ -95,13 +96,22 @@ function readNote(value: unknown): Note | null {
   const id = readString(value, "id", MAX_ID_FIELD);
   const chapterId = readString(value, "chapterId", MAX_ID_FIELD);
   const blockId = readString(value, "blockId", MAX_ID_FIELD);
-  const { quote, mode, lang } = value;
-  if (!id || !chapterId || !blockId || typeof quote !== "string" || quote.length > MAX_QUOTE_CHARS) return null;
-  if (!isExplainMode(mode) || !isLangCode(lang)) return null;
+  const { quote, mode, lang, color, offset } = value;
+  if (!id || !chapterId || !blockId || typeof quote !== "string" || quote.length > MAX_QUOTE_CHARS || !isLangCode(lang)) return null;
+  // A highlight is the reader's own mark, never a question for the AI: only it has a colour and a place in its paragraph.
+  if (mode === "highlight") {
+    const placed = typeof offset === "number" && Number.isInteger(offset) && offset >= 0;
+    return isHighlightColor(color) && placed && quote.trim() !== "" ? { id, chapterId, blockId, quote, lang, mode, color, offset } : null;
+  }
+  if (!isExplainMode(mode) || color !== undefined || offset !== undefined) return null;
   return { id, chapterId, blockId, quote, mode, lang };
 }
 
 const storageFull = (c: Context, error: StorageFullError): Response => apiError(c, 507, "storage_full", error.message);
+
+/** A book shared with the reader is theirs to read in DeepRead, not to take away: its PDF stays with its owner. */
+const sharedPdfOwnerOnly = (c: Context, owner: string | undefined): Response =>
+  apiError(c, 403, "shared_pdf_owner_only", `${owner ?? "Its owner"} shared this book with you to read here. The PDF file itself stays with them.`);
 
 type ByteRange = { start: number; end: number };
 
@@ -279,6 +289,11 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     const { library } = c.var;
     const id = c.req.param("id");
     if (!isReadableBookId(id)) return invalidId(c);
+    // 403, like sharedReadOnly: the book is on this shelf to read, and only its file is kept back. An ended share is a 404.
+    if (parseSharedBookId(id)) {
+      const shared = await library.detail(id);
+      return shared ? sharedPdfOwnerOnly(c, shared.sharedBy?.name) : bookNotFound(c);
+    }
     const pdf = await library.pdf(id);
     return pdf ? sendPdf(c, pdf) : bookNotFound(c);
   });

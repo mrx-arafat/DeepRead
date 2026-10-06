@@ -249,8 +249,9 @@ Select a sentence or a paragraph, then choose what you want:
 | **Example** | The idea retold as an everyday situation |
 | **In Bangla** (named after your language) | A faithful translation into your language, then a short explanation |
 | **Listen** | Reading aloud from that passage |
+| **Highlight** and its colours | The passage marked in yellow, green, blue or pink; **Highlight** uses the colour you picked last |
 
-<table><tr><td><img src="docs/images/select-passage.webp" alt="A selected passage with the Explain, Example, In Bangla and Listen buttons" width="900"></td></tr></table>
+<table><tr><td><img src="docs/images/select-passage.webp" alt="A selected passage with the Explain, Example, In Bangla and Listen buttons, and the Highlight button with its four colours" width="900"></td></tr></table>
 
 The answer is pinned beside the paragraph like a teacher's note, and it stays there when you come back to the book.
 DeepRead keeps these notes with the book, not in the browser, so clearing your browser does not lose them and they show on your phone too.
@@ -259,6 +260,13 @@ If DeepRead cannot be reached when you make a note, your browser holds it until 
 Your reading settings under **Aa** are different: they stay in each browser, so a phone has its own.
 
 <table><tr><td><img src="docs/images/explain.webp" alt="An explanation note in the margin beside the passage" width="900"></td></tr></table>
+
+To mark a passage instead of asking about it, press **Highlight**, or pick one of the four colours.
+To change a highlight's colour, select any part of it and pick another colour.
+**Remove** takes it away, and **Undo** brings it back.
+Highlights are kept with the book like your notes, so they show on your other devices, work offline, and stay yours alone on a shared book.
+They never become cards in the margin and never ask the AI anything.
+The word card has the same Highlight row as the selection bar, so a single word or a short term can be highlighted too.
 
 ### 6. Before and after a chapter
 
@@ -600,6 +608,37 @@ It skips books that are already in the bucket, and books that would not fit unde
 It never changes or removes anything on your computer, so your `data` folder stays as it was.
 Run it only while DeepRead is stopped.
 
+### Encrypt your books
+
+By default your books sit in the `data` folder or the R2 bucket as ordinary files, so anyone who gets a copy of either can read them.
+To lock them, give DeepRead a key:
+
+1. Make one: `openssl rand -hex 32` prints 64 hexadecimal characters.
+2. Keep a copy somewhere safe and apart from the books, such as a password manager.
+   Never put it in the bucket, in the `data` folder, or in Git.
+3. Put it in `.env.local` as `DEEPREAD_ENCRYPTION_KEY=` followed by the key, and restart DeepRead.
+   The start-up lines then say "Books are encrypted at rest."
+4. To lock the books you already have, stop DeepRead and run `pnpm storage:encrypt`.
+   It encrypts each file in place, skips the ones that are already encrypted, and is safe to stop and run again.
+
+New books are encrypted as they are added.
+Books you already have stay readable until you run the command, so turning the key on never breaks a library.
+If you use R2 and have books on your computer too, run `pnpm storage:migrate` first and `pnpm storage:encrypt` after it.
+
+What is encrypted: the books, their notes, covers and saved AI answers, and the list of profiles, whether they are in the `data` folder or the bucket.
+What an encrypted copy gives away: the names of the files, which include a short form of each book's title and the profile's id, and how big each file is.
+What is not covered: anyone who can run DeepRead on this computer, or who can read `.env.local`, can read everything.
+Encryption keeps your books private; it does not stop someone who can write to your bucket from putting in a plain file of their own, or an older copy of a file, which DeepRead would read as it finds it.
+So give the R2 token that DeepRead uses to nobody else, and make a token for any other tool read-only.
+The Claude Code and Codex helpers that DeepRead starts do not receive the key, your R2 secrets, the API key or the admin code.
+A few small files stay as plain text in the `data` folder: `openrouter.json` (the API key, readable only by you), `openrouter-usage.json`, `locks.json`, `settings.json`, `translate-cache.json`, `session-secret`, `remote-key` and `codex-home/`, and `tmp/` while a PDF is being read.
+
+Two things to know before you turn it on:
+
+- If you lose the key, you lose the books.
+  Nothing can open them without it, and the key cannot be changed later.
+- DeepRead stops at start-up with a message that names `DEEPREAD_ENCRYPTION_KEY` when the key is missing or wrong, so a mistake never shows up as a book full of nonsense.
+
 ## Read together: profiles and sharing
 
 By default DeepRead has one library and no sign-in.
@@ -663,7 +702,8 @@ A profile can carry a small badge beside its name, such as **Editor** or **Kid**
 - The AI helpers the admin gives it, and none until they do (see [AI helpers for each profile](#ai-helpers-for-each-profile)).
 - The same storage limit as everyone else.
   `DEEPREAD_STORAGE_LIMIT` is shared by all profiles, so the books of every profile count toward it together.
-  The line under the shelf shows both numbers, such as "Your books take 1.2 GB; everyone's together take 3.4 GB, kept on this computer."
+  The line under the shelf shows only that reader's own books, such as "Your books take 1.2 GB, kept on this computer."
+  What other profiles keep is never sent to a reader's browser, and when the shared room is full the message says so without saying how much the others keep.
 
 ### Sharing a book
 
@@ -673,6 +713,7 @@ These are the rules behind it:
 - Only a book's owner can change it, rename it or share it.
   Everyone it is shared with reads it.
 - A shared book is read from its owner's copy, so it takes no extra room, and it shows the owner's name on the reader's shelf.
+  A reader it is shared with cannot download its PDF; that stays with the owner.
 - Each reader keeps their own place, notes and saved answers for it, in their own profile.
 - Stopping a share hides the book and keeps what the reader made, so sharing it again brings it back as they left it.
 - A reader can take a shared book off their own shelf, which ends that share and leaves the owner's book alone.
@@ -889,6 +930,9 @@ Removing a book, or a profile, ends the shares that go with it and clears what o
 
 Notes are kept one change at a time.
 [`shared/notes.ts`](shared/notes.ts) defines a `NoteChange` (`put` or `remove`) and `applyNoteChange`, and the server and the browser both apply each change with that one function, so what the reader sees is what is kept.
+A highlight is a note too: `mode: "highlight"` with a `color` (`yellow`, `green`, `blue` or `pink`) and the `offset` of its words in the paragraph, so a word that appears twice is marked in the right place.
+The server refuses an unknown colour, a colour on a question, and a highlight without one.
+[`src/reader/useNoteMarks.ts`](src/reader/useNoteMarks.ts) paints each colour with the browser's CSS Custom Highlight API, so the text itself is never changed.
 The API takes them as `GET /api/books/:id/notes`, `PUT /api/books/:id/notes/:noteId` with `{ note, before }`, and `DELETE /api/books/:id/notes/:noteId`.
 The server applies each change inside the book's queue, so two devices never overwrite each other.
 In the browser, [`src/reader/noteSync.ts`](src/reader/noteSync.ts) (`createNoteSync`) shows a change at once and keeps it in a `localStorage` outbox, `deepread.pendingNotes.<bookId>`, until the server has taken it.
@@ -897,7 +941,7 @@ It drops a change the server refuses with a 4xx, and retries the others on the n
 It also adopts notes from the old `localStorage` keys, `deepread.notes.<bookId>` and `deepread.notes.<bookId>.<chapterId>`.
 [`src/reader/useNotes.ts`](src/reader/useNotes.ts) is a thin React hook around it.
 
-Whatever the store, a few small things stay in the data folder on this computer: `tmp/`, `settings.json` (your AI helper choice), `translate-cache.json` (quick word translations), `codex-home/`, the phone key `remote-key`, and the sign-in secret `session-secret` when profiles are on.
+Whatever the store, a few small things stay in the data folder on this computer: `tmp/`, `settings.json` (your AI helper choice), `translate-cache.json` (quick word translations), `openrouter-usage.json` (each reader's API Model requests today), `codex-home/`, the phone key `remote-key`, and the sign-in secret `session-secret` and the wrong-code locks `locks.json` when profiles are on.
 
 ### The tutor
 
@@ -977,6 +1021,7 @@ You need [Node.js](https://nodejs.org) 24 or newer and [pnpm](https://pnpm.io).
 | `pnpm phone` | The same, plus a locked tunnel link for reading on your phone |
 | `pnpm build` then `pnpm start` | Production build, served by the server on 8787 (what `deepread` runs) |
 | `pnpm storage:migrate` | Copies the books in your data folder, and the profiles with theirs, into your R2 bucket (see [Keep your books in Cloudflare R2](#keep-your-books-in-cloudflare-r2)) |
+| `pnpm storage:encrypt` | Encrypts the books and profiles you already have with `DEEPREAD_ENCRYPTION_KEY`, with DeepRead stopped (see [Encrypt your books](#encrypt-your-books)) |
 | `pnpm test` | Unit and functional tests |
 | `pnpm typecheck` | TypeScript check |
 
@@ -987,6 +1032,7 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 | --- | --- |
 | `shared/types.ts` | The contract between the server and the web app |
 | `shared/notes.ts`, `src/reader/noteSync.ts`, `src/reader/useNotes.ts` | A note change and the one function that applies it, used by the server and the browser; the browser's outbox that sends changes in order; the React hook around it |
+| `src/reader/highlights.ts`, `HighlightGroup.tsx`, `useHighlightChoice.ts` | Highlights: deciding whether a selection lies inside one, the colour row shared by the selection bar and the word card, and the choice and last colour behind it |
 | `shared/bytes.ts` | Sizes as text, such as `1.2 GB`, the same in server messages and on the library page |
 | `server/parser/` | PDF to chapters and paragraphs |
 | `server/prompts.ts` | Every prompt sent to the model |
@@ -997,6 +1043,7 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 | `server/storage*.ts`, `server/atomic-write.ts` | The `ObjectStore` interface and the local store (`storage.ts`), the R2 store (`storage-r2.ts`), reading the storage settings (`storage-config.ts`), atomic file writes |
 | `server/env.ts`, `.env.example` | Loading `.env.local`, then `.env`; the template for the settings |
 | `server/copy-books.ts`, `scripts/storage-migrate.ts` | Copying books from one store into another, and `pnpm storage:migrate`, which uses it |
+| `server/encrypted-store.ts`, `scripts/storage-encrypt.ts` | Encryption at rest: a store that wraps another and seals every object (AES-256-GCM in 64 KiB chunks, so a range of a PDF opens only the chunks it needs), and `pnpm storage:encrypt`, which seals what is already stored |
 | `server/routes-*.ts` | HTTP routes |
 | `server/profiles.ts`, `server/codes.ts`, `server/throttle.ts`, `server/avatar.ts` | The list of profiles (`profiles.json`) and each one's library, hashed codes, the lock after wrong codes, profile photos, and moving the books from before profiles into the admin's |
 | `server/sessions.ts`, `server/session-token.ts`, `server/app-env.ts` | The signed 30-day session cookie, and the middleware that picks each request's library |
@@ -1025,12 +1072,17 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
   When it starts, it removes any book folder that has no `meta.json`, which could be a book another server is adding at that moment.
 - A page you opened earlier shows notes added on another device only after you reload it.
 - With R2, the secret key sits in `.env.local` on this computer.
-- The count of each reader's requests of the API Model is kept in memory, so a restart gives everyone a fresh day.
-- With profiles on, the lock after wrong codes is kept by the running server, so it starts over when DeepRead restarts.
-  Each DeepRead server keeps its own count.
-- A book shared with a profile is read from its owner's copy, so the owner's PDF is open to whoever it is shared with, for as long as the share lasts.
-- Profiles keep readers apart inside DeepRead.
-  They do not encrypt anything, so anyone who can open the `data` folder or the R2 bucket can read the books in it.
+- The count of each reader's requests of the API Model is kept in `openrouter-usage.json` in the data folder, so a restart does not give anyone a fresh day.
+  It holds only reader ids and counts, never the key.
+  The day still ends at midnight UTC, as before.
+- With profiles on, wrong codes and the locks they cause are saved in `locks.json` in the data folder, so a restart does not lift a lock.
+  Each DeepRead server keeps its own count, so two servers with separate data folders do not share their tries or locks.
+  It tracks at most 1000 clients per profile, forgets one after a day without a wrong try, and counts every address in one IPv6 block as one client.
+- A book shared with a profile is read from its owner's copy, so whoever it is shared with can read every word of it in DeepRead for as long as the share lasts.
+  Only the owner can download the PDF file itself.
+- Profiles keep readers apart inside DeepRead, and by themselves they encrypt nothing.
+  Set `DEEPREAD_ENCRYPTION_KEY` (see [Encrypt your books](#encrypt-your-books)) to encrypt the books, notes and profiles, so a copy of the `data` folder or the R2 bucket is unreadable without the key.
+  File names (book titles, profile ids) stay visible, and anyone who can use the computer running DeepRead can read everything.
 
 ## License
 

@@ -18,6 +18,7 @@ import { canSpeak } from "./speech.ts";
 import { setHighlight } from "./textRanges.ts";
 import { UndoToast } from "./UndoToast.tsx";
 import { useChapterFlow } from "./useChapterFlow.ts";
+import { useHighlightChoice } from "./useHighlightChoice.ts";
 import { useListen } from "./useListen.ts";
 import { useNaturalVoice } from "./useNaturalVoice.ts";
 import { useNoteMarks } from "./useNoteMarks.ts";
@@ -50,13 +51,14 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const [selection, setSelection] = useState<Lookup | null>(null);
   // Until the reader has looked something up, a tip beside the first chapter shows how.
   const [tipOpen, setTipOpen] = useState(() => !lookupTipDone());
-  const { notes, addNote, removeNote, removed, restoreNote, forgetRemoved } = useNotes(bookId, prefs.lang);
+  const { notes, highlights, addNote, addHighlight, removeNote, removed, restoreNote, forgetRemoved } = useNotes(bookId, prefs.lang);
   const [undoFocus, setUndoFocus] = useState(false);
-  const focusNote = useRef<string | null>(null);
+  // What takes focus back after Undo, when focus was on it.
+  const focusAfterUndo = useRef<string | null>(null);
   const flow = useChapterFlow(bookId, chapterId, book);
   // The chapters are on the page only once the book's details are in as well.
   const shown = useMemo(() => (book ? flow.chapters : []), [book, flow.chapters]);
-  useNoteMarks(notes, shown);
+  useNoteMarks(notes, highlights, shown);
   const position = useReadingPosition(bookId, chapterId, book, flow.start);
   const turning = prefs.layout === "pages";
   const pages = usePages(turning, Boolean(book && flow.start), Boolean(word || selection));
@@ -173,16 +175,24 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     [removeNote],
   );
 
-  /** Puts the removed note back. Focus on Undo goes back to the note's Remove button, as if it had never gone. */
+  /**
+   * Puts the removed note back. Focus on Undo goes back to the note's Remove button, as if it had never gone, or, for a
+   * highlight, to its paragraph, where the reader was.
+   */
   function undoRemove() {
-    if (document.activeElement?.closest(".toast")) focusNote.current = removed?.id ?? null;
+    if (removed && document.activeElement?.closest(".toast")) {
+      focusAfterUndo.current =
+        removed.mode === "highlight"
+          ? `[data-block="${CSS.escape(removed.blockId)}"]`
+          : `[data-note="${removed.id}"] button[aria-label="Remove note"]`;
+    }
     restoreNote();
   }
 
   useEffect(() => {
-    if (!focusNote.current) return;
-    document.querySelector<HTMLElement>(`[data-note="${focusNote.current}"] button[aria-label="Remove note"]`)?.focus();
-    focusNote.current = null;
+    if (!focusAfterUndo.current) return;
+    document.querySelector<HTMLElement>(focusAfterUndo.current)?.focus();
+    focusAfterUndo.current = null;
   });
 
   const actions = useMemo<TextActions>(
@@ -197,6 +207,15 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     window.getSelection()?.removeAllRanges();
     setSelection(null);
   }
+
+  // A highlight made, changed or removed closes the bar or the card that offered it, as Explain does.
+  const closeLookup = useCallback(() => {
+    window.getSelection()?.removeAllRanges();
+    dismiss();
+  }, [dismiss]);
+  const highlighting = { highlights, addHighlight, removeNote };
+  const selectionHighlight = useHighlightChoice(selection, flow.chapters, highlighting, closeLookup);
+  const wordHighlight = useHighlightChoice(word, flow.chapters, highlighting, closeLookup);
 
   /** Whoever starts listening from the keyboard should find the player under their fingers. */
   function rememberKeyboardStart() {
@@ -394,7 +413,13 @@ export function ReaderPage({ bookId, chapterId }: Props) {
       {/* Always on the page, so a screen reader hears "Note removed" the moment it appears. */}
       <div role="status">
         {removed && (
-          <UndoToast key={removed.id} message="Note removed" autoFocus={undoFocus} onUndo={undoRemove} onTimeout={forgetRemoved} />
+          <UndoToast
+            key={removed.id}
+            message={removed.mode === "highlight" ? "Highlight removed" : "Note removed"}
+            autoFocus={undoFocus}
+            onUndo={undoRemove}
+            onTimeout={forgetRemoved}
+          />
         )}
       </div>
 
@@ -406,6 +431,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
           lang={prefs.lang}
           onListenFromHere={() => listenFrom(word)}
           onClose={dismiss}
+          highlight={wordHighlight}
         />
       )}
       {selection && (
@@ -416,6 +442,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
           touch={selection.via === "touch"}
           onExplain={explain}
           onListen={() => listenFrom(selection)}
+          highlight={selectionHighlight}
         />
       )}
     </div>

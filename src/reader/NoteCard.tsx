@@ -1,11 +1,12 @@
 import { X } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { LANGUAGES, type ExplainMode, type ExplainRequest, type LangCode, type Note } from "../../shared/types.ts";
+import { LANGUAGES, type ExplainMode, type ExplainRequest, type LangCode, type QuestionNote } from "../../shared/types.ts";
 import { parseSections, RichText } from "./RichText.tsx";
 import { useAiStream } from "./useAiStream.ts";
 
 type Props = {
-  note: Note;
+  /** A question: a highlight is painted on the text, never shown as a card. */
+  note: QuestionNote;
   bookId: string;
   /** The most recently asked note. In the margin only it shows its whole answer; older cards fold to their first part. */
   latest: boolean;

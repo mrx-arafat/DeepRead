@@ -132,8 +132,25 @@ const CLAUDE_FLAGS = [
   "--include-partial-messages",
 ];
 
-function claudeEnv(request: LlmRequest): NodeJS.ProcessEnv {
+// DeepRead's own secrets: an AI helper never needs them, and a prompt could talk it into repeating what it can see.
+const SECRET_SETTINGS = [
+  "DEEPREAD_ENCRYPTION_KEY",
+  "DEEPREAD_R2_ACCESS_KEY_ID",
+  "DEEPREAD_R2_SECRET_ACCESS_KEY",
+  "OPENROUTER_API_KEY",
+  "ADMIN_PASSKEY",
+  "DEEPREAD_REMOTE_KEY",
+];
+
+/** The environment an AI helper starts with: DeepRead's, less its secrets. */
+export function helperEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
+  for (const name of SECRET_SETTINGS) delete env[name];
+  return env;
+}
+
+function claudeEnv(request: LlmRequest): NodeJS.ProcessEnv {
+  const env = helperEnv();
   // Set, not inherited: this variable overrides --effort and every settings file (see TASK_PROFILES).
   env.CLAUDE_CODE_EFFORT_LEVEL = TASK_PROFILES[request.task].effort;
   // Nested-session guard: with these set the CLI refuses to start inside another Claude Code session.
@@ -426,7 +443,7 @@ export function createCodexLlm({ home, ...options }: CodexLlmOptions): CliLlm {
         ...CODEX_TOOLS_OFF,
         "-",
       ],
-      env: () => ({ ...process.env, CODEX_HOME: home }),
+      env: () => ({ ...helperEnv(), CODEX_HOME: home }),
       input: (request) => request.user,
       parse: parseCodexLine,
       model: () => "codex",

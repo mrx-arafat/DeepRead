@@ -1,7 +1,8 @@
 // Finding words and sentences inside a block of book text.
 // Every block renders as one text node, so offsets here are offsets into `block.text`.
 
-import type { Block } from "../../shared/types.ts";
+import { HIGHLIGHT_COLORS } from "../../shared/types.ts";
+import type { Block, HighlightColor } from "../../shared/types.ts";
 
 export type Span = { start: number; end: number };
 
@@ -177,12 +178,12 @@ export function sentenceIndex(sentences: Sentence[], at: SentenceAt): number {
 
 /**
  * Where a quote the reader selected sits, starting in block `blockId`: one span in each block it covers, none if it
- * is not there.
+ * is not there. `offset`, where it starts in that block when known, tells apart the same words said twice there.
  */
-export function quoteSpans(blocks: Block[], blockId: string, quote: string): { blockId: string; span: Span }[] {
+export function quoteSpans(blocks: Block[], blockId: string, quote: string, offset?: number): { blockId: string; span: Span }[] {
   let at = blocks.findIndex((block) => block.id === blockId);
   const text = blocks[at]?.text ?? "";
-  const whole = text.indexOf(quote);
+  const whole = offset !== undefined && text.startsWith(quote, offset) ? offset : text.indexOf(quote);
   if (whole !== -1) return [{ blockId, span: { start: whole, end: whole + quote.length } }];
   // A selection over several paragraphs: the copied text breaks lines between them. It runs from somewhere in the
   // first paragraph to its end, over whole ones, into the start of the last. A note card in between came along too.
@@ -249,8 +250,14 @@ export function rangeInBlock(blockId: string, span: Span): Range | null {
 }
 
 // Where marks overlap, a later one here is painted over an earlier one: a word looked up inside the sentence
-// being read keeps its own mark, and passages with notes lie under everything.
-const LAYERS = ["dr-note", "dr-note-active", "dr-sentence", "dr-spoken", "dr-word", "dr-cursor"];
+// being read keeps its own mark, passages with notes lie under everything passing, and the reader's own
+// highlights lie under all of it, so the sentence and word being read aloud still show on a highlighted passage.
+const LAYERS = [...HIGHLIGHT_COLORS.map(highlightMark), "dr-note", "dr-note-active", "dr-sentence", "dr-spoken", "dr-word", "dr-cursor"];
+
+/** The named mark a highlight colour is painted with, styled by its own `::highlight(dr-hl-<colour>)` rule. */
+export function highlightMark(color: HighlightColor): string {
+  return `dr-hl-${color}`;
+}
 
 /** Paint (or clear) a named highlight without touching the DOM. Styled via `::highlight(name)`. */
 export function setHighlight(name: string, range: Range | Range[] | null) {

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiProviderId, AiStatus, ApiError, BookDetail, BookSummary, Note, ParsedBook, StorageUsage } from "../shared/types.ts";
+import type { AiProviderId, AiStatus, ApiError, BookDetail, BookSummary, HighlightColor, Note, ParsedBook, StorageView } from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
 import type { AppEnv } from "./app-env.ts";
 import { createApp } from "./app.ts";
@@ -437,12 +437,12 @@ describe("DeepRead API", () => {
   });
 
   describe("storage and notes", () => {
-    const storage = async () => (await (await app.request("/api/storage")).json()) as StorageUsage;
+    const storage = async () => (await (await app.request("/api/storage")).json()) as StorageView;
     const bookIds = async () => ((await (await app.request("/api/books")).json()) as BookSummary[]).map((b) => b.id);
     const notesOf = async (id: string) => (await (await app.request(`/api/books/${id}/notes`)).json()) as Note[];
 
     it("should say how much room the books take, and refuse a book that would take them past the limit", async () => {
-      expect(await storage()).toEqual({ used: 0, total: 0, limit: null, where: "local" });
+      expect(await storage()).toEqual({ used: 0, limit: null, where: "local" });
       const id = await addBook();
       const files = await readdir(join(dataDir, "books", id), { recursive: true, withFileTypes: true });
       const onDisk = await Promise.all(files.filter((f) => f.isFile()).map(async (f) => (await stat(join(f.parentPath, f.name))).size));
@@ -460,7 +460,7 @@ describe("DeepRead API", () => {
       restart(used + pdfBytes(second).length + 10);
       expect((await upload(second)).status).toBe(507);
       expect(await bookIds()).toEqual([id]);
-      expect(await storage()).toEqual({ used, total: used, limit: used + pdfBytes(second).length + 10, where: "local" });
+      expect(await storage()).toEqual({ used, limit: used + pdfBytes(second).length + 10, where: "local" });
       expect(await entries(join(dataDir, "tmp"))).toEqual([]);
 
       restart(used * 3);
@@ -493,6 +493,28 @@ describe("DeepRead API", () => {
       expect((await app.request(`/api/books/${id}/notes`)).status).toBe(404);
       expect((await put(note("late"))).status).toBe(404);
       expect(await entries(join(dataDir, "books"))).toEqual([]);
+    });
+
+    it("should keep highlights with the notes, change one's colour when the same words are highlighted again, and refuse a bad one", async () => {
+      const id = await addBook();
+      // "the one" in "Beta paragraph is the one the reader taps."
+      const passage = { chapterId: "c1", blockId: "c1-b2", quote: "the one", lang: "bn" } as const;
+      const question: Note = { ...passage, id: "asked", mode: "simple" };
+      const highlight = (n: string, color: HighlightColor): Note => ({ ...passage, id: n, mode: "highlight", color, offset: 18 });
+      const put = (body: unknown, noteId: string) => send("PUT", `/api/books/${id}/notes/${noteId}`, { note: body, before: null });
+
+      expect((await put(question, "asked")).status).toBe(204);
+      expect((await put(highlight("first", "yellow"), "first")).status).toBe(204);
+      // The question about the same words is not a highlight, so it stays.
+      expect((await put(highlight("again", "green"), "again")).status).toBe(204);
+      expect(await notesOf(id)).toEqual([question, highlight("again", "green")]);
+
+      // Only a highlight has a colour, one of the four, and the place of its words in the paragraph.
+      expect((await put({ ...question, color: "yellow" }, "asked")).status).toBe(400);
+      expect((await put({ ...highlight("bad", "pink"), color: "purple" }, "bad")).status).toBe(400);
+      expect((await put({ ...highlight("bad", "pink"), color: undefined }, "bad")).status).toBe(400);
+      expect((await put({ ...highlight("bad", "pink"), offset: -1 }, "bad")).status).toBe(400);
+      expect(await notesOf(id)).toEqual([question, highlight("again", "green")]);
     });
 
     it("should not give a book added again what an earlier copy of it left behind", async () => {
@@ -824,6 +846,7 @@ describe("DeepRead API", () => {
         ["/api/ai/explain", "malformed JSON", "{oops", 400, "invalid_request"],
         ["/api/ai/explain", "not an object", "[1]", 400, "invalid_request"],
         ["/api/ai/explain", "unknown mode", explainBody(id, { mode: "shout" }), 400, "invalid_mode"],
+        ["/api/ai/explain", "a highlight, which is never a question", explainBody(id, { mode: "highlight" }), 400, "invalid_mode"],
         ["/api/ai/explain", "unknown lang", explainBody(id, { lang: "xx" }), 400, "invalid_lang"],
         ["/api/ai/explain", "inherited lang key", explainBody(id, { lang: "constructor" }), 400, "invalid_lang"],
         ["/api/ai/explain", "blank selection", explainBody(id, { selection: "  " }), 400, "invalid_request"],

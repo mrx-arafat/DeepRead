@@ -3,10 +3,11 @@
 // The list is small and this DeepRead is the one that writes it, so it is kept in memory; every change still re-reads
 // profiles.json, changes it and writes it back whole, one change at a time.
 import { randomBytes } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { AI_PROVIDERS, AVATAR_PRESETS, isAiProviderId } from "../shared/types.ts";
 import type { AdminProfile, AiProviderId, AvatarPreset, NewProfile, ProfileUpdate, PublicProfile } from "../shared/types.ts";
+import { writeFileAtomic } from "./atomic-write.ts";
 import type { Photo } from "./avatar.ts";
 import { hashCode, samePasskey, verifyCode } from "./codes.ts";
 import { copyBooks } from "./copy-books.ts";
@@ -17,8 +18,8 @@ import { createShares, readerShelf } from "./shares.ts";
 import type { Shares } from "./shares.ts";
 import { scopedStore } from "./storage.ts";
 import type { ObjectStore, StoredObject } from "./storage.ts";
-import { createThrottle } from "./throttle.ts";
-import type { Throttle } from "./throttle.ts";
+import { clientKey, createThrottle } from "./throttle.ts";
+import type { Throttle, ThrottleState } from "./throttle.ts";
 
 /** A profile as profiles.json keeps it. */
 export type StoredProfile = {
@@ -69,6 +70,8 @@ export const MAX_CODE_CHARS = 64;
 export const MAX_PASSKEY_CHARS = 1024;
 
 const PROFILES_KEY = "profiles.json";
+// In the data folder on this computer, never in the store: the locks belong to this server, which counts the tries it saw.
+const LOCKS_FILE = "locks.json";
 const ADMIN_PRESET: AvatarPreset = "smile-blue";
 const PHOTO_FILES: Record<Photo["type"], string> = { "image/webp": "avatar.webp", "image/jpeg": "avatar.jpg" };
 const BOOK_OBJECT = /^profiles\/([^/]+)\/books\/([^/]+)\/(.+)$/;
@@ -194,6 +197,8 @@ export type Profiles = {
   shares: Shares;
   /** The profiles as the admin dashboard shows them: with how many books each keeps and the room they take. */
   describe(profiles: StoredProfile[]): Promise<AdminProfile[]>;
+  /** Waits for the sign-in locks to be on disk (locks.json). Signing in does not wait for them; call this before DeepRead stops. */
+  flush(): Promise<void>;
 };
 
 export function createProfiles(options: ProfilesOptions): Profiles {
@@ -204,8 +209,73 @@ export function createProfiles(options: ProfilesOptions): Profiles {
   const shares = createShares(store);
   // One per profile, keyed by client, so removing a profile forgets its tries in one step.
   const throttles = new Map<string, Throttle>();
+  const locksFile = join(dataDir, LOCKS_FILE);
+  // What locks.json holds as far as this server knows. A write that would leave it as it is is skipped.
+  let writtenLocks = "";
+  // Set when the locks changed and a write is due: the dirty flag, so that signing in never serializes them itself.
+  let lockWriteQueued = false;
+  let savingLocks: Promise<void> = Promise.resolve();
   const changes = createQueue();
   let profiles: StoredProfile[] = [];
+
+  const throttleOf = (id: string): Throttle => {
+    let throttle = throttles.get(id);
+    if (!throttle) {
+      throttle = createThrottle({ tries: WRONG_TRIES, lockMs: LOCK_MS, maxLockMs: MAX_LOCK_MS });
+      throttles.set(id, throttle);
+    }
+    return throttle;
+  };
+
+  // Only profile ids, client keys, counts and times: nothing that opens a profile.
+  function lockState(): string {
+    const locks: Record<string, ThrottleState> = {};
+    for (const [id, throttle] of throttles) {
+      const state = throttle.snapshot();
+      if (Object.keys(state).length > 0) locks[id] = state;
+    }
+    return JSON.stringify({ profiles: locks });
+  }
+
+  /**
+   * Asks for locks.json to be written. Cheap and not awaited: the locks are serialized when the write runs, so tries that
+   * arrive together share one write, and a failed write only warns and never changes a sign-in.
+   */
+  function saveLocks(): void {
+    // One at a time, so an older state never lands last; the write already queued takes the state as it is when it starts.
+    if (lockWriteQueued) return;
+    lockWriteQueued = true;
+    savingLocks = savingLocks.then(async () => {
+      lockWriteQueued = false;
+      let writing = "";
+      try {
+        writing = lockState();
+        if (writing === writtenLocks) return;
+        writtenLocks = writing;
+        await writeFileAtomic(locksFile, `${writing}\n`, 0o600);
+      } catch (error) {
+        // Forgotten, so the next change writes again even if it leaves the same locks.
+        if (writtenLocks === writing) writtenLocks = "";
+        console.warn(`could not save the sign-in locks to ${LOCKS_FILE}, so a restart would lift them:`, error);
+      }
+    });
+  }
+
+  /** Takes the locks of the last run back from locks.json. A file that is missing or damaged means no locks, never a server that will not start. */
+  async function restoreLocks(): Promise<void> {
+    let saved: unknown = null;
+    try {
+      saved = JSON.parse(await readFile(locksFile, "utf8"));
+    } catch (error) {
+      const missing = error instanceof Error && "code" in error && error.code === "ENOENT";
+      if (!missing) console.warn(`could not read ${LOCKS_FILE}, so every sign-in starts with no wrong tries counted:`, error);
+    }
+    const stored = isRecord(saved) && isRecord(saved.profiles) ? saved.profiles : {};
+    const now = Date.now();
+    // Only profiles that are still here: a removal that stopped before the file was saved leaves nothing behind.
+    for (const profile of profiles) throttleOf(profile.id).restore(stored[profile.id], now);
+    writtenLocks = lockState();
+  }
 
   const storeOf = (id: string): ObjectStore => {
     if (!isProfileId(id)) throw new Error(`invalid profile id: ${JSON.stringify(id)}`);
@@ -305,6 +375,7 @@ export function createProfiles(options: ProfilesOptions): Profiles {
         }),
       );
       await moveSingleLibrary(admin);
+      await restoreLocks();
     })().catch((error: unknown) => {
       opened = null;
       throw error;
@@ -356,21 +427,28 @@ export function createProfiles(options: ProfilesOptions): Profiles {
     async signIn(id, code, client) {
       const profile = await find(id);
       if (!profile) return { outcome: "not_found" };
-      let throttle = throttles.get(id);
-      if (!throttle) {
-        throttle = createThrottle({ tries: WRONG_TRIES, lockMs: LOCK_MS, maxLockMs: MAX_LOCK_MS });
-        throttles.set(id, throttle);
-      }
+      const throttle = throttleOf(id);
+      // An IPv6 address counts as its /64, so a guesser cannot get fresh tries by changing address within it.
+      const who = clientKey(client);
       const now = Date.now();
-      const wait = throttle.wait(client, now);
+      const wait = throttle.wait(who, now);
       if (wait > 0) return { outcome: "locked", minutes: Math.ceil(wait / 60_000) };
+      const hadTries = throttle.tracks(who);
       // Counted before the code is checked: tries sent all at once would otherwise all pass the lock while scrypt runs.
-      throttle.count(client, now);
+      throttle.count(who, now);
+      // Saved before the check too when this try locked the client, so a stop while scrypt runs does not lift the lock.
+      const locked = throttle.wait(who, now) > 0;
+      if (locked) saveLocks();
       const right = profile.admin
         ? samePasskey(code, adminPasskey)
         : profile.codeHash !== null && (await verifyCode(code, profile.codeHash));
-      if (!right) return { outcome: "wrong_code" };
-      throttle.clear(client);
+      if (!right) {
+        saveLocks();
+        return { outcome: "wrong_code" };
+      }
+      throttle.clear(who);
+      // A client with no wrong tries before leaves the file as it was: nothing is written then.
+      if (hadTries || locked) saveLocks();
       return { outcome: "signed_in", profile };
     },
 
@@ -496,7 +574,7 @@ export function createProfiles(options: ProfilesOptions): Profiles {
         }),
       );
       if (!removed) return false;
-      throttles.delete(id);
+      if (throttles.delete(id)) saveLocks();
       // A request that began before the removal may hold this library, or be about to ask for it, with an upload or a
       // save under way: closed, it finishes what has started and refuses the rest, so nothing is written back once the
       // files are cleared. Made if there is none yet, so a late caller gets this closed one rather than a fresh one.
@@ -600,6 +678,14 @@ export function createProfiles(options: ProfilesOptions): Profiles {
         bookCount: shelves.get(profile.id)?.bookCount ?? 0,
         used: shelves.get(profile.id)?.used ?? 0,
       }));
+    },
+
+    async flush() {
+      // A write that began while this waited is queued behind the one waited for.
+      for (let tail = savingLocks; ; tail = savingLocks) {
+        await tail;
+        if (tail === savingLocks) return;
+      }
     },
   };
 }

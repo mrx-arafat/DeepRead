@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { formatBytes } from "../shared/bytes.ts";
 import { createAi } from "./ai.ts";
 import { createApp } from "./app.ts";
+import { checkEncryptionKey, createEncryptedStore, refuseEncryptedObjects } from "./encrypted-store.ts";
 import { createOpenRouter } from "./openrouter.ts";
 import { renderCover } from "./cover.ts";
 import type { Accounts } from "./deps.ts";
@@ -35,9 +36,11 @@ const STRONG_PASSKEY_CHARS = 12;
 async function openStore(): Promise<{ config: StorageConfig; store: ObjectStore }> {
   try {
     const config = readStorageConfig(process.env);
-    if (config.kind === "local") return { config, store: createLocalStore(dataDir) };
-    const { openR2Store } = await import("./storage-r2.ts");
-    return { config, store: await openR2Store(config) };
+    const raw = config.kind === "local" ? createLocalStore(dataDir) : await (await import("./storage-r2.ts")).openR2Store(config);
+    await checkEncryptionKey(raw, config.encryptionKey);
+    // Without the key, an encrypted object is refused with the setting to check, never served as a book.
+    const store = config.encryptionKey ? createEncryptedStore(raw, config.encryptionKey) : refuseEncryptedObjects(raw);
+    return { config, store };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     // The sentence already names the setting to check; a stack trace would only bury it.
@@ -100,6 +103,7 @@ const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) =
   const where =
     storage.kind === "r2" ? `the R2 bucket ${storage.bucket}${storage.prefix ? ` (in ${storage.prefix})` : ""}` : "the data folder";
   console.log(`Books are kept in ${where}${storage.limit === null ? "." : `, up to ${formatBytes(storage.limit)}.`}`);
+  if (storage.encryptionKey) console.log("Books are encrypted at rest.");
   if (accounts) void logProfiles(accounts);
   const helper = ai.providers.find((provider) => provider.id === ai.active);
   console.log(
@@ -135,6 +139,8 @@ async function shutdown(): Promise<void> {
   stopping = true;
   llm.close();
   await translator.flush();
+  // The last wrong code is saved before the process goes, so stopping the server never lifts a lock.
+  await accounts?.profiles.flush();
   server.close();
   // Open SSE streams would keep the server alive; they are being cancelled, so do not wait for them.
   setTimeout(() => process.exit(0), 500).unref();

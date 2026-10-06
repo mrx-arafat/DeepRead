@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { copyBooks, copyLibrary } from "./copy-books.ts";
+import { createEncryptedStore } from "./encrypted-store.ts";
 import { createLocalStore } from "./storage.ts";
 import type { ObjectStore } from "./storage.ts";
 
@@ -110,6 +111,14 @@ describe("copyLibrary", () => {
   });
 
   const keys = async (store: ObjectStore) => (await store.list("")).map((object) => object.key).sort();
+
+  it("should say the library is encrypted, not damaged, when profiles.json was encrypted and is read without the key", async () => {
+    await createEncryptedStore(from, Buffer.alloc(32, 3)).write("profiles.json", PROFILES);
+    await expect(copyLibrary(from, to, { tempDir, limit: null })).rejects.toThrow(
+      /^profiles\.json is encrypted.*DEEPREAD_ENCRYPTION_KEY/,
+    );
+    expect(await keys(to)).toEqual([]);
+  });
 
   it("should copy every profile with its books and photo, profiles.json last, and leave the source alone", async () => {
     const before = await keys(from);

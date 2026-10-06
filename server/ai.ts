@@ -7,7 +7,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AI_PROVIDERS, isAiProviderId, type AiProviderId, type AiStatus } from "../shared/types.ts";
 import { writeFileAtomic } from "./atomic-write.ts";
-import { createClaudeLlm, createCodexLlm, LlmError } from "./llm.ts";
+import { createClaudeLlm, createCodexLlm, helperEnv, LlmError } from "./llm.ts";
 import type { CliLlm, Llm, LlmRequest } from "./llm.ts";
 import type { OpenRouter } from "./openrouter.ts";
 
@@ -60,7 +60,7 @@ export type AiOptions = {
 
 function onPath(bin: string): Promise<boolean> {
   return new Promise((resolve) => {
-    execFile(bin, ["--version"], { timeout: 10_000 }, (error) => resolve(!error));
+    execFile(bin, ["--version"], { timeout: 10_000, env: helperEnv() }, (error) => resolve(!error));
   });
 }
 

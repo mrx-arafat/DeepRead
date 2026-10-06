@@ -215,7 +215,8 @@ const newestFirst = (a: BookSummary, b: BookSummary): number => b.addedAt.locale
 
 /**
  * The reader's shelf: their own library, with the books shared with them alongside, read through their owners'
- * libraries. Anything that would change a shared book itself is refused; taking it off the shelf ends the share.
+ * libraries. Anything that would change a shared book itself is refused, and so is its PDF, which stays its owner's;
+ * taking it off the shelf ends the share.
  */
 export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Library {
   const { shares } = deps;
@@ -270,9 +271,8 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
     },
 
     async pdf(id) {
-      if (isBookId(id)) return own.pdf(id);
-      const from = await source(id);
-      return from ? from.library.pdf(from.bookId) : null;
+      // A shared book is read here, in its chapters; the owner's own file never leaves their library.
+      return isBookId(id) ? own.pdf(id) : null;
     },
 
     async cover(id) {

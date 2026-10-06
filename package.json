@@ -12,6 +12,7 @@
     "build": "vite build",
     "start": "NODE_ENV=production node server/index.ts",
     "storage:migrate": "node scripts/storage-migrate.ts",
+    "storage:encrypt": "node scripts/storage-encrypt.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

@@ -2,7 +2,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { join } from "node:path";
-import type { QuickTranslation } from "../shared/types.ts";
+import type { QuickTranslation, StorageView } from "../shared/types.ts";
 import type { AppEnv } from "./app-env.ts";
 import type { AppDeps } from "./deps.ts";
 import { apiError, invalidBody, isLangCode, LANG_HELP, signInRequired } from "./http.ts";
@@ -31,7 +31,11 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   if (deps.accounts) app.route("/api/admin", adminRoutes(deps.accounts, deps.llm));
   // The admin's OpenRouter key and model: only with profiles on, where there is an admin to hold them (with one library, .env does it).
   if (deps.accounts && deps.openrouter) app.route("/api/admin/openrouter", openrouterRoutes({ openrouter: deps.openrouter, llm: deps.llm }));
-  app.get("/api/storage", async (c) => c.json(await c.var.library.usage()));
+  // Not `total`: it adds up every profile's books, and one reader's business is their own.
+  app.get("/api/storage", async (c) => {
+    const { used, limit, where } = await c.var.library.usage();
+    return c.json({ used, limit, where } satisfies StorageView);
+  });
 
   app.get("/api/translate", async (c) => {
     const text = (c.req.query("q") ?? "").trim();

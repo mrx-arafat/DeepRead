@@ -2,7 +2,8 @@
 // helper that needs nothing on the reader's computer, so a reader with no Claude Code or Codex still gets explanations.
 // The key comes from OPENROUTER_API_KEY in .env, or from the admin page, which wins; the model likewise from
 // OPENROUTER_MODEL. What the admin saves is kept in <dataDir>/openrouter.json, readable by its owner only, and the key
-// is never sent to a browser: the admin page is told only its last four characters.
+// is never sent to a browser: the admin page is told only its last four characters. Beside it, openrouter-usage.json holds
+// each reader's count of requests today (reader ids and numbers only), so the daily limit survives a restart.
 // Like the command-line helpers it gives the model no tools, so text in a book cannot make it act on anything.
 import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -91,6 +92,23 @@ function readSaved(file: string): Saved {
 
 const isLimit = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_DAILY_LIMIT;
 
+/** The day's counts as the last run left them. A file that is missing, unreadable or makes no sense is a day with no requests yet. */
+function readUsage(file: string): { day: string; counts: Map<string, number> } {
+  const counts = new Map<string, number>();
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+    if (typeof parsed !== "object" || parsed === null) return { day: "", counts };
+    const { day, counts: kept } = parsed as Record<string, unknown>;
+    if (typeof day !== "string" || typeof kept !== "object" || kept === null) return { day: "", counts };
+    for (const [reader, count] of Object.entries(kept)) {
+      if (typeof count === "number" && Number.isInteger(count) && count > 0) counts.set(reader, count);
+    }
+    return { day, counts };
+  } catch {
+    return { day: "", counts: new Map() };
+  }
+}
+
 const redact = (text: string): string => text.replace(KEY_IN_TEXT, "[key]");
 
 /** The text of one `data:` line at a time from a server-sent event stream; comments and blank lines are skipped. */
@@ -146,10 +164,14 @@ export function createOpenRouter(options: OpenRouterOptions): OpenRouter {
   const gate = createGate(MAX_CONCURRENT);
   const now = options.now ?? Date.now;
   const retryDelays = options.retryDelaysMs ?? RETRY_DELAYS_MS;
-  // SHORTCUT: each reader's requests today are counted in memory, so a restart gives everyone a fresh day. Keep them in a
-  // file if the limit must hold across restarts.
-  let day = "";
-  const usedToday = new Map<string, number>();
+  // Each reader's requests today are kept in <dataDir>/openrouter-usage.json, so a restart does not give anyone a fresh day.
+  // What was kept for an earlier day is dropped by the first look at today.
+  // SHORTCUT: one server counts for the data folder; two sharing it each count alone and the last write wins. Count in a
+  // shared store if a second server is ever pointed at one folder.
+  const usageFile = join(options.dataDir, "openrouter-usage.json");
+  const stored = readUsage(usageFile);
+  let day = stored.day;
+  const usedToday = stored.counts;
   const today = (): Map<string, number> => {
     const date = new Date(now()).toISOString().slice(0, 10);
     if (date !== day) {
@@ -157,6 +179,25 @@ export function createOpenRouter(options: OpenRouterOptions): OpenRouter {
       usedToday.clear();
     }
     return usedToday;
+  };
+  // Writes go one at a time, so a slow disk cannot let an older count land last. They never wait on a request: the count in
+  // memory is what admit() goes by.
+  let writing = Promise.resolve();
+  let waiting = false;
+  const persist = (): void => {
+    // A write already waiting for its turn will carry this count too.
+    if (waiting) return;
+    waiting = true;
+    writing = writing.then(async () => {
+      waiting = false;
+      const body = `${JSON.stringify({ day, counts: Object.fromEntries(usedToday) })}\n`;
+      try {
+        await mkdir(options.dataDir, { recursive: true });
+        await writeFileAtomic(usageFile, body);
+      } catch (error) {
+        console.warn(`DeepRead could not save today's count of API model requests: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
   };
   let listing: { at: number; models: OpenRouterModel[] } | null = null;
 
@@ -383,6 +424,7 @@ export function createOpenRouter(options: OpenRouterOptions): OpenRouter {
       );
     }
     counts.set(reader, used + 1);
+    persist();
   }
 
   let kept: { key: string; at: number; value: { used: number; limit: number | null } | null } | null = null;

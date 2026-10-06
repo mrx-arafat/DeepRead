@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { DEFAULT_LANG, LANGUAGES, type LangCode } from "../shared/types.ts";
+import { DEFAULT_LANG, HIGHLIGHT_COLORS, LANGUAGES, type HighlightColor, type LangCode } from "../shared/types.ts";
 
 /** The page colours, as on an e-reader: white paper, warm sepia paper, or light text on black. */
 export const THEMES = ["light", "sepia", "dark"] as const;
@@ -28,6 +28,8 @@ export type Prefs = {
   voice: (typeof VOICES)[number];
   /** Read-aloud speed, 1 = normal. */
   rate: number;
+  /** The highlighter colour used last: the selection bar's Highlight button marks with it. */
+  highlight: HighlightColor;
 };
 
 export const FONT_SIZES = { min: 15, max: 26 } as const;
@@ -54,6 +56,7 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
     layout: "scroll",
     voice: "device",
     rate: 1,
+    highlight: "yellow",
   };
   const merged = { ...defaults, ...(typeof saved === "object" && saved !== null ? saved : {}) } as Prefs;
   // Own keys only: `in` would take an inherited name such as "toString" for a language.
@@ -70,6 +73,7 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
   merged.align = oneOf(ALIGNS, merged.align, defaults.align);
   merged.layout = oneOf(LAYOUTS, merged.layout, defaults.layout);
   merged.voice = oneOf(VOICES, merged.voice, defaults.voice);
+  merged.highlight = oneOf(HIGHLIGHT_COLORS, merged.highlight, defaults.highlight);
   return merged;
 }
 

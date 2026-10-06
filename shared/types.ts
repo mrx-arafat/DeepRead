@@ -219,17 +219,39 @@ export type ExplainMode =
   /** Explain in the reader's own language. */
   | "native";
 
-/** A question the reader asked about a passage. Kept with the book; the server caches the answer. */
-export type Note = {
+/** The highlighter colours a reader can mark a passage with, in the order the selection bar offers them. */
+export const HIGHLIGHT_COLORS = ["yellow", "green", "blue", "pink"] as const;
+
+export type HighlightColor = (typeof HIGHLIGHT_COLORS)[number];
+
+export function isHighlightColor(value: unknown): value is HighlightColor {
+  return typeof value === "string" && (HIGHLIGHT_COLORS as readonly string[]).includes(value);
+}
+
+/** What every note keeps: the passage it is about. */
+type NotePassage = {
   id: string;
   chapterId: string;
   blockId: string;
   /** The text the reader selected. */
   quote: string;
-  mode: ExplainMode;
-  /** The language it was asked in. A card keeps it: picking another language later must not ask again. */
+  /** The language it was made in. A question card keeps it: picking another language later must not ask again. */
   lang: LangCode;
 };
+
+/** A question the reader asked about a passage, shown as a card in the margin. The server caches the answer. */
+export type QuestionNote = NotePassage & { mode: ExplainMode };
+
+/** A passage the reader marked in a highlighter colour. Theirs alone: it never goes to the AI. */
+export type HighlightNote = NotePassage & {
+  mode: "highlight";
+  color: HighlightColor;
+  /** Where the quote starts in block `blockId`'s text, in characters: the same words can come twice in a paragraph. */
+  offset: number;
+};
+
+/** What the reader keeps with a book, one change at a time (shared/notes.ts): their questions and their highlights. */
+export type Note = QuestionNote | HighlightNote;
 
 /** How much room the books take, where they are kept, and the most they may take (null: no limit). */
 export type StorageUsage = {
@@ -240,6 +262,9 @@ export type StorageUsage = {
   limit: number | null;
   where: "local" | "r2";
 };
+
+/** What a reader is told about the room: their own books only, never what other profiles keep. */
+export type StorageView = Omit<StorageUsage, "total">;
 
 /** The built-in pictures a profile can wear. src/profiles/avatars.tsx draws each one. */
 export const AVATAR_PRESETS = [

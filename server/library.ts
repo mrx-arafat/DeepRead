@@ -97,14 +97,12 @@ export class StorageFullError extends Error {
   readonly needed: number;
 
   constructor(usage: StorageUsage, needed: number) {
-    // With profiles the limit is shared, so other readers' books can be what fills it.
-    const taken =
-      usage.total > usage.used
-        ? `everyone's books together take ${formatBytes(usage.total)} (yours ${formatBytes(usage.used)})`
-        : `your books take ${formatBytes(usage.total)}`;
-    super(
-      `There is no room for it: ${taken} of the ${formatBytes(usage.limit ?? 0)} they may use, and this one needs ${formatBytes(needed)}. Remove a book to make room.`,
-    );
+    // With profiles the limit is shared, so other readers' books can be what fills it. The message says so without
+    // saying how much they keep: a reader is told their own books, never anyone else's.
+    const yours = `your books take ${formatBytes(usage.used)}`;
+    const room =
+      usage.total > usage.used ? `the space everyone shares is full (${yours})` : `${yours} of the ${formatBytes(usage.limit ?? 0)} they may use`;
+    super(`There is no room for it: ${room}, and this one needs ${formatBytes(needed)}. Remove a book to make room.`);
     this.name = "StorageFullError";
     this.usage = usage;
     this.needed = needed;

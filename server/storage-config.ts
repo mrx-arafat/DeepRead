@@ -2,10 +2,12 @@
 // .env.example explains each setting to the person filling it in.
 
 export type StorageConfig =
-  | { kind: "local"; limit: number | null }
+  | { kind: "local"; limit: number | null; encryptionKey: Buffer | null }
   | {
       kind: "r2";
       limit: number | null;
+      /** DEEPREAD_ENCRYPTION_KEY: 32 bytes that encrypt everything in the store (encrypted-store.ts), or null for none. */
+      encryptionKey: Buffer | null;
       endpoint: string;
       bucket: string;
       accessKeyId: string;
@@ -63,11 +65,30 @@ function readLimit(env: NodeJS.ProcessEnv): number | null {
   return limit;
 }
 
+const MAKE_KEY = "Make one with: openssl rand -hex 32";
+
+/** 32 bytes as 64 hex characters or in base64, or null when unset. Its own random bytes, never derived from another secret. */
+function readEncryptionKey(env: NodeJS.ProcessEnv): Buffer | null {
+  const text = env.DEEPREAD_ENCRYPTION_KEY?.trim() ?? "";
+  if (text === "") return null;
+  if (/[<>]/.test(text)) {
+    throw new ConfigError(`DEEPREAD_ENCRYPTION_KEY still has the example value from .env.example. ${MAKE_KEY}`);
+  }
+  if (/^[0-9a-f]{64}$/i.test(text)) return Buffer.from(text, "hex");
+  // 43 characters hold 32 bytes; `openssl rand -base64 32` pads them to 44 with "=".
+  if (/^[A-Za-z0-9+/]{43}=?$/.test(text)) return Buffer.from(text, "base64");
+  // The value is a secret, so the message gives its length and never the value.
+  throw new ConfigError(
+    `DEEPREAD_ENCRYPTION_KEY is not a key DeepRead can use (it has ${text.length} characters): it must be 32 random bytes, written as 64 hex characters or in base64. ${MAKE_KEY}`,
+  );
+}
+
 /** Throws ConfigError when the settings cannot work. */
 export function readStorageConfig(env: NodeJS.ProcessEnv): StorageConfig {
   const limit = readLimit(env);
+  const encryptionKey = readEncryptionKey(env);
   const kind = (env.DEEPREAD_STORAGE?.trim() || "local").toLowerCase();
-  if (kind === "local") return { kind, limit };
+  if (kind === "local") return { kind, limit, encryptionKey };
   if (kind !== "r2") {
     throw new ConfigError(`DEEPREAD_STORAGE is "${env.DEEPREAD_STORAGE}". Set it to "local" or "r2".`);
   }
@@ -93,6 +114,7 @@ export function readStorageConfig(env: NodeJS.ProcessEnv): StorageConfig {
   return {
     kind,
     limit,
+    encryptionKey,
     endpoint,
     bucket: env.DEEPREAD_R2_BUCKET!.trim(),
     accessKeyId: env.DEEPREAD_R2_ACCESS_KEY_ID!.trim(),

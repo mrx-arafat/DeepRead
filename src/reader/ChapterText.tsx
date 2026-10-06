@@ -1,5 +1,5 @@
 import { memo, useEffect, useEffectEvent, useMemo, useRef, type MouseEvent } from "react";
-import type { Block, Note } from "../../shared/types.ts";
+import type { Block, QuestionNote } from "../../shared/types.ts";
 import { headingTags } from "./book.ts";
 import { NoteCard } from "./NoteCard.tsx";
 import { blockOf, termSpan, wordRangeAtPoint } from "./textRanges.ts";
@@ -16,8 +16,8 @@ export type TextActions = {
 
 type Props = {
   blocks: Block[];
-  /** Notes for the whole book; each shows beside its own block. */
-  notes: Note[];
+  /** Questions for the whole book; each shows beside its own block. */
+  notes: QuestionNote[];
   bookId: string;
   chapterId: string;
   actions: TextActions;

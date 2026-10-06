@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { formatBytes } from "../shared/bytes.ts";
 import { LANGUAGES } from "../shared/types.ts";
-import type { BookSummary, BookUpdate, StorageUsage } from "../shared/types.ts";
+import type { BookSummary, BookUpdate, StorageView } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
@@ -30,7 +30,7 @@ export function LibraryPage() {
   // Null with no profiles (nobody to show or switch) and while nobody is signed in (App shows the profiles then).
   const session = info?.mode === "profiles" ? info.session : null;
   const [books, setBooks] = useState<BookSummary[] | null>(null);
-  const [storage, setStorage] = useState<StorageUsage | null>(null);
+  const [storage, setStorage] = useState<StorageView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -271,9 +271,8 @@ export function LibraryPage() {
             </ul>
             {storage && (
               <p className="library-storage">
-                Your books take {formatBytes(storage.used)}
-                {/* Only what is kept: the limit is enforced on upload, and its size is not the reader's business. */}
-                {storage.total !== storage.used && `; everyone's together take ${formatBytes(storage.total)}`},{" "}
+                {/* Only this reader's books: the limit is enforced on upload, and what others keep is not their business. */}
+                Your books take {formatBytes(storage.used)},{" "}
                 {storage.where === "r2" ? "kept in Cloudflare R2" : "kept on this computer"}.
               </p>
             )}

@@ -17,6 +17,8 @@ const [directive] = input.split("\\n");
 const [mode, ...pairs] = directive.split(" ");
 const opts = Object.fromEntries(pairs.map((p) => p.split("=")));
 const fixture = (name) => readFileSync(join(process.env.FAKE_FIXTURES, name), "utf8");
+// "echo present=A,B": which of those variables this process was started with.
+const present = (opts.present ?? "").split(",").filter((name) => name !== "" && name in process.env);
 if (process.argv[2] === "exec") {
   // Codex.
   const args = process.argv.slice(3);
@@ -38,6 +40,7 @@ if (process.argv[2] === "exec") {
       prompt: input.slice(directive.length + 1),
       cwd: process.cwd(),
       codexHome: process.env.CODEX_HOME,
+      present,
     };
     console.log(JSON.stringify({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: JSON.stringify(info) } }));
     console.log(JSON.stringify({ type: "turn.completed", usage: {} }));
@@ -63,6 +66,7 @@ if (process.argv[2] === "exec") {
     maxThinking: process.env.MAX_THINKING_TOKENS,
     effort: process.env.CLAUDE_CODE_EFFORT_LEVEL,
     cwd: process.cwd(),
+    present,
   };
   const text = JSON.stringify(info);
   console.log(JSON.stringify({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } } }));
@@ -150,6 +154,28 @@ describe("createClaudeLlm", () => {
     });
     expect(word.prompt).toBe(hugePrompt);
     expectPrivateDirectoryGone(word.cwd);
+  });
+
+  it("should keep DeepRead's own secrets out of the environment of both AI helpers", async () => {
+    const secrets = [
+      "DEEPREAD_ENCRYPTION_KEY",
+      "DEEPREAD_R2_ACCESS_KEY_ID",
+      "DEEPREAD_R2_SECRET_ACCESS_KEY",
+      "OPENROUTER_API_KEY",
+      "ADMIN_PASSKEY",
+      "DEEPREAD_REMOTE_KEY",
+    ];
+    try {
+      for (const name of secrets) vi.stubEnv(name, "fake-secret");
+      const ask = request(`echo present=${secrets.join(",")},FAKE_FIXTURES\n`);
+      const claude = JSON.parse(await completeText(createClaudeLlm({ bin: fakeBin }), ask));
+      const codex = JSON.parse(await completeText(createCodexLlm({ bin: fakeBin, home: join(workDir, "codex-home") }), ask));
+      // FAKE_FIXTURES shows the rest of the environment still gets through.
+      expect(claude.present).toEqual(["FAKE_FIXTURES"]);
+      expect(codex.present).toEqual(["FAKE_FIXTURES"]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("should run every other task at its own effort level too, whatever the reader's Claude Code setting is", async () => {

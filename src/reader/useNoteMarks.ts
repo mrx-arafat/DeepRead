@@ -1,18 +1,28 @@
 import { useEffect, useState } from "react";
-import type { Chapter, Note } from "../../shared/types.ts";
+import { HIGHLIGHT_COLORS } from "../../shared/types.ts";
+import type { Chapter, HighlightNote, Note, QuestionNote } from "../../shared/types.ts";
 import { readableBlocks } from "./book.ts";
-import { quoteSpans, rangeInBlock, setHighlight } from "./textRanges.ts";
+import { highlightMark, quoteSpans, rangeInBlock, setHighlight } from "./textRanges.ts";
 
 /** The note a pointer or focus event is about: the card it happened in, if any. */
 function noteOf(target: EventTarget | null): string | null {
   return target instanceof Element ? (target.closest<HTMLElement>("[data-note]")?.dataset.note ?? null) : null;
 }
 
+/** The ranges a note's passage covers in the chapters on the page: none while its chapter is not there. */
+function rangesOf(note: Note, chapters: Chapter[]): Range[] {
+  const chapter = chapters.find((item) => item.id === note.chapterId);
+  const offset = note.mode === "highlight" ? note.offset : undefined;
+  const spans = chapter ? quoteSpans(readableBlocks(chapter), note.blockId, note.quote, offset) : [];
+  return spans.map(({ blockId, span }) => rangeInBlock(blockId, span)).filter((range) => range !== null);
+}
+
 /**
  * Keeps the passage each note explains marked in the text while the note exists, so the reader can see which
  * words a card belongs to. Pointing at a card, or moving focus into it, marks its own passage more strongly.
+ * Highlights are painted in their own colours, each under a mark of its own.
  */
-export function useNoteMarks(notes: Note[], chapters: Chapter[]): void {
+export function useNoteMarks(notes: QuestionNote[], highlights: HighlightNote[], chapters: Chapter[]): void {
   const [hovered, setHovered] = useState<string | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
 
@@ -34,12 +44,7 @@ export function useNoteMarks(notes: Note[], chapters: Chapter[]): void {
   }, []);
 
   useEffect(() => {
-    const marks = notes.map((note) => {
-      const chapter = chapters.find((item) => item.id === note.chapterId);
-      const spans = chapter ? quoteSpans(readableBlocks(chapter), note.blockId, note.quote) : [];
-      const ranges = spans.map(({ blockId, span }) => rangeInBlock(blockId, span)).filter((range) => range !== null);
-      return { id: note.id, ranges };
-    });
+    const marks = notes.map((note) => ({ id: note.id, ranges: rangesOf(note, chapters) }));
     const active = hovered ?? focused;
     setHighlight("dr-note", marks.flatMap((mark) => mark.ranges));
     setHighlight("dr-note-active", marks.find((mark) => mark.id === active)?.ranges ?? null);
@@ -48,4 +53,16 @@ export function useNoteMarks(notes: Note[], chapters: Chapter[]): void {
       setHighlight("dr-note-active", null);
     };
   }, [notes, chapters, hovered, focused]);
+
+  // Apart from the note marks, so pointing at a card does not paint every highlight again. Painted again whenever a
+  // chapter comes onto the page or goes, so a highlight in it shows.
+  useEffect(() => {
+    for (const color of HIGHLIGHT_COLORS) {
+      const ranges = highlights.filter((highlight) => highlight.color === color).flatMap((highlight) => rangesOf(highlight, chapters));
+      setHighlight(highlightMark(color), ranges);
+    }
+    return () => {
+      for (const color of HIGHLIGHT_COLORS) setHighlight(highlightMark(color), null);
+    };
+  }, [highlights, chapters]);
 }

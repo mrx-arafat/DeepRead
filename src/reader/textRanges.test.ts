@@ -171,6 +171,14 @@ describe("quoteSpans", () => {
     expect(marked("b1", "Not in the book")).toEqual([]);
     expect(marked("gone", "This question is hard.")).toEqual([]);
   });
+
+  it("should mark the words where the reader chose them when they come twice in a paragraph", () => {
+    const twice = [block("t1", "The table is brown; the table is hard.")];
+    const second = twice[0]!.text.lastIndexOf("table is");
+    expect(quoteSpans(twice, "t1", "table is", second)).toEqual([{ blockId: "t1", span: { start: second, end: second + 8 } }]);
+    // A place that no longer holds those words (the book was read again differently) falls back to the first.
+    expect(quoteSpans(twice, "t1", "table is", 2)).toEqual([{ blockId: "t1", span: { start: 4, end: 12 } }]);
+  });
 });
 
 describe("parseSections", () => {

@@ -1,6 +1,7 @@
 // Copies books from one store into another: how a library on this computer moves into an R2 bucket.
 import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { startsSealed } from "./encrypted-store.ts";
 import { isRecord } from "./http.ts";
 import { isBookId } from "./library.ts";
 import { scopedStore } from "./storage.ts";
@@ -116,6 +117,12 @@ const sizeOf = async (store: ObjectStore, prefix: string): Promise<number> =>
 
 /** The profiles in a profiles.json, read as little as needed: copying them must not drop one because of a field added later. */
 function profilesIn(data: Buffer): ProfileRef[] {
+  // Read from a store opened without the key, an encrypted list is not damaged, and mending it by hand would ruin it.
+  if (startsSealed(data)) {
+    throw new Error(
+      `${PROFILES_KEY} is encrypted, so the profiles cannot be read as they are. Set DEEPREAD_ENCRYPTION_KEY to the key the library was encrypted with, so both sides are read and written through it, and run this again.`,
+    );
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(data.toString("utf8"));
