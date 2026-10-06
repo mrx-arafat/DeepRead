@@ -141,7 +141,36 @@ A review pass found and fixed these:
 - Removing a book failed even though the book was already gone; the files left over are now cleared at the next start.
 - PDF streams were not cancelled when the client left.
 
-### 6. Known gaps to keep in mind
+### 6. Profiles and the admin dashboard (commit `63af8ce`)
+
+Setting `ADMIN_PASSKEY` (and `ADMIN_NAME`) in `.env` turns profiles on; without it DeepRead stays one library with no sign-in.
+Everyone picks a profile on **Who's reading?** and types its code, and the browser stays signed in for 30 days.
+Each profile has its own library under `profiles/<id>/` in the store; `profiles.json` lists them; the storage limit is shared.
+The admin's profile signs in with `ADMIN_PASSKEY` and opens `/admin`: add, edit and delete profiles, upload photos, **Read as** a profile, and **Sign out everywhere**.
+Server: `server/profiles.ts`, `sessions.ts`, `session-token.ts`, `codes.ts`, `throttle.ts`, `avatar.ts`, `routes-session.ts`, `routes-admin.ts`, `app-env.ts`.
+Client: `src/profiles/`, `src/admin/`, and `src/reader/noteSync.ts` (the notes outbox is kept per profile).
+Tests: `server/profiles-app.test.ts`, `server/codes.test.ts`, `server/session-token.test.ts`, `server/throttle.test.ts`, `server/avatar.test.ts`, `src/admin/profileText.test.ts`, and the profile cases in `src/reader/noteSync.test.ts`.
+A security review found nine issues and all were fixed before the commit: the migration deleting skipped books, notes leaking between profiles on a shared browser, a lockout anyone could use against the admin, any profile switching the AI helper, notes lost on a 401, uploads written back after a profile was removed, a missing route change for storage:migrate, image decompression bombs, and no way to end a profile's sessions.
+It was checked end to end against the real R2 bucket over the API (admin sign-in, a test profile's create, read, update and delete, isolation, Read as, lockout); the screens themselves have not been looked at in a browser yet.
+
+## Next up
+
+Two small follow-ups from the profiles review, each about ten lines:
+
+1. **Lock IPv6 guessers by network, not by address.**
+   Wrong codes are counted per profile and per client, and the client is the full `cf-connecting-ip`.
+   An attacker on IPv6 can rotate through the addresses of one /64 network and get five fresh tries on each.
+   In `server/routes-session.ts` (`clientOf`), key an IPv6 address by its first four groups (its /64), and keep IPv4 as the whole address.
+   Add a case to the lockout test in `server/profiles-app.test.ts`: two addresses in the same /64 share one count.
+2. **Stop the "Kept ... in books/" line repeating after a crash mid-move.**
+   When profiles are first turned on, the books from before move into the admin's profile: copied first, then removed from `books/`.
+   If DeepRead stops between the copy and the removal, the next start sees the book as already there, keeps the identical root copy, and logs the "Kept" line on every start.
+   In `server/profiles.ts` (the migration), when a skipped book's root copy is identical to the admin's (same `meta.json` `sha256`, and its `notes.json` and progress add nothing the admin's lacks), remove the root copy as well; otherwise keep it as today.
+   Add a test next to "should leave a book from before profiles where it is when the admin's profile already has one with its id".
+
+Before deploying: change `ADMIN_PASSKEY` to a long passphrase, rotate the R2 access key, and remove the **Test Reader** profile from `/admin`.
+
+### 7. Known gaps to keep in mind
 
 - Pages: page counts are estimates; a page can end one line earlier after the window height changes; read-aloud started mid-page first turns to the page where the sentence begins.
 - Library: two books can share a cloth colour (it is a hash of the title); the Continue card repeats the only book when the library holds one.
@@ -151,3 +180,7 @@ A review pass found and fixed these:
 - Notes: two tabs of the same browser that are both offline share one outbox key, and can overwrite each other's waiting changes.
 - Storage: the space used is computed by listing the bucket folder on each upload, which is fine for a personal library.
 - Storage: the R2 secret key lives in `.env.local` on the computer.
+- Profiles: `profiles.json` is held in memory, so run one DeepRead process per store; two servers on one bucket would see stale profiles.
+- Profiles: the wrong-code lock lives in the running server, so a restart clears it.
+- Profiles: codes set before the minimum rose to 6 characters still sign in until the admin changes them.
+- Profiles: the picker, the admin dashboard and photo upload have not been checked in a browser yet.
