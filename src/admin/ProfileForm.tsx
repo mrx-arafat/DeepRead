@@ -9,12 +9,15 @@ import { MAX_CODE_CHARS, MIN_CODE_CHARS, PHOTO_TYPES, codeProblemFor, photoProbl
 
 // The same limit the server enforces, so the form never lets the admin type what would be refused.
 const MAX_NAME_CHARS = 40;
+const MAX_BADGE_CHARS = 20;
 
 /** What the form hands over on Save. An empty code means "keep the current one" when editing. */
 export type ProfileInput = {
   name: string;
   code: string;
   preset: AvatarPreset;
+  /** Empty for none (the admin's is then "Admin"). */
+  badge: string;
   photo: File | null;
   removePhoto: boolean;
 };
@@ -33,12 +36,15 @@ export function ProfileForm({ profile, saving, onSave, onClose }: Props) {
   const codeId = useId();
   const codeHintId = useId();
   const codeErrorId = useId();
+  const badgeId = useId();
+  const badgeHintId = useId();
   const photoHintId = useId();
   const nameInput = useRef<HTMLInputElement>(null);
   const codeInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(profile?.name ?? "");
   const [code, setCode] = useState("");
+  const [badge, setBadge] = useState(profile?.badge ?? "");
   const [preset, setPreset] = useState<AvatarPreset>(profile?.avatar.preset ?? AVATAR_PRESETS[0]);
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -96,14 +102,15 @@ export function ProfileForm({ profile, saving, onSave, onClose }: Props) {
       return;
     }
     const trimmed = name.trim();
-    if (profile && trimmed === profile.name && code === "" && preset === profile.avatar.preset && !photo && !removePhoto) {
+    const unchanged = profile && trimmed === profile.name && code === "" && preset === profile.avatar.preset;
+    if (unchanged && badge.trim() === (profile.badge ?? "") && !photo && !removePhoto) {
       onClose();
       return;
     }
     setError(null);
     setPhotoError(null);
     try {
-      await onSave({ name: trimmed, code, preset, photo, removePhoto });
+      await onSave({ name: trimmed, code, preset, badge: badge.trim(), photo, removePhoto });
       onClose();
     } catch (err) {
       setError(reason(err, "Your changes could not be saved. Please try again."));
@@ -181,6 +188,26 @@ export function ProfileForm({ profile, saving, onSave, onClose }: Props) {
           )}
         </div>
       )}
+
+      <div className="shelf-field">
+        <label htmlFor={badgeId}>
+          Badge <span className="shelf-optional">(optional)</span>
+        </label>
+        <input
+          id={badgeId}
+          value={badge}
+          maxLength={MAX_BADGE_CHARS}
+          aria-describedby={badgeHintId}
+          readOnly={saving}
+          autoComplete="off"
+          onChange={(event) => setBadge(event.target.value)}
+        />
+        <p id={badgeHintId} className="admin-hint">
+          {profile?.admin
+            ? 'A small label beside the name on the profile list. Leave empty to show "Admin".'
+            : "A small label beside the name on the profile list, such as Editor or Kid. Leave empty for none."}
+        </p>
+      </div>
 
       <fieldset className="admin-picture" disabled={saving}>
         <legend>Picture</legend>

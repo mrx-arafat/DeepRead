@@ -436,7 +436,8 @@ Do not share it.
 When DeepRead starts it checks the bucket.
 If a setting is wrong, such as a bad key, a missing bucket or no way to reach Cloudflare, it stops and says what is wrong in a plain sentence.
 Otherwise the start-up message says where your books are kept and what the limit is.
-Under the shelf, the library shows a quiet line such as "Your books take 1.2 GB of 8 GB, kept in Cloudflare R2." (or "kept on this computer"; with no limit there is no "of ..." part).
+Under the shelf, the library shows a quiet line such as "Your books take 1.2 GB, kept in Cloudflare R2." (or "kept on this computer").
+It shows what is kept and never how much room the limit leaves.
 
 When adding a book would go past the limit, DeepRead does not add it.
 The library says the book could not be added because there is no room, how much your books take of what they may use, and how much the new book needs.
@@ -524,7 +525,7 @@ Your own profile, marked with a green check, opens without a code; anyone else's
 - Its own code, which it types to sign in.
 - The same storage limit as everyone else.
   `DEEPREAD_STORAGE_LIMIT` is shared by all profiles, so the books of every profile count toward it together.
-  The line under the shelf shows both numbers, such as "Your books take 1.2 GB; everyone's together take 3.4 GB of 8 GB, kept on this computer."
+  The line under the shelf shows both numbers, such as "Your books take 1.2 GB; everyone's together take 3.4 GB, kept on this computer."
 
 ### The admin dashboard
 
@@ -535,8 +536,10 @@ From there you can:
 
 - **Add a profile.**
   Give it a name, a code of 6 to 64 characters, and one of the built-in pictures.
+  You can also give it a badge: a small label of up to 20 characters, such as Editor or Kid, shown beside its name on **Who's reading?**.
 - **Edit a profile.**
   Rename it, give it a new code, pick another picture, upload a photo (a PNG, JPEG or WebP of up to 5 MB), or remove the photo.
+  Change or clear its badge, yours included: the admin's badge reads **Admin** until you choose another word, and goes back to it when you clear it.
   A new code signs that profile out everywhere.
 - **Sign a profile out everywhere.**
   Every phone and computer it is signed in on goes back to **Who's reading?**.

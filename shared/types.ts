@@ -190,6 +190,8 @@ export type PublicProfile = {
   avatar: ProfileAvatar;
   /** The admin's profile: its code is ADMIN_PASSKEY, and signing in with it opens /admin. */
   admin: boolean;
+  /** The small label shown beside the name: whatever the admin gave this profile, "Admin" for the admin's until then, else none. */
+  badge: string | null;
 };
 
 /** A profile as the admin dashboard shows it. */
@@ -216,10 +218,10 @@ export type Session = {
  */
 export type SessionInfo = { mode: "single" } | { mode: "profiles"; session: Session | null };
 
-export type NewProfile = { name: string; code: string; preset: AvatarPreset };
+export type NewProfile = { name: string; code: string; preset: AvatarPreset; badge?: string };
 
-/** A missing field stays as it is. A new code signs that profile out everywhere. */
-export type ProfileUpdate = { name?: string; code?: string; preset?: AvatarPreset };
+/** A missing field stays as it is; an empty badge takes the badge away. A new code signs that profile out everywhere. */
+export type ProfileUpdate = { name?: string; code?: string; preset?: AvatarPreset; badge?: string };
 
 export type ExplainRequest = {
   bookId: string;

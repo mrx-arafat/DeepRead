@@ -127,7 +127,7 @@ describe("DeepRead with profiles", () => {
 
   it("should show the profiles but no books when nobody is signed in", async () => {
     expect(await json<PublicProfile[]>(call("GET", "/api/profiles"))).toEqual([
-      { id: admin, name: "Arafat", avatar: { preset: "smile-blue", photo: null }, admin: true },
+      { id: admin, name: "Arafat", avatar: { preset: "smile-blue", photo: null }, admin: true, badge: "Admin" },
     ]);
     expect(admin).toMatch(/^arafat-[0-9a-f]{6}$/);
     expect(await json<SessionInfo>(call("GET", "/api/session"))).toEqual({ mode: "profiles", session: null });
@@ -179,7 +179,7 @@ describe("DeepRead with profiles", () => {
     expect(setCookie).toMatch(/^deepread_session=[^;]+; Max-Age=2592000; Path=\/; HttpOnly; SameSite=Lax$/);
     const session = await json<Session>(signedIn);
     expect(session).toEqual({
-      profile: { id: mina.id, name: "Mina", avatar: { preset: "cat-rose", photo: null }, admin: false },
+      profile: { id: mina.id, name: "Mina", avatar: { preset: "cat-rose", photo: null }, admin: false, badge: null },
       admin: false,
       impersonatedBy: null,
       expiresAt: "2026-11-05T10:05:00.000Z",
@@ -281,6 +281,7 @@ describe("DeepRead with profiles", () => {
       name: "Mina",
       avatar: { preset: "cat-rose", photo: null },
       admin: false,
+      badge: null,
       createdAt: expect.any(String),
       bookCount: 0,
       used: 0,
@@ -313,6 +314,37 @@ describe("DeepRead with profiles", () => {
     expect((await call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { name: "arafat" })).status).toBe(400);
     expect((await call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, {})).status).toBe(400);
     expect((await call("PATCH", "/api/admin/profiles/nobody-123456", adminCookie, { name: "Ghost" })).status).toBe(404);
+  });
+
+  it("should let the admin give any profile a badge, the admin's own included, and fall back to Admin when the admin's is cleared", async () => {
+    const adminCookie = await signIn(admin, PASSKEY);
+    const mina = await addProfile(adminCookie, "Mina", "246810");
+    const badges = async () => Object.fromEntries((await json<PublicProfile[]>(call("GET", "/api/profiles"))).map((p) => [p.name, p.badge]));
+    expect(await badges()).toEqual({ Arafat: "Admin", Mina: null });
+
+    expect(await json<AdminProfile>(call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { badge: "  Editor " }))).toMatchObject({ badge: "Editor" });
+    expect(await json<AdminProfile>(call("PATCH", `/api/admin/profiles/${admin}`, adminCookie, { badge: "Owner" }))).toMatchObject({ badge: "Owner", admin: true });
+    expect(await badges()).toEqual({ Arafat: "Owner", Mina: "Editor" });
+
+    // A badge is set on its own: nothing else about the profile moves, and nobody is signed out.
+    const minaCookie = await signIn(mina.id, "246810");
+    await call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { badge: "Kid" });
+    expect((await call("GET", "/api/books", minaCookie)).status).toBe(200);
+
+    await call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { badge: "" });
+    await call("PATCH", `/api/admin/profiles/${admin}`, adminCookie, { badge: "" });
+    expect(await badges()).toEqual({ Arafat: "Admin", Mina: null });
+
+    const tooLong = await call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { badge: "x".repeat(21) });
+    expect(tooLong.status).toBe(400);
+    expect(await json<ApiError>(tooLong)).toMatchObject({ error: "invalid_badge" });
+    expect((await call("PATCH", `/api/admin/profiles/${mina.id}`, adminCookie, { badge: 7 })).status).toBe(400);
+
+    const added = await json<AdminProfile>(call("POST", "/api/admin/profiles", adminCookie, { name: "Zed", code: "246810", preset: "owl-violet", badge: "Guest" }));
+    expect(added.badge).toBe("Guest");
+
+    // Only the admin hands them out.
+    expect((await call("PATCH", `/api/admin/profiles/${mina.id}`, minaCookie, { badge: "Boss" })).status).toBe(403);
   });
 
   it("should let the admin sign a profile out everywhere, but not the admin's own profile", async () => {
@@ -389,7 +421,7 @@ describe("DeepRead with profiles", () => {
     expect(viewing.status).toBe(200);
     const asMina = await json<Session>(viewing);
     expect(asMina).toEqual({
-      profile: { id: mina.id, name: "Mina", avatar: { preset: "cat-rose", photo: null }, admin: false },
+      profile: { id: mina.id, name: "Mina", avatar: { preset: "cat-rose", photo: null }, admin: false, badge: null },
       admin: true,
       impersonatedBy: adminSession.profile,
       expiresAt: adminSession.expiresAt,

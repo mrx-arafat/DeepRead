@@ -75,7 +75,7 @@ export function ProfileRow({
       <div className="admin-who">
         <h2 className="admin-name">
           {profile.name}
-          {profile.admin && <span className="admin-mark">Admin</span>}
+          {profile.badge && <span className="admin-mark">{profile.badge}</span>}
         </h2>
         <p className="admin-meta">
           {bookCountText(profile.bookCount)}, {formatBytes(profile.used)}

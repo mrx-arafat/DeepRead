@@ -23,6 +23,8 @@ export type StoredProfile = {
   id: string;
   name: string;
   admin: boolean;
+  /** What the admin chose to label this profile with; absent for none (the admin's then shows "Admin"). */
+  badge?: string;
   preset: AvatarPreset;
   /** Changes with every new photo; null without one. */
   photo: string | null;
@@ -51,6 +53,7 @@ export class ProfileError extends Error {
 }
 
 export const MAX_NAME_CHARS = 40;
+export const MAX_BADGE_CHARS = 20;
 // Six, so a guesser held to 5 tries per lock (each lock twice as long) cannot get through them in any useful time.
 export const MIN_CODE_CHARS = 6;
 export const MAX_CODE_CHARS = 64;
@@ -75,7 +78,13 @@ export function isAvatarPreset(value: unknown): value is AvatarPreset {
 }
 
 export function publicProfile(profile: StoredProfile): PublicProfile {
-  return { id: profile.id, name: profile.name, avatar: { preset: profile.preset, photo: profile.photo }, admin: profile.admin };
+  return {
+    id: profile.id,
+    name: profile.name,
+    avatar: { preset: profile.preset, photo: profile.photo },
+    admin: profile.admin,
+    badge: profile.badge ?? (profile.admin ? "Admin" : null),
+  };
 }
 
 function isStoredProfile(value: unknown): value is StoredProfile {
@@ -85,6 +94,7 @@ function isStoredProfile(value: unknown): value is StoredProfile {
     isProfileId(value.id) &&
     typeof value.name === "string" &&
     typeof value.admin === "boolean" &&
+    (value.badge === undefined || typeof value.badge === "string") &&
     isAvatarPreset(value.preset) &&
     (value.photo === null || typeof value.photo === "string") &&
     (value.codeHash === null || typeof value.codeHash === "string") &&
@@ -314,7 +324,7 @@ export function createProfiles(options: ProfilesOptions): Profiles {
       return { outcome: "signed_in", profile };
     },
 
-    async create({ name, code, preset }) {
+    async create({ name, code, preset, badge }) {
       await open();
       // Hashed before queueing: scrypt is slow on purpose, and other changes need not wait for it.
       const codeHash = await hashCode(code);
@@ -325,6 +335,7 @@ export function createProfiles(options: ProfilesOptions): Profiles {
             id: newId(name, current),
             name,
             admin: false,
+            ...(badge && { badge }),
             preset,
             photo: null,
             codeHash,
@@ -356,6 +367,8 @@ export function createProfiles(options: ProfilesOptions): Profiles {
             // A new code signs this profile out everywhere.
             ...(codeHash !== null && { codeHash, sessionVersion: profile.sessionVersion + 1 }),
           };
+          if (patch.badge === "") delete next.badge;
+          else if (patch.badge !== undefined) next.badge = patch.badge;
           return [replace(current, next), next];
         }),
       );

@@ -107,7 +107,7 @@ What was built:
   Adds run one at a time, and also in the book's own queue.
 - `GET /api/storage` returns `{used, limit, where}`.
   An upload past the limit is refused with 507 `storage_full`.
-  The library page shows "Your books take X of Y, kept in ..." (`.library-storage`).
+  The library page shows "Your books take X, kept in ..." (`.library-storage`); the limit itself is not shown.
 - Notes moved from browser localStorage to the server.
   `shared/notes.ts` holds `applyNoteChange`, which the server and the browser both use.
   The routes are `GET /api/books/:id/notes`, `PUT /api/books/:id/notes/:noteId` with `{note, before}`, and `DELETE /api/books/:id/notes/:noteId`.

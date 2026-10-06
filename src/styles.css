@@ -3546,9 +3546,34 @@ h5[data-block] {
 .admin-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.5rem 1.5rem;
+  gap: 1rem 1.5rem;
+}
+
+/* The way back sits in front of the title, as the reader's top bar has it, and is a round control, not a line of text. */
+.admin-title {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.admin-home {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--ink-soft);
+}
+
+.admin-home:hover {
+  background: var(--wash);
+  color: var(--ink);
 }
 
 .admin-back {

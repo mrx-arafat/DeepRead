@@ -68,7 +68,7 @@ export function AdminDashboard({ session }: { session: Session }) {
     setPending(profile?.id ?? ADDING);
     try {
       if (profile === null) {
-        await api.createProfile({ name: input.name, code: input.code, preset: input.preset });
+        await api.createProfile({ name: input.name, code: input.code, preset: input.preset, ...(input.badge && { badge: input.badge }) });
       } else {
         // The photo first: sending it again after a failure changes nothing, while a new code signs the profile out everywhere.
         if (input.photo) await api.uploadProfilePhoto(profile.id, input.photo);
@@ -77,6 +77,7 @@ export function AdminDashboard({ session }: { session: Session }) {
         if (input.name !== profile.name) update.name = input.name;
         if (input.code !== "") update.code = input.code;
         if (input.preset !== profile.avatar.preset) update.preset = input.preset;
+        if (input.badge !== (profile.badge ?? "")) update.badge = input.badge;
         if (Object.keys(update).length > 0) await api.updateProfile(profile.id, update);
         refreshSessionIfShown(profile.id);
       }
@@ -149,9 +150,9 @@ export function AdminDashboard({ session }: { session: Session }) {
   return (
     <main className="admin">
       <header className="admin-head">
-        <div>
-          <Link href="/" className="admin-back">
-            <ArrowLeft size={16} aria-hidden /> Back to the library
+        <div className="admin-title">
+          <Link href="/" className="admin-home" aria-label="Back to the library" title="Back to the library">
+            <ArrowLeft size={20} aria-hidden />
           </Link>
           <h1>Profiles</h1>
         </div>

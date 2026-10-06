@@ -8,7 +8,7 @@ import type { AppEnv } from "./app-env.ts";
 import { isPhotoFile, MAX_PHOTO_BYTES, squarePhoto } from "./avatar.ts";
 import type { Accounts } from "./deps.ts";
 import { adminOnly, apiError, invalidBody, readJsonObject } from "./http.ts";
-import { isAvatarPreset, isProfileId, MAX_CODE_CHARS, MAX_NAME_CHARS, MIN_CODE_CHARS, ProfileError } from "./profiles.ts";
+import { isAvatarPreset, isProfileId, MAX_BADGE_CHARS, MAX_CODE_CHARS, MAX_NAME_CHARS, MIN_CODE_CHARS, ProfileError } from "./profiles.ts";
 import type { StoredProfile } from "./profiles.ts";
 import { profileNotFound } from "./routes-session.ts";
 import { startSession, toSession } from "./sessions.ts";
@@ -50,8 +50,16 @@ function readProfileFields(c: Context, body: Record<string, unknown>, whole: boo
     fields.preset = body.preset;
   }
 
+  if (Object.hasOwn(body, "badge")) {
+    const badge = typeof body.badge === "string" ? body.badge.trim() : null;
+    if (badge === null || badge.length > MAX_BADGE_CHARS) {
+      return apiError(c, 400, "invalid_badge", `A badge is up to ${MAX_BADGE_CHARS} characters. Leave it empty for none.`);
+    }
+    fields.badge = badge;
+  }
+
   if (Object.keys(fields).length === 0) {
-    return apiError(c, 400, "invalid_request", "Nothing to change. Send a new name, code or picture.");
+    return apiError(c, 400, "invalid_request", "Nothing to change. Send a new name, code, picture or badge.");
   }
   return fields;
 }

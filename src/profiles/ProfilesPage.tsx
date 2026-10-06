@@ -100,7 +100,7 @@ export function ProfilesPage() {
                   )}
                 </span>
                 <span className="profile-tile-name">{profile.name}</span>
-                {profile.admin && <span className="profile-tile-mark">Admin</span>}
+                {profile.badge && <span className="profile-tile-mark">{profile.badge}</span>}
               </button>
             </li>
           ))}

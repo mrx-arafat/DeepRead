@@ -269,9 +269,8 @@ export function LibraryPage() {
             {storage && (
               <p className="library-storage">
                 Your books take {formatBytes(storage.used)}
-                {/* The limit is shared, so with other readers it is set against everyone's books, not just these. */}
-                {storage.total !== storage.used && `; everyone's together take ${formatBytes(storage.total)}`}
-                {storage.limit !== null && ` of ${formatBytes(storage.limit)}`},{" "}
+                {/* Only what is kept: the limit is enforced on upload, and its size is not the reader's business. */}
+                {storage.total !== storage.used && `; everyone's together take ${formatBytes(storage.total)}`},{" "}
                 {storage.where === "r2" ? "kept in Cloudflare R2" : "kept on this computer"}.
               </p>
             )}
