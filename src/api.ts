@@ -27,6 +27,7 @@ import type {
   SharingOverview,
   StorageView,
 } from "../shared/types.ts";
+import { progressFiler } from "./library/shelfCache.ts";
 
 export class ApiFailure extends Error {
   readonly code: string;
@@ -117,8 +118,14 @@ export const api = {
     return { book: (await res.json()) as BookDetail, alreadyHad: res.status === 200 };
   },
   saveProgress: (bookId: string, chapterId: string, blockId: string, offset: number) => {
+    const file = progressFiler();
     // `keepalive`: the save made as the page closes is still delivered.
-    const done = request<ReadingProgress>(`/api/books/${bookId}/progress`, { ...json("PUT", { chapterId, blockId, offset }), keepalive: true });
+    const done = request<ReadingProgress>(`/api/books/${bookId}/progress`, { ...json("PUT", { chapterId, blockId, offset }), keepalive: true }).then(
+      (progress) => {
+        file(bookId, progress);
+        return progress;
+      },
+    );
     saving = done.catch(() => {});
     return done;
   },

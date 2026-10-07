@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { applyNoteChange } from "../../shared/notes.ts";
 import type { NoteChange } from "../../shared/notes.ts";
 import type { Note } from "../../shared/types.ts";
@@ -29,17 +29,25 @@ function fakeServer(notes: Note[] = []) {
     /** An HTTP status DeepRead answers every change with, until set back to null. */
     answers: null as number | null,
     sent: [] as NoteChange[],
+    /** Every request DeepRead took, in order: "change" or "read". */
+    calls: [] as string[],
+    /** While set, an answer to getNotes (made when asked) is held back until it settles. */
+    holdReads: null as Promise<void> | null,
     api: {
       changeNote: async (_bookId: string, change: NoteChange) => {
         if (!server.reachable) throw new ApiFailure("unreachable", "DeepRead is not reachable.", 0);
         if (!server.exists) throw new ApiFailure("book_not_found", "That book is not in your library.", 404);
         if (server.answers) throw new ApiFailure("refused", "DeepRead did not take it.", server.answers);
+        server.calls.push("change");
         server.sent.push(change);
         server.notes = applyNoteChange(server.notes, change);
       },
       getNotes: async () => {
         if (!server.reachable) throw new ApiFailure("unreachable", "DeepRead is not reachable.", 0);
-        return server.notes;
+        server.calls.push("read");
+        const answer = server.notes;
+        await server.holdReads;
+        return answer;
       },
     },
   };
@@ -186,5 +194,113 @@ describe("createNoteSync", () => {
     await second.load();
     expect(server.notes).toEqual([note("late")]);
     expect(storage.length).toBe(0);
+  });
+
+  it("should show a note another device added when the page refreshes", async () => {
+    const server = fakeServer([note("a")]);
+    const seen: Note[][] = [];
+    const sync = createNoteSync({ ...single, bookId: "book", lang: "bn", api: server.api, storage: memoryStorage(), onChange: (notes: Note[]) => seen.push(notes) });
+    await sync.load();
+
+    server.notes = [note("a"), note("b")];
+    await sync.refresh();
+
+    expect(seen.at(-1)).toEqual([note("a"), note("b")]);
+    expect(sync.current()).toEqual([note("a"), note("b")]);
+  });
+
+  it("should not report again when a refresh finds the same notes", async () => {
+    const server = fakeServer([note("a")]);
+    const seen: Note[][] = [];
+    const sync = createNoteSync({ ...single, bookId: "book", lang: "bn", api: server.api, storage: memoryStorage(), onChange: (notes: Note[]) => seen.push(notes) });
+    await sync.load();
+    server.calls.length = 0;
+    const reported = seen.length;
+
+    // DeepRead answers with a new list holding the same notes: nothing for the page to redraw.
+    server.notes = server.notes.map((kept) => ({ ...kept }));
+    await sync.refresh();
+
+    expect(server.calls).toEqual(["read"]);
+    expect(seen).toHaveLength(reported);
+  });
+
+  it("should still show a change made while a refresh is waiting for DeepRead", async () => {
+    const server = fakeServer([note("a")]);
+    const seen: Note[][] = [];
+    const sync = createNoteSync({ ...single, bookId: "book", lang: "bn", api: server.api, storage: memoryStorage(), onChange: (notes: Note[]) => seen.push(notes) });
+    await sync.load();
+    server.calls.length = 0;
+    seen.length = 0;
+
+    let release = () => {};
+    server.holdReads = new Promise<void>((resolve) => (release = resolve));
+    const refreshing = sync.refresh();
+    await vi.waitFor(() => expect(server.calls).toEqual(["read"]));
+
+    // What DeepRead is about to answer was made before this note, so it lacks it.
+    const adding = sync.change({ kind: "put", note: note("b"), before: null });
+    release();
+    await Promise.all([refreshing, adding]);
+
+    expect(seen).toEqual([[note("a"), note("b")]]);
+    expect(server.notes).toEqual([note("a"), note("b")]);
+  });
+
+  it("should send the changes waiting in the outbox before a refresh fetches", async () => {
+    const server = fakeServer([note("a")]);
+    const storage = memoryStorage();
+    const sync = createNoteSync({ ...single, bookId: "book", lang: "bn", api: server.api, storage, onChange: () => {} });
+    await sync.load();
+
+    server.reachable = false;
+    await sync.change({ kind: "put", note: note("b"), before: null });
+    expect(storage.length).toBe(1);
+
+    server.reachable = true;
+    server.calls.length = 0;
+    await sync.refresh();
+
+    expect(server.calls).toEqual(["change", "read"]);
+    expect(server.notes).toEqual([note("a"), note("b")]);
+    expect(sync.current()).toEqual([note("a"), note("b")]);
+    expect(storage.length).toBe(0);
+  });
+
+  it("should fetch once for refreshes asked at the same time, and again for the next one", async () => {
+    const server = fakeServer([note("a")]);
+    const sync = createNoteSync({ ...single, bookId: "book", lang: "bn", api: server.api, storage: memoryStorage(), onChange: () => {} });
+    await sync.load();
+    server.calls.length = 0;
+
+    const first = sync.refresh();
+    const second = sync.refresh();
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    expect(server.calls).toEqual(["read"]);
+
+    await sync.refresh();
+    expect(server.calls).toEqual(["read", "read"]);
+  });
+
+  it("should keep what is shown when a refresh cannot reach DeepRead, and do nothing once closed", async () => {
+    const server = fakeServer([note("a")]);
+    const seen: Note[][] = [];
+    const sync = createNoteSync({ ...single, bookId: "book", lang: "bn", api: server.api, storage: memoryStorage(), onChange: (notes: Note[]) => seen.push(notes) });
+    await sync.load();
+    const reported = seen.length;
+
+    server.reachable = false;
+    await expect(sync.refresh()).resolves.toBeUndefined();
+    expect(sync.current()).toEqual([note("a")]);
+    expect(seen).toHaveLength(reported);
+
+    server.reachable = true;
+    server.calls.length = 0;
+    server.notes = [note("a"), note("b")];
+    sync.close();
+    await sync.refresh();
+    expect(server.calls).toEqual([]);
+    expect(seen).toHaveLength(reported);
   });
 });

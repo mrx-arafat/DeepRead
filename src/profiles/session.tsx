@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 import type { Session, SessionInfo } from "../../shared/types.ts";
 import { api, SIGNED_OUT_EVENT } from "../api.ts";
+import { forgetShelves, readerKey, setReader } from "../library/shelfCache.ts";
 
 export type SessionState = {
   /** Null while DeepRead is first asked; then whether there are profiles, and who is signed in. */
@@ -41,9 +42,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, [attempt]);
 
+  // The books a reader opens file their place on that reader's cached shelf, so it must know who is reading.
+  useEffect(() => setReader(readerKey(info)), [info]);
+
   // Any request that finds the session gone (30 days passed, the code was changed, the profile removed) lands here.
   useEffect(() => {
     const signedOut = () => {
+      forgetShelves();
       setChoosing(false);
       setInfo((now) => (now?.mode === "profiles" ? { mode: "profiles", session: null } : now));
     };
@@ -60,6 +65,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   const signOut = useCallback(async () => {
     await api.signOut();
+    forgetShelves();
     setSession(null);
   }, [setSession]);
 

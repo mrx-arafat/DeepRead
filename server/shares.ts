@@ -176,10 +176,35 @@ function readerCopies(store: ObjectStore) {
     const data = await store.read(key);
     return data && JSON.parse(data.toString("utf8"));
   }
+  // The reader's place in each shared book, by share: while a share lasts only this shelf writes it, and Shares keeps one
+  // object per share, so a share that ends and starts again is a new one whose place is read afresh.
+  const places = new WeakMap<Share, ReadingProgress | null>();
+  // Moves on with every save: a read under way meanwhile may be older than the save, so it is not kept.
+  let saves = 0;
+  const placeOf = (share: Share): string => `${sharedBookId(share.ownerId, share.bookId)}/progress.json`;
 
   return {
-    progress: async (id: string) => ((await readJson(`${id}/progress.json`)) as ReadingProgress | null) ?? null,
-    saveProgress: (id: string, progress: ReadingProgress) => store.write(`${id}/progress.json`, JSON.stringify(progress)),
+    async progress(share: Share): Promise<ReadingProgress | null> {
+      if (places.has(share)) return places.get(share) ?? null;
+      const seen = saves;
+      const progress = ((await readJson(placeOf(share))) as ReadingProgress | null) ?? null;
+      if (saves === seen) places.set(share, progress);
+      return progress;
+    },
+    saveProgress: (share: Share, progress: ReadingProgress) =>
+      // In the book's queue, so the place kept here is the one the store got last.
+      serialized(sharedBookId(share.ownerId, share.bookId), async () => {
+        try {
+          await store.write(placeOf(share), JSON.stringify(progress));
+          places.set(share, progress);
+        } catch (error) {
+          // It may have reached the store all the same.
+          places.delete(share);
+          throw error;
+        } finally {
+          saves += 1;
+        }
+      }),
     notes: async (id: string) => ((await readJson(`${id}/notes.json`)) as Note[] | null) ?? [],
     changeNotes: (id: string, change: NoteChange) =>
       // Two devices changing notes at once each keep their change.
@@ -229,11 +254,11 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
     const share = await shares.find(parts.ownerId, parts.bookId, readerId);
     const library = share && deps.libraryOf(parts.ownerId);
     const owner = share && deps.profileOf(parts.ownerId);
-    return share && library && owner ? { library, bookId: parts.bookId, owner, sharedAt: share.sharedAt } : null;
+    return share && library && owner ? { library, bookId: parts.bookId, owner, share } : null;
   }
 
-  async function shelved(id: string, summary: BookSummary, owner: PublicProfile, sharedAt: string): Promise<BookSummary> {
-    return { ...summary, id, addedAt: sharedAt, progress: await copies.progress(id), sharedBy: owner };
+  async function shelved(id: string, summary: BookSummary, owner: PublicProfile, share: Share): Promise<BookSummary> {
+    return { ...summary, id, addedAt: share.sharedAt, progress: await copies.progress(share), sharedBy: owner };
   }
 
   return {
@@ -251,7 +276,7 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
           if (!library || !owner) return null;
           if (!owners.has(share.ownerId)) owners.set(share.ownerId, library.list());
           const summary = (await owners.get(share.ownerId))?.find((book) => book.id === share.bookId);
-          return summary ? shelved(sharedBookId(share.ownerId, share.bookId), summary, owner, share.sharedAt) : null;
+          return summary ? shelved(sharedBookId(share.ownerId, share.bookId), summary, owner, share) : null;
         }),
       );
       return [...mine, ...shared.filter((book) => book !== null)].sort(newestFirst);
@@ -261,7 +286,7 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
       if (isBookId(id)) return own.detail(id);
       const from = await source(id);
       const detail = from && (await from.library.detail(from.bookId));
-      return from && detail ? { ...detail, ...(await shelved(id, detail, from.owner, from.sharedAt)) } : null;
+      return from && detail ? { ...detail, ...(await shelved(id, detail, from.owner, from.share)) } : null;
     },
 
     async book(id) {
@@ -286,12 +311,12 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
       const from = await source(id);
       const book = from && (await from.library.book(from.bookId));
       const detail = from && (await from.library.detail(from.bookId));
-      if (!book || !detail) return null;
+      if (!from || !book || !detail) return null;
       const wordCounts = Object.fromEntries(detail.chapters.map((chapter) => [chapter.id, chapter.wordCount]));
       const where = describePosition(book, wordCounts, chapterId, blockId, offset);
       if (!where) return null;
       const progress: ReadingProgress = { chapterId, blockId, offset, updatedAt: new Date().toISOString(), ...where };
-      await copies.saveProgress(id, progress);
+      await copies.saveProgress(from.share, progress);
       return progress;
     },
 

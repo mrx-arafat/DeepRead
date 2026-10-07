@@ -15,6 +15,16 @@ import type { Library } from "./library.ts";
 import { LlmError } from "./llm.ts";
 import type { LlmRequest } from "./llm.ts";
 import { ParseError } from "./parser/errors.ts";
+import { createLocalStore } from "./storage.ts";
+import type { ObjectStore } from "./storage.ts";
+
+/** `store`, noting each read, size and listing it is asked for in `calls` ("read books/<id>/meta.json"). */
+const counted = (store: ObjectStore, calls: string[]): ObjectStore => ({
+  ...store,
+  read: (key) => (calls.push(`read ${key}`), store.read(key)),
+  size: (key) => (calls.push(`size ${key}`), store.size(key)),
+  list: (prefix) => (calls.push(`list ${prefix}`), store.list(prefix)),
+});
 
 const sampleBook = (title = "Sample Book"): ParsedBook => ({
   title,
@@ -157,10 +167,11 @@ describe("DeepRead API", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  const upload = (content: ParsedBook | "SCANNED" | string, name = "book.pdf") => {
+  const upload =(content: ParsedBook | "SCANNED" | string, name = "book.pdf") => {
     const form = new FormData();
     const bytes = typeof content === "string" && content !== "SCANNED" ? content : pdfBytes(content as ParsedBook | "SCANNED");
     form.set("file", new File([bytes], name, { type: "application/pdf" }));
@@ -240,6 +251,7 @@ describe("DeepRead API", () => {
       const meta = JSON.parse(await readFile(metaPath, "utf8")) as Record<string, unknown>;
       const legacy = { chapterId: "c2", blockId: "c2-b1", updatedAt: "2026-01-01T00:00:00.000Z" };
       await writeFile(metaPath, JSON.stringify({ ...meta, progress: legacy }));
+      restart();
 
       const list = (await (await app.request("/api/books")).json()) as BookSummary[];
       // Chapter two starts after the 19 words of chapter one, out of 24.
@@ -518,11 +530,28 @@ describe("DeepRead API", () => {
     });
 
     it("should not give a book added again what an earlier copy of it left behind", async () => {
+      // A store that, once, cannot clear away a folder.
+      const local = createLocalStore(dataDir);
+      let clearing: "works" | "fails once" = "works";
+      library = createLibrary(dataDir, {
+        store: {
+          ...local,
+          removeAll: async (prefix) => {
+            if (clearing === "works") return local.removeAll(prefix);
+            clearing = "works";
+            throw new Error("the bucket did not answer");
+          },
+        },
+      });
+      app = appFor(library);
       const id = await addBook();
       const note: Note = { id: "old", chapterId: "c1", blockId: "c1-b2", quote: "reader", mode: "word", lang: "bn" };
       await send("PUT", `/api/books/${id}/notes/old`, { note, before: null });
       // Removed, but its files could not all be cleared away before the same book was added again.
-      await rm(join(dataDir, "books", id, "meta.json"));
+      clearing = "fails once";
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      expect((await send("DELETE", `/api/books/${id}`)).status).toBe(204);
+      expect(await readdir(join(dataDir, "books", id))).toContain("notes.json");
 
       expect((await upload(sampleBook())).status).toBe(201);
       expect(await notesOf(id)).toEqual([]);
@@ -543,17 +572,122 @@ describe("DeepRead API", () => {
     });
   });
 
+  describe("remembering the books", () => {
+    const calls: string[] = [];
+    /** DeepRead starting again on the same data folder, noting its calls to the store; `alter` changes that store. */
+    const restartCounting = (alter: (store: ObjectStore) => ObjectStore = (store) => store) => {
+      calls.length = 0;
+      library = createLibrary(dataDir, { store: alter(counted(createLocalStore(dataDir), calls)) });
+      app = appFor(library);
+    };
+    /** What the library asked the store about which books there are and what each holds. */
+    const lookups = () => calls.filter((call) => call.startsWith("list ") || call.endsWith("/meta.json"));
+    const shelf = async () =>
+      ((await (await app.request("/api/books")).json()) as BookSummary[]).map((book) => [book.title, book.progress?.blockId ?? null]);
+    const titles = async () => (await library.list()).map((book) => book.title);
+
+    it("should list and open books without asking the store again, and show every change made since", async () => {
+      restartCounting();
+      const first = await addBook(sampleBook("First Book"));
+      const second = await addBook(sampleBook("Second Book"));
+      // The listing made on first use, to clear away half-added books, is the one it keeps.
+      expect(lookups()).toEqual(["list books/"]);
+
+      calls.length = 0;
+      expect(await shelf()).toEqual([["Second Book", null], ["First Book", null]]);
+      expect(await (await app.request(`/api/books/${first}`)).json()).toMatchObject({ title: "First Book" });
+      expect((await app.request(`/api/books/${first}/notes`)).status).toBe(200);
+      // The notes themselves, and nothing to ask whether the book is there.
+      expect(calls).toEqual([`read books/${first}/notes.json`]);
+
+      // Renamed, a place saved, one book added and one removed: none of it is read back, and all of it shows.
+      expect((await send("PATCH", `/api/books/${first}`, { title: "Renamed Book" })).status).toBe(200);
+      expect((await send("PUT", `/api/books/${first}/progress`, { chapterId: "c2", blockId: "c2-b1" })).status).toBe(200);
+      const third = await addBook(sampleBook("Third Book"));
+      expect((await send("DELETE", `/api/books/${second}`)).status).toBe(204);
+      expect(await shelf()).toEqual([["Third Book", null], ["Renamed Book", "c2-b1"]]);
+      expect(lookups()).toEqual([]);
+
+      // Started again, it lists the store once and reads each book once.
+      restartCounting();
+      expect(await shelf()).toEqual([["Third Book", null], ["Renamed Book", "c2-b1"]]);
+      expect(lookups().sort()).toEqual(["list books/", `read books/${first}/meta.json`, `read books/${third}/meta.json`]);
+      calls.length = 0;
+      expect(await shelf()).toEqual([["Third Book", null], ["Renamed Book", "c2-b1"]]);
+      expect(calls).toEqual([]);
+    });
+
+    it("should read a book again when reading or saving it failed, or when it changed while it was being read", async () => {
+      const id = await addBook();
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      // The first read of meta.json fails: the book is left out of that list only.
+      let failing = true;
+      restartCounting((store) => ({
+        ...store,
+        read: async (key) => {
+          if (!failing || !key.endsWith("/meta.json")) return store.read(key);
+          failing = false;
+          throw new Error("the bucket did not answer");
+        },
+      }));
+      expect(await titles()).toEqual([]);
+      expect(await titles()).toEqual(["Sample Book"]);
+
+      // A save reaches the store but its answer is lost: what the store holds is what shows.
+      restartCounting((store) => ({
+        ...store,
+        write: async (key, data) => {
+          await store.write(key, data);
+          if (key.endsWith("/meta.json")) throw new Error("the bucket did not answer");
+        },
+      }));
+      expect(await titles()).toEqual(["Sample Book"]);
+      await expect(library.update(id, { title: "Renamed Book" })).rejects.toThrow("the bucket did not answer");
+      expect(await titles()).toEqual(["Renamed Book"]);
+
+      // A list reads meta.json just before a rename, and gets its answer only once the rename is saved.
+      let answered = () => {};
+      let release = () => {};
+      const readBeforeRename = new Promise<void>((resolve) => (answered = resolve));
+      const renamed = new Promise<void>((resolve) => (release = resolve));
+      let holding = true;
+      restartCounting((store) => ({
+        ...store,
+        read: async (key) => {
+          const data = await store.read(key);
+          if (holding && key.endsWith("/meta.json")) {
+            holding = false;
+            answered();
+            await renamed;
+          }
+          return data;
+        },
+      }));
+      const listing = titles();
+      await readBeforeRename;
+      expect(await library.update(id, { title: "Second Name" })).toBe(true);
+      release();
+      expect(await listing).toEqual(["Renamed Book"]);
+      expect(await titles()).toEqual(["Second Name"]);
+    });
+  });
+
   describe("covers", () => {
     const metaOf = async (id: string) =>
       JSON.parse(await readFile(join(dataDir, "books", id, "meta.json"), "utf8")) as Record<string, unknown>;
     const hasCover = async (id: string) =>
       ((await (await app.request("/api/books")).json()) as BookSummary[]).find((book) => book.id === id)?.hasCover;
 
-    /** Makes a book look stored before covers were kept: meta.json does not say whether it has one, and there is no image. */
+    /**
+     * Makes a book look stored before covers were kept, and starts DeepRead again on it: meta.json does not say whether
+     * it has one, and there is no image.
+     */
     async function fromBeforeCovers(id: string): Promise<void> {
       const { cover: _cover, ...meta } = await metaOf(id);
       await writeFile(join(dataDir, "books", id, "meta.json"), JSON.stringify(meta));
       await rm(join(dataDir, "books", id, "cover.webp"), { force: true });
+      restart();
     }
 
     it("should keep the cover found in the PDF, serve it, and say which books have one", async () => {

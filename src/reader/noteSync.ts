@@ -38,6 +38,8 @@ export type NoteSync = {
   change(change: NoteChange): Promise<void>;
   /** Sends what waits from before, then loads the book's notes. */
   load(): Promise<void>;
+  /** Sends what waits, then looks again for notes added on another device. Asks that come while one is on its way share it. */
+  refresh(): Promise<void>;
   /** The page has moved on: nothing more is reported or sent. */
   close(): void;
 };
@@ -100,6 +102,10 @@ export function createNoteSync(options: NoteSyncOptions): NoteSync {
   // Sends and the load run one after another, so changes reach DeepRead in the order they were made.
   let queue: Promise<void> = Promise.resolve();
   let closed = false;
+  // The refresh that is waiting its turn or running, so asking again meanwhile does not fetch twice.
+  let refreshing: Promise<void> | null = null;
+  // The notes last reported, so a refresh that finds nothing new does not make the page draw them again.
+  let shown: string | null = null;
 
   /** The changes waiting from before, notes this browser kept before they were kept with the book among them. */
   function readOutbox(): NoteChange[] {
@@ -135,7 +141,12 @@ export function createNoteSync(options: NoteSyncOptions): NoteSync {
   const current = (): Note[] => outbox.reduce(applyNoteChange, kept);
 
   function report(): void {
-    if (!closed) onChange(current());
+    if (closed) return;
+    const notes = current();
+    const now = JSON.stringify(notes);
+    if (now === shown) return;
+    shown = now;
+    onChange(notes);
   }
 
   /** Sends the waiting changes in order, and stops at one DeepRead cannot take now: it waits for the next try. */
@@ -162,6 +173,17 @@ export function createNoteSync(options: NoteSyncOptions): NoteSync {
     return queue;
   }
 
+  /** Sends the waiting changes, then takes the notes DeepRead has. */
+  async function pull(): Promise<void> {
+    await send();
+    try {
+      kept = await server.getNotes(bookId);
+      report();
+    } catch {
+      // DeepRead cannot be reached: the reader sees the changes this browser holds, and they go when it can.
+    }
+  }
+
   return {
     current,
 
@@ -176,15 +198,20 @@ export function createNoteSync(options: NoteSyncOptions): NoteSync {
       // Notes this browser kept before are in the outbox now: their old keys can go.
       writeOutbox();
       report();
-      return queued(async () => {
-        await send();
+      return queued(pull);
+    },
+
+    refresh() {
+      if (closed) return Promise.resolve();
+      // A change made while this waits for DeepRead is in the outbox, so it still shows on top of what comes back.
+      refreshing ??= queued(async () => {
         try {
-          kept = await server.getNotes(bookId);
-          report();
-        } catch {
-          // DeepRead cannot be reached: the reader sees the changes this browser holds, and they go when it can.
+          await pull();
+        } finally {
+          refreshing = null;
         }
       });
+      return refreshing;
     },
 
     close() {

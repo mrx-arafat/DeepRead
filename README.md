@@ -255,6 +255,7 @@ Select a sentence or a paragraph, then choose what you want:
 
 The answer is pinned beside the paragraph like a teacher's note, and it stays there when you come back to the book.
 DeepRead keeps these notes with the book, not in the browser, so clearing your browser does not lose them and they show on your phone too.
+A book you already have open picks up notes made on another device when you come back to it, and every 30 seconds while it is on screen, so you never need to reload.
 Notes that were saved in a browser before are moved up automatically the next time you open that book.
 If DeepRead cannot be reached when you make a note, your browser holds it until it can.
 Your reading settings under **Aa** are different: they stay in each browser, so a phone has its own.
@@ -877,6 +878,7 @@ books/<id>/cache/<sha256>.json   (one saved AI answer)
 It holds everything the shelf shows, so listing the library never opens `book.json`.
 If DeepRead stops while a book is being added or removed, what is left has no `meta.json`, so no listing shows it.
 The first time the library is used after a start, it clears every book folder without a `meta.json` (only folders named like a book id), and its local `tmp` folder.
+That listing is then kept in memory, with each `meta.json` once read, so later visits to the library ask the store nothing; every change DeepRead makes updates both.
 
 An upload is written to `tmp` in the data folder on this computer and parsed there, whatever the store, because the parser reads a file.
 It is then stored, with `meta.json` last.
@@ -940,6 +942,7 @@ It sends the outbox in order.
 It drops a change the server refuses with a 4xx, and retries the others on the next change or load.
 It also adopts notes from the old `localStorage` keys, `deepread.notes.<bookId>` and `deepread.notes.<bookId>.<chapterId>`.
 [`src/reader/useNotes.ts`](src/reader/useNotes.ts) is a thin React hook around it.
+It calls `refresh()` when the page comes back into view, gets focus or goes online, and every 30 seconds while it is visible, so notes made on another device appear without a reload; a refresh that finds nothing new does not draw the page again.
 
 Whatever the store, a few small things stay in the data folder on this computer: `tmp/`, `settings.json` (your AI helper choice), `translate-cache.json` (quick word translations), `openrouter-usage.json` (each reader's API Model requests today), `codex-home/`, the phone key `remote-key`, and the sign-in secret `session-secret` and the wrong-code locks `locks.json` when profiles are on.
 
@@ -1052,7 +1055,7 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 | `src/` | The web app: library and reader |
 | `src/reader/helperState.ts`, `aiStatusStore.ts`, `helperCredit.ts` | The AI helper list in the Aa menu, and whose AI it says is answering |
 | `src/admin/AiAccessDialog.tsx`, `AdminApiModel.tsx` | The admin's switches for what each reader may use, and the API Model's key, model, limit and test |
-| `src/library/` | The shelf: covers, the book menu, the Share dialog and the Sharing page |
+| `src/library/` | The shelf: covers, the book menu, the Share dialog and the Sharing page; `shelfCache.ts` keeps each reader's last shelf in memory, so coming back to the library shows it at once while it is brought up to date |
 | `src/reader/speech.ts`, `natural*.ts`, `voicing.ts` | Reading aloud: the device voice, the natural voice, and where the pauses fall |
 | `public/`, `scripts/make-icons.mjs` | The icon: `favicon.svg` is the source, and the script draws the PNG sizes from it |
 | `src/favicon.ts` | The tab icon in the colour of the reader's theme (the cover's cloth in light, sepia or dark), swapped in while the app runs |
@@ -1070,7 +1073,7 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 - An answer takes a few seconds to start, even for a single word, because accuracy was chosen over speed.
 - Run one DeepRead server for each folder of a bucket.
   When it starts, it removes any book folder that has no `meta.json`, which could be a book another server is adding at that moment.
-- A page you opened earlier shows notes added on another device only after you reload it.
+  It also keeps the list of books in memory, so a change made to the store by anything else shows only after a restart.
 - With R2, the secret key sits in `.env.local` on this computer.
 - The count of each reader's requests of the API Model is kept in `openrouter-usage.json` in the data folder, so a restart does not give anyone a fresh day.
   It holds only reader ids and counts, never the key.

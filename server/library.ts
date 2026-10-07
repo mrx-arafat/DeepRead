@@ -2,7 +2,8 @@
 // Each book is books/<id>/{source.pdf, book.json, meta.json, notes.json, cache/<key>.json}, plus cover.webp when page 1
 // is a cover. meta.json is written last and removed first, so a book exists exactly while its meta.json does: a crash
 // in between leaves files no listing shows, and the next start clears them away. meta.json carries everything the
-// list view needs, so listing never opens book.json.
+// list view needs, so listing never opens book.json. Once read, the list of books and each meta.json are kept in
+// memory, so listing again asks the store nothing.
 // Uploads are parsed from <dataDir>/tmp on this computer whatever the store, because the parser reads a file.
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, stat } from "node:fs/promises";
@@ -25,7 +26,7 @@ import type { CoverImage } from "./cover.ts";
 import type { RenderCover } from "./deps.ts";
 import { describePosition } from "./progress.ts";
 import { createLocalStore } from "./storage.ts";
-import type { ByteRange, ObjectStore } from "./storage.ts";
+import type { ByteRange, ObjectStore, StoredObject } from "./storage.ts";
 
 // Ids are a lowercase slug plus a hash. Anything else cannot be a book, so it never reaches the store.
 const BOOK_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -46,6 +47,10 @@ export const isCacheKey = (key: string): boolean => CACHE_KEY.test(key);
 export function isBookId(id: string): boolean {
   return id.length <= 96 && BOOK_ID.test(id);
 }
+
+/** The books in a listing of books/: the folders named like a book that hold a meta.json. */
+const bookIdsIn = (objects: StoredObject[]): Set<string> =>
+  new Set(objects.map((object) => META_KEY.exec(object.key)?.[1]).filter((id): id is string => id !== undefined && isBookId(id)));
 
 /** `fallback` names what has no Latin letters at all (a Bangla or Arabic title). */
 export function slugify(title: string, fallback = "book"): string {
@@ -215,6 +220,13 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
     return data && JSON.parse(data.toString("utf8"));
   }
 
+  // What the store holds as far as this library knows: which books there are, and the meta.json of each once read.
+  // Only one DeepRead may use a store (README) and every change to a book goes through changeMeta, so they stay true.
+  let ids: Set<string> | null = null;
+  const metas = new Map<string, BookMeta>();
+  // Moves on with every change to a book: a read under way meanwhile may have seen it as it was, so it is not kept.
+  let changes = 0;
+
   // Before the first call nothing is in flight, so anything left in tmp/ is debris from a crash, and so is a book
   // folder without its meta.json: a book that was being added or removed when DeepRead stopped.
   // Done on first use rather than at construction, so an unused library never touches the disk or the bucket.
@@ -224,12 +236,14 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
       await rm(tempDir, { recursive: true, force: true });
       await mkdir(tempDir, { recursive: true });
       const objects = await store.list("books/");
-      const complete = new Set(objects.map((object) => META_KEY.exec(object.key)?.[1]));
+      const complete = bookIdsIn(objects);
       // Only folders named like a book: anything else in there was not put there by DeepRead.
       const folders = objects.map((object) => /^books\/([^/]+)\//.exec(object.key)?.[1]).filter((id) => id !== undefined);
       for (const id of new Set(folders)) {
         if (isBookId(id) && !complete.has(id)) await store.removeAll(folderOf(id));
       }
+      // Every change waits for this, so the listing still holds.
+      ids = complete;
     })().catch((error: unknown) => {
       initialized = null;
       throw error;
@@ -267,14 +281,47 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
 
   async function readMeta(id: string): Promise<BookMeta | null> {
     await ready();
-    return (await readJson(keyOf(id, "meta.json"))) as BookMeta | null;
+    const key = keyOf(id, "meta.json");
+    const known = metas.get(id);
+    if (known) return known;
+    if (ids && !ids.has(id)) return null;
+    const seen = changes;
+    // A missing or damaged meta.json is not kept: the next read looks again.
+    const meta = (await readJson(key)) as BookMeta | null;
+    if (meta && changes === seen) metas.set(id, meta);
+    return meta;
   }
 
-  const writeMeta = (meta: BookMeta): Promise<void> => store.write(keyOf(meta.id, "meta.json"), JSON.stringify(meta));
+  /**
+   * Makes a change to a book's meta.json and remembers what it leaves: `after`, or no book when it is null. A change that
+   * fails may still have reached the store, so then the book is forgotten and read again.
+   */
+  async function changeMeta(id: string, after: BookMeta | null, change: () => Promise<void>): Promise<void> {
+    try {
+      await change();
+    } catch (error) {
+      metas.delete(id);
+      ids = null;
+      throw error;
+    } finally {
+      changes += 1;
+    }
+    if (after) {
+      metas.set(id, after);
+      ids?.add(id);
+    } else {
+      metas.delete(id);
+      ids?.delete(id);
+    }
+  }
+
+  const writeMeta = (meta: BookMeta): Promise<void> =>
+    changeMeta(meta.id, meta, () => store.write(keyOf(meta.id, "meta.json"), JSON.stringify(meta)));
 
   async function exists(id: string): Promise<boolean> {
     await ready();
-    return (await store.size(keyOf(id, "meta.json"))) !== null;
+    const key = keyOf(id, "meta.json");
+    return ids ? ids.has(id) : metas.has(id) || (await store.size(key)) !== null;
   }
 
   function toSummary(meta: BookMeta): BookSummary {
@@ -306,8 +353,12 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
 
   async function bookIds(): Promise<string[]> {
     await ready();
-    const objects = await store.list("books/");
-    return objects.map((object) => META_KEY.exec(object.key)?.[1]).filter((id): id is string => id !== undefined && isBookId(id));
+    if (ids) return [...ids];
+    const seen = changes;
+    const listed = bookIdsIn(await store.list("books/"));
+    // A book added or removed while this was listed may be missing from it, or still in it.
+    if (changes === seen) ids = listed;
+    return [...listed];
   }
 
   async function loadBook(id: string): Promise<ParsedBook | null> {
@@ -432,7 +483,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
               await store.write(keyOf(id, "book.json"), bookJson);
               if (cover) await store.write(keyOf(id, COVER_FILES[cover.type]), cover.data);
               // Last: the book is in the library from this moment, with everything it needs already stored.
-              await store.write(keyOf(id, "meta.json"), metaJson);
+              await writeMeta(meta);
             } catch (error) {
               // Whatever this leaves is cleared at the next start.
               await store.removeAll(folderOf(id)).catch(() => {});
@@ -539,7 +590,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
       return serialized(id, async () => {
         if (!(await exists(id))) return false;
         // meta.json first: the book leaves the library in one step, and the rest of its files go after it.
-        await store.remove([keyOf(id, "meta.json")]);
+        await changeMeta(id, null, () => store.remove([keyOf(id, "meta.json")]));
         parsedBooks.delete(id);
         try {
           await store.removeAll(folderOf(id));

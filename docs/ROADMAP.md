@@ -181,8 +181,8 @@ Before deploying: change `ADMIN_PASSKEY` to a long passphrase, rotate the R2 acc
 - Pages: page counts are estimates; a page can end one line earlier after the window height changes; read-aloud started mid-page first turns to the page where the sentence begins.
 - Library: two books can share a cloth colour (it is a hash of the title); the Continue card repeats the only book when the library holds one.
 - The journey lint warns that the `word-position` module's name does not match its file name.
-- Storage: run one DeepRead server per bucket folder; the start-up cleanup of book folders without a `meta.json` could remove a book that another server is still adding.
-- Notes: a page that was opened earlier sees notes from another device only after a reload.
+- Storage: run one DeepRead server per bucket folder; the start-up cleanup of book folders without a `meta.json` could remove a book that another server is still adding; the list of books and each `meta.json` are also kept in memory, so changes made to the store by anything else show only after a restart.
+- Notes: a page that was opened earlier picks up notes from another device when the reader comes back to it, and every 30 s while it is in view; it is not instant push.
 - Notes: two tabs of the same browser that are both offline share one outbox key, and can overwrite each other's waiting changes.
 - Storage: the space used is computed by listing the bucket folder on each upload, which is fine for a personal library.
 - Storage: the R2 secret key lives in `.env.local` on the computer.

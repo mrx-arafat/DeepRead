@@ -1,14 +1,15 @@
 import { FileUp, LoaderCircle } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation } from "wouter";
 import { formatBytes } from "../shared/bytes.ts";
 import { LANGUAGES } from "../shared/types.ts";
-import type { BookSummary, BookUpdate, StorageView } from "../shared/types.ts";
+import type { BookUpdate } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
 import { addFailure, latestRead, shortTitle } from "./library/bookText.ts";
 import { ContinueCard } from "./library/ContinueCard.tsx";
+import { addBook, dropBook, patchBook, readerKey, readShelf, rememberBooks, rememberStorage, watchShelves } from "./library/shelfCache.ts";
 import { useFileDrop } from "./library/useFileDrop.ts";
 import { APP_NAME, useDocumentTitle } from "./pageTitle.ts";
 import { usePrefs } from "./prefs.ts";
@@ -29,8 +30,10 @@ export function LibraryPage() {
   const { info } = useSession();
   // Null with no profiles (nobody to show or switch) and while nobody is signed in (App shows the profiles then).
   const session = info?.mode === "profiles" ? info.session : null;
-  const [books, setBooks] = useState<BookSummary[] | null>(null);
-  const [storage, setStorage] = useState<StorageView | null>(null);
+  const reader = readerKey(info);
+  // Coming back paints the shelf as it was last time, while the request below brings it up to date. It is read from the
+  // cache, not kept in state, so a progress save that is still on its way as this page opens lands on it as well.
+  const { books, storage } = useSyncExternalStore(watchShelves, () => readShelf(reader));
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -54,17 +57,17 @@ export function LibraryPage() {
     setLoadError(null);
     api
       .listBooks()
-      .then((list) => current && setBooks(list))
+      .then((list) => current && rememberBooks(reader, list))
       .catch((err: Error) => current && setLoadError(err.message));
     // Only a line under the shelf: the shelf does not wait for it, and without it the shelf works the same.
     api
       .storage()
-      .then((usage) => current && setStorage(usage))
+      .then((usage) => current && rememberStorage(reader, usage))
       .catch(() => {});
     return () => {
       current = false;
     };
-  }, [attempt]);
+  }, [attempt, reader]);
 
   useEffect(() => {
     if (focusAfterRemoval === null) return;
@@ -101,6 +104,8 @@ export function LibraryPage() {
         uploadingNow.current = false;
         return;
       }
+      // The shelf the reader comes back to from this book already has it.
+      addBook(reader, book);
       navigate(`/book/${book.id}`);
     } catch (err) {
       setError(addFailure(file.name, err));
@@ -119,9 +124,7 @@ export function LibraryPage() {
     setPending(id);
     try {
       const saved = await api.updateBook(id, update);
-      setBooks((all) =>
-        all?.map((book) => (book.id === id ? { ...book, title: saved.title, author: saved.author } : book)) ?? null,
-      );
+      patchBook(reader, id, { title: saved.title, author: saved.author });
     } finally {
       setPending(null);
     }
@@ -137,9 +140,9 @@ export function LibraryPage() {
       // The row the reader was on is about to vanish, and focus would fall to the page: hand it to a neighbour.
       const at = books?.findIndex((book) => book.id === id) ?? -1;
       setFocusAfterRemoval(books?.[at + 1]?.id ?? books?.[at - 1]?.id ?? ADD_BUTTON);
-      setBooks((all) => all?.filter((book) => book.id !== id) ?? null);
+      dropBook(reader, id);
       setActive(null);
-      api.storage().then(setStorage, () => {});
+      api.storage().then((usage) => rememberStorage(reader, usage), () => {});
     } catch (err) {
       const message = err instanceof Error ? err.message : "That book could not be removed. Please try again.";
       setActive({ kind: "delete", id, error: message });

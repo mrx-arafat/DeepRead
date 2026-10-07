@@ -23,6 +23,9 @@ export type Notes = {
   forgetRemoved: () => void;
 };
 
+/** How often a page in view looks for notes added on another device. */
+const REFRESH_MS = 30_000;
+
 /** The reader's notes for the whole book, kept with the book (see noteSync.ts). New questions are asked in `lang`. */
 export function useNotes(bookId: string, lang: LangCode): Notes {
   const [all, setAll] = useState<Note[]>([]);
@@ -35,7 +38,23 @@ export function useNotes(bookId: string, lang: LangCode): Notes {
     const opened = createNoteSync({ bookId, profileId, inheritsOldNotes, lang: langNow(), onChange: setAll });
     sync.current = opened;
     void opened.load();
-    return () => opened.close();
+    // Notes added on another device show up without a reload: look again when the reader comes back to the page, and now
+    // and then while it is in view. A hidden tab does not poll.
+    const refresh = () => void opened.refresh();
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    const timer = setInterval(refreshIfVisible, REFRESH_MS);
+    return () => {
+      opened.close();
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      clearInterval(timer);
+    };
   }, [bookId, profileId, inheritsOldNotes]);
 
   // Kept apart, so a highlight never shows as a card nor changes which card is the newest. A note of a kind this

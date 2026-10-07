@@ -37,6 +37,7 @@ import type { Profiles } from "./profiles.ts";
 import { sessionKey } from "./session-token.ts";
 import { loadSessionSecret } from "./sessions.ts";
 import { createLocalStore } from "./storage.ts";
+import type { ObjectStore } from "./storage.ts";
 
 // Longer than any profile code may be: the admin types the whole passkey to sign in.
 const PASSKEY = "a long admin passkey for tests, ".repeat(3);
@@ -69,6 +70,14 @@ const fakeLlm: Ai = {
   close() {},
 };
 
+/** `store`, noting each read, size and listing it is asked for in `calls` ("read profiles.json"). */
+const counted = (store: ObjectStore, calls: string[]): ObjectStore => ({
+  ...store,
+  read: (key) => (calls.push(`read ${key}`), store.read(key)),
+  size: (key) => (calls.push(`size ${key}`), store.size(key)),
+  list: (prefix) => (calls.push(`list ${prefix}`), store.list(prefix)),
+});
+
 /** The session cookie a response sets, as a Cookie header sends it back ("" when it sets none). */
 const cookieFrom = (response: Response): string => (response.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
 
@@ -93,8 +102,9 @@ describe("DeepRead with profiles", () => {
     limit = null,
     parsePdf = fakeParsePdf,
     ai = { llm: fakeLlm },
-  }: { limit?: number | null; parsePdf?: ParsePdf; ai?: { llm: Ai; openrouter?: OpenRouter } } = {}): Promise<void> {
-    const profiles = createProfiles({ store: createLocalStore(dataDir), dataDir, limit, adminPasskey: PASSKEY, adminName: "Arafat" });
+    store = createLocalStore(dataDir),
+  }: { limit?: number | null; parsePdf?: ParsePdf; ai?: { llm: Ai; openrouter?: OpenRouter }; store?: ObjectStore } = {}): Promise<void> {
+    const profiles = createProfiles({ store, dataDir, limit, adminPasskey: PASSKEY, adminName: "Arafat" });
     started.push(profiles);
     const key = sessionKey(await loadSessionSecret(dataDir), PASSKEY);
     app = createApp({
@@ -761,6 +771,63 @@ describe("DeepRead with profiles", () => {
       await share(adminCookie, bookId, mina.id);
       expect((await call("DELETE", `/api/admin/profiles/${mina.id}`, adminCookie)).status).toBe(204);
       expect(await json<BookShare[]>(call("GET", `/api/books/${bookId}/shares`, adminCookie))).toEqual([]);
+    });
+
+    it("should show a shelf again without asking the store, with the owner's changes and the reader's own place", async () => {
+      const calls: string[] = [];
+      await start({ store: counted(createLocalStore(dataDir), calls) });
+      const adminCookie = await signIn(admin, PASSKEY);
+      const mina = await addProfile(adminCookie, "Mina", "246810");
+      const minaCookie = await signIn(mina.id, "246810");
+      await upload(minaCookie, "Mina's Book");
+      const bookId = await upload(adminCookie, "No Longer Human");
+      await share(adminCookie, bookId, mina.id);
+      const places = async () => (await shelf(minaCookie)).map((book) => [book.title, book.progress?.blockId ?? null]);
+      expect(await places()).toEqual([["No Longer Human", null], ["Mina's Book", null]]);
+      const id = (await shelf(minaCookie))[0]!.id;
+
+      calls.length = 0;
+      expect(await places()).toEqual([["No Longer Human", null], ["Mina's Book", null]]);
+      expect(await json<BookDetail>(call("GET", `/api/books/${id}`, minaCookie))).toMatchObject({ title: "No Longer Human" });
+      expect(calls).toEqual([]);
+
+      expect((await call("PUT", `/api/books/${id}/progress`, minaCookie, { chapterId: "c1", blockId: "c1-b0" })).status).toBe(200);
+      expect((await call("PATCH", `/api/books/${bookId}`, adminCookie, { title: "Ningen Shikkaku" })).status).toBe(200);
+      expect(await places()).toEqual([["Ningen Shikkaku", "c1-b0"], ["Mina's Book", null]]);
+
+      // Removed by its owner and shared again, it comes back without the place she had in it.
+      expect((await call("DELETE", `/api/books/${bookId}`, adminCookie)).status).toBe(204);
+      expect(await upload(adminCookie, "No Longer Human")).toBe(bookId);
+      await share(adminCookie, bookId, mina.id);
+      expect(await places()).toEqual([["No Longer Human", null], ["Mina's Book", null]]);
+
+      // Started again, her shelf reads her place just before she saves one, and gets its answer only after the save.
+      let answered = () => {};
+      let release = () => {};
+      const readBeforeSave = new Promise<void>((resolve) => (answered = resolve));
+      const saved = new Promise<void>((resolve) => (release = resolve));
+      let holding = true;
+      const local = createLocalStore(dataDir);
+      await start({
+        store: {
+          ...local,
+          read: async (key) => {
+            const data = await local.read(key);
+            if (holding && key.endsWith("/progress.json")) {
+              holding = false;
+              answered();
+              await saved;
+            }
+            return data;
+          },
+        },
+      });
+      const listing = places();
+      await readBeforeSave;
+      expect((await call("PUT", `/api/books/${id}/progress`, minaCookie, { chapterId: "c1", blockId: "c1-b0" })).status).toBe(200);
+      release();
+      expect(await listing).toEqual([["No Longer Human", null], ["Mina's Book", null]]);
+      expect(await places()).toEqual([["No Longer Human", "c1-b0"], ["Mina's Book", null]]);
     });
 
     it("should list what each reader shares and is shared, and show the admin every share with a way to stop it", async () => {
