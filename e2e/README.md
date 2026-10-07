@@ -107,6 +107,20 @@ playwright-cli -s=deepread-status-shared-check open http://127.0.0.1:5184
 playwright-cli -s=deepread-status-shared-check run-code --filename e2e/reading-status-shared.js
 ```
 
+`reading-detour-shared.js` needs a fresh profile-enabled local instance with `ADMIN_NAME=Owner` and `ADMIN_PASSKEY=shared-detour-test-code-2026`. It checks that each reader's Continue context and highlight remain private, unsharing revokes access, and resharing restores the recipient's state:
+
+```bash
+playwright-cli -s=deepread-detour-shared-check open http://127.0.0.1:5184
+playwright-cli -s=deepread-detour-shared-check run-code --filename e2e/reading-detour-shared.js
+```
+
+`note-cross-tab.js` needs an isolated single-book shelf and a browser with native Web Locks. It opens two tabs, aborts both note writes, verifies distinct pending operations after one tab closes and the other reloads, then retries and confirms each note reaches the server exactly once:
+
+```bash
+playwright-cli -s=deepread-cross-tab-check open http://127.0.0.1:5184
+playwright-cli -s=deepread-cross-tab-check run-code --filename e2e/note-cross-tab.js
+```
+
 `library-shelf-matrix.js` needs a fresh empty local shelf and distinct PDFs at `/tmp/deepread-shelf-matrix-second.pdf` and `/tmp/deepread-shelf-matrix-third.pdf`. Make them with `pdfunite` using two and three copies of `e2e/fixtures/problems-of-philosophy.pdf`, respectively. It verifies empty upload, one-book Continue and actions, two-book search and status filtering, pin/unpin focus, reload, and actions on all three rows:
 
 ```bash
