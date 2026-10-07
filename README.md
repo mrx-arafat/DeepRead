@@ -15,7 +15,7 @@ Your books stay on your computer, and AI help comes from your own Claude Code or
 [![Node.js 24+](https://img.shields.io/badge/node-24%2B-1d3bb8)](https://nodejs.org)
 [![macOS, Linux, Windows (WSL)](https://img.shields.io/badge/runs%20on-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows%20(WSL)-1d3bb8)](#install-in-one-line)
 
-[Install](#install-in-one-line) · [AI helpers](#ai-helpers) · [How to use it](#how-to-use-deepread) · [Read together](#read-together-profiles-and-sharing) · [Troubleshooting](#troubleshooting) · [How it works](#how-it-works)
+[Install](#install-in-one-line) · [AI helpers](#ai-helpers) · [How to use it](#how-to-use-deepread) · [Read together](#read-together-profiles-and-sharing) · [Host it on a server](docs/self-hosting.md) · [Troubleshooting](#troubleshooting) · [How it works](#how-it-works)
 
 <table><tr><td><img src="docs/images/explain.webp" alt="DeepRead explaining a selected passage in the margin beside the book" width="900"></td></tr></table>
 
@@ -542,6 +542,14 @@ The link carries a secret key, kept in `data/remote-key`, that unlocks DeepRead 
 Without the key, the tunnel answers nothing but the empty page shell.
 Anyone who has the link can use DeepRead and your AI helper's usage, so do not share it.
 
+## Host it on a server
+
+To let the people you read with use DeepRead from anywhere, put it on a server at its own web address, such as `https://read.example.com`.
+They open the address, tap their profile and type their code, with nothing to install and no key link.
+
+Set `DEEPREAD_PUBLIC_URL` to that address and turn profiles on with an `ADMIN_PASSKEY` of 12 characters or more; DeepRead refuses to start without them.
+**[Host DeepRead on your own server](docs/self-hosting.md)** walks through the whole setup on a Linux server: Node.js, a service that restarts on its own, HTTPS with Caddy or nginx, Cloudflare in front, backups, updates, and the problems people run into.
+
 ## Keep your books in Cloudflare R2
 
 By default your books stay in the `data` folder on your computer.
@@ -1032,6 +1040,7 @@ Each sentence is made while the one before it is read, the silence the voice lea
   If you choose Cloudflare R2, those go to your own bucket instead (see [Keep your books in Cloudflare R2](#keep-your-books-in-cloudflare-r2)).
 - The server listens on `127.0.0.1` only and rejects requests from other websites.
   With `pnpm phone`, remote devices are refused until they open the link with the secret key.
+  With `DEEPREAD_PUBLIC_URL` (see [Host it on a server](#host-it-on-a-server)), anyone can open the profile picker at that address, and each profile's code guards its books.
 - With profiles on, each profile's code is stored in a scrambled (hashed) form, never as it was typed.
   The admin passkey lives only in `.env` or `.env.local` on this computer, which Git ignores, and is never committed.
 - With profiles on, other profiles cannot see your books, notes or saved answers, except a book you choose to share, which they read from your copy for as long as you share it.

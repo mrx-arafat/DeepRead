@@ -31,6 +31,8 @@ type SharedDeps = {
   webRoot?: string;
   /** When set, devices on other host names (a tunnel) may use the app after unlocking with this key. */
   remoteKey?: string;
+  /** When set (DEEPREAD_PUBLIC_URL, as an origin), anyone may use the app at this address, signing in with a profile's code. */
+  publicOrigin?: string;
 };
 
 /** One library and no sign-in (ADMIN_PASSKEY not set), or profiles, each reading from a library of its own. */

@@ -1493,6 +1493,46 @@ describe("DeepRead API", () => {
       expect((await app.request(`/api/unlock?key=${KEY}`)).status).toBe(404);
     });
   });
+
+  describe("published at its own web address", () => {
+    const PUBLIC = "https://read.example.com";
+    // What a visitor's request looks like on the server: the proxy keeps the Host they typed, and Cloudflare adds its headers.
+    const viaCloudflare = { "cf-connecting-ip": "203.0.113.7", "cf-ray": "8f0c1a2b3c4d5e6f-DAC" };
+    let published: Hono<AppEnv>;
+
+    beforeEach(() => {
+      published = createApp({
+        library,
+        parsePdf: fakeParsePdf,
+        renderCover: fakeRenderCover,
+        llm: llm.llm,
+        quickTranslate: async (text) => text,
+        publicOrigin: PUBLIC,
+      });
+    });
+
+    it("should answer its own pages at that address without any key", async () => {
+      const ownPage = { ...viaCloudflare, origin: PUBLIC, "sec-fetch-site": "same-origin" };
+      expect((await published.request(`${PUBLIC}/api/books`, { headers: ownPage })).status).toBe(200);
+      expect((await published.request(`${PUBLIC}/api/books`, { method: "POST", headers: ownPage, body: new FormData() })).status).toBe(400);
+      // Opening an address directly, and tools such as curl, send no Origin.
+      expect((await published.request(`${PUBLIC}/api/health`, { headers: viaCloudflare })).status).toBe(200);
+    });
+
+    it("should still refuse other websites and other host names", async () => {
+      const fromOtherSite = await published.request(`${PUBLIC}/api/books`, {
+        method: "POST",
+        headers: { ...viaCloudflare, origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+        body: new FormData(),
+      });
+      expect(fromOtherSite.status).toBe(403);
+      expect(((await fromOtherSite.json()) as { error: string }).error).toBe("forbidden_origin");
+      const sameSite = { ...viaCloudflare, origin: PUBLIC, "sec-fetch-site": "same-site" };
+      expect((await published.request(`${PUBLIC}/api/books`, { headers: sameSite })).status).toBe(403);
+      expect((await published.request("https://other.example.com/api/books", { headers: viaCloudflare })).status).toBe(403);
+      expect((await published.request(`${PUBLIC}/api/unlock?key=anything`, { headers: viaCloudflare })).status).toBe(404);
+    });
+  });
 });
 
 describe("checkClosing", () => {

@@ -21,7 +21,7 @@ const MAX_TRANSLATE_CHARS = 200;
 export function createApp(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  app.use("/api/*", accessGuard(deps.remoteKey));
+  app.use("/api/*", accessGuard(deps.remoteKey, deps.publicOrigin));
   app.get("/api/health", (c) => c.json({ ok: true }));
   // Before the guard below: the profile picker shows these to people who have not signed in yet.
   app.route("/api", sessionRoutes(deps.accounts));

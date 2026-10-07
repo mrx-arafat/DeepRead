@@ -68,6 +68,8 @@ export const MIN_CODE_CHARS = 6;
 export const MAX_CODE_CHARS = 64;
 /** The longest code a sign-in reads: the admin's is ADMIN_PASSKEY, which may well be longer than a profile's code. */
 export const MAX_PASSKEY_CHARS = 1024;
+/** Below this an ADMIN_PASSKEY, which opens every profile, is easy to guess. */
+export const STRONG_PASSKEY_CHARS = 12;
 
 const PROFILES_KEY = "profiles.json";
 /** Where a library keeps when each of its books was pinned (library.ts). */

@@ -11,8 +11,9 @@ import type { Accounts } from "./deps.ts";
 import { loadEnvFiles } from "./env.ts";
 import { createLibrary } from "./library.ts";
 import type { Library } from "./library.ts";
+import { publicOriginFrom } from "./local-only.ts";
 import { parsePdf } from "./parser/index.ts";
-import { createProfiles, MAX_NAME_CHARS, MAX_PASSKEY_CHARS } from "./profiles.ts";
+import { createProfiles, MAX_NAME_CHARS, MAX_PASSKEY_CHARS, STRONG_PASSKEY_CHARS } from "./profiles.ts";
 import { sessionKey } from "./session-token.ts";
 import { loadSessionSecret } from "./sessions.ts";
 import { readStorageConfig } from "./storage-config.ts";
@@ -29,8 +30,18 @@ const dataDir = resolve(process.env.DEEPREAD_DATA_DIR ?? "./data");
 const production = process.env.NODE_ENV === "production";
 // Set: everyone picks a profile and signs in with its code, and the admin's code is this. Unset: one library, no sign-in.
 const adminPasskey = process.env.ADMIN_PASSKEY ?? "";
-// Below this a passkey that opens every profile is easy to guess.
-const STRONG_PASSKEY_CHARS = 12;
+
+/** The address DeepRead is published at on a server, or stops with the setting to fix, before anything is opened. */
+function readPublicOrigin(): string | undefined {
+  try {
+    return publicOriginFrom(process.env.DEEPREAD_PUBLIC_URL, adminPasskey);
+  } catch (error) {
+    console.error(`DeepRead could not start. ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+}
+
+const publicOrigin = readPublicOrigin();
 
 /** Stops with the reason when the storage settings cannot work, rather than failing at the first upload. */
 async function openStore(): Promise<{ config: StorageConfig; store: ObjectStore }> {
@@ -94,12 +105,14 @@ const app = createApp({
   quickTranslate: translator.translate,
   webRoot: production ? resolve(import.meta.dirname, "../dist") : undefined,
   remoteKey: process.env.DEEPREAD_REMOTE_KEY || undefined,
+  publicOrigin,
 });
 
 // Bound to loopback on purpose: other devices reach it only through the tunnel, which accessGuard checks.
 const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) => {
   console.log(`DeepRead API listening on http://127.0.0.1:${info.port} (data: ${dataDir})`);
   if (envFiles.length > 0) console.log(`Settings from ${envFiles.join(" and ")}.`);
+  if (publicOrigin) console.log(`Published at ${publicOrigin}: anyone can open it there, and each profile's code guards its books.`);
   const where =
     storage.kind === "r2" ? `the R2 bucket ${storage.bucket}${storage.prefix ? ` (in ${storage.prefix})` : ""}` : "the data folder";
   console.log(`Books are kept in ${where}${storage.limit === null ? "." : `, up to ${formatBytes(storage.limit)}.`}`);
