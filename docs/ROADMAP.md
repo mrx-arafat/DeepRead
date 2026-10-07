@@ -251,7 +251,7 @@ The first release should combine reading comfort with returning to a book; the n
 - [ ] UX-01: Reading comfort and contextual controls.
 - [ ] UX-02: Save confidence and recovery.
 - [ ] UX-03: Where I left off.
-- [ ] UX-04: Library organization and finding passages.
+- [x] UX-04: Library organization and finding passages.
 - [ ] UX-05: My edition notebook and personal reflections.
 - [ ] UX-06: Passage-grounded questions.
 - [ ] UX-07: Seamless reading and listening.
@@ -260,16 +260,16 @@ The first release should combine reading comfort with returning to a book; the n
 
 ### Implementation checkpoint: 2026-10-07
 
-Implemented locally, not yet committed or deployed:
+Implemented in the repository and checked in local previews; not yet production-deployed:
 
 | Track | Available now | Remaining before closing the track |
 | --- | --- | --- |
 | UX-01 | Aa contains appearance only; Reader preferences contains language, chapter-note visibility and helper configuration; Voice settings is reachable from the player; shorter phone chapter openings; Escape preserves playback and returns useful focus | Full contextual-help/selection/physical mobile-keyboard checks and logical-position matrix across typography changes |
 | UX-02 | Quiet save status; browser-only recovery messaging; explicit retry and discard-refused actions; profile-scoped immutable pending records; separate short append and network locks; malformed recovery records retained without blocking valid work | Broader authenticated live session-expiry and browser-support matrix; cross-tab network ordering requires native Web Locks, though immutable records prevent shared-outbox overwrite without them |
 | UX-03 | Optional library dialog with bounded real preceding text and a resolved preceding highlight; exact highlight source link; one-action Return or deliberate Keep reading here; direct Continue retained. Progress stays at the saved place throughout a source visit, including reload and tab exit | Verify the same access and privacy behavior with live shared profiles before closing the entire track |
-| UX-04 | Compact single-book Continue controls without a duplicate cover; title/author and status filtering; manual Reading, Saved for later, and Finished states persisted per reader, including shared copies; bounded literal in-book search with chapter/excerpt results, exact repeated-match marking, and a progress-safe return path | Complete the empty, pinned, and keyboard shelf acceptance checks before closing the track |
+| UX-04 | Compact single-book Continue controls without a duplicate cover; title/author and status filtering; manual Reading, Saved for later, and Finished states persisted per reader, including shared copies; bounded literal in-book search with chapter/excerpt results, exact repeated-match marking, and a progress-safe return path. Empty, one-book, three-book, pinned, shared, and keyboard shelf journeys passed in isolated headless browsers | None for the UX-04 acceptance scope; physical-device and production validation remain separate release checks |
 
-Fresh verification: 525 tests across 56 files, typecheck, and production build passed during the status slice. Headless Playwright CLI previously checked appearance/preferences/player interactions, three themes, 390/768/1440 widths, Scroll/Pages navigation, context open/dismiss/retry/Continue, shelf filtering, and a failed highlight save followed by explicit retry and server acknowledgement. Source visits additionally passed exact Return after resize in Scroll and Pages, no progress writes during a visit, reload/exit preservation, Keep reading here adoption, and recovery from a mocked failed cross-chapter return. In-book search passed repeated-result selection and exact text marking, cross-chapter Return with unchanged server progress in Scroll and Pages, no-results, a mocked failed chapter fetch, retry, and Escape dismissal. The status slice passed a two-book browser journey for manual status changes, filter transitions, reload persistence, rollback after a mocked failed write, unchanged progress, and More actions. A separate shared-profile browser journey passed recipient persistence through reload and unshare/reshare while preserving the owner's status. Independent checks also covered short 390x600 panels. Retry/error tests deliberately mock failed requests. These are not production deployment or physical-device claims. Repeatable scripts and fixture requirements are in `e2e/README.md`; the updated Momentic journeys were not executed in this pass.
+Fresh verification: 525 tests across 56 files, typecheck, and production build passed during the status slice. Headless Playwright CLI previously checked appearance/preferences/player interactions, three themes, 390/768/1440 widths, Scroll/Pages navigation, context open/dismiss/retry/Continue, shelf filtering, and a failed highlight save followed by explicit retry and server acknowledgement. Source visits additionally passed exact Return after resize in Scroll and Pages, no progress writes during a visit, reload/exit preservation, Keep reading here adoption, and recovery from a mocked failed cross-chapter return. In-book search passed repeated-result selection and exact text marking, cross-chapter Return with unchanged server progress in Scroll and Pages, no-results, a mocked failed chapter fetch, retry, and Escape dismissal. The status slice passed a two-book browser journey for manual status changes, filter transitions, reload persistence, rollback after a mocked failed write, unchanged progress, and More actions. A separate shared-profile browser journey passed recipient persistence through reload and unshare/reshare while preserving the owner's status; its follow-up also checked recipient actions and pin/unpin. The shelf matrix passed empty upload, one-book Continue/actions, two-book filters, three-book actions, pin/unpin, and reload. A separate keyboard browser journey passed Tab, Enter, Escape, status changes, and focus recovery. Independent checks also covered short 390x600 panels. Retry/error tests deliberately mock failed requests. These are not production deployment or physical-device claims. Repeatable scripts and fixture requirements are in `e2e/README.md`; the updated Momentic journeys were not executed in this pass.
 
 The save-recovery browser regression first failed because a fixed recovery panel inside the transformed Pages toolbar moved off-screen. Recovery now renders outside that toolbar, while successful save feedback remains quiet inside it. The design detector ran on rendered reader HTML; its advisory book-prose punctuation finding does not justify editing the source text. Existing text/control tokens used by the new UI exceeded 4.5:1 on paper and raised surfaces in all three themes.
 
@@ -475,7 +475,7 @@ Explicit reading status and book search require new contracts; pinning alone doe
 
 Acceptance:
 
-- [ ] Empty, one-book, many-book, shared, and pinned libraries retain all necessary actions.
+- [x] Empty, one-book, many-book, shared, and pinned libraries retain all necessary actions.
 - [x] Title/author filtering is responsive and has an accessible clear action and empty state.
 - [x] Repeated search terms navigate to the selected occurrence, not merely the first match in the chapter.
 - [x] Search detours can return to the previous reading location without leaving misleading saved progress.

@@ -100,11 +100,25 @@ playwright-cli -s=deepread-status-check open http://127.0.0.1:5184
 playwright-cli -s=deepread-status-check run-code --filename e2e/reading-status.js
 ```
 
-`reading-status-shared.js` needs a fresh profile-enabled local instance with `ADMIN_NAME=Owner`, `ADMIN_PASSKEY=shared-status-test-code-2026`, and the Gutenberg PDF fixture present. It creates a reader profile, shares a book, and checks that the recipient's Finished status survives reload and unshare/reshare while the owner remains Reading:
+`reading-status-shared.js` needs a fresh profile-enabled local instance with `ADMIN_NAME=Owner`, `ADMIN_PASSKEY=shared-status-test-code-2026`, and the Gutenberg PDF fixture present. It creates a reader profile, shares a book, and checks that the recipient's Finished status survives reload and unshare/reshare while the owner remains Reading. It also checks the recipient's available actions and pin/unpin behavior:
 
 ```bash
 playwright-cli -s=deepread-status-shared-check open http://127.0.0.1:5184
 playwright-cli -s=deepread-status-shared-check run-code --filename e2e/reading-status-shared.js
+```
+
+`library-shelf-matrix.js` needs a fresh empty local shelf and distinct PDFs at `/tmp/deepread-shelf-matrix-second.pdf` and `/tmp/deepread-shelf-matrix-third.pdf`. Make them with `pdfunite` using two and three copies of `e2e/fixtures/problems-of-philosophy.pdf`, respectively. It verifies empty upload, one-book Continue and actions, two-book search and status filtering, pin/unpin focus, reload, and actions on all three rows:
+
+```bash
+playwright-cli -s=deepread-shelf-matrix-check open http://127.0.0.1:5184
+playwright-cli -s=deepread-shelf-matrix-check run-code --filename e2e/library-shelf-matrix.js
+```
+
+`library-keyboard.js` needs an isolated two-book shelf. It resets the two fixture statuses and pins, then checks Tab, Enter, and Escape through filters, search, More actions, pin/unpin, and status changes, including focus when the changed row leaves the active filter:
+
+```bash
+playwright-cli -s=deepread-library-keyboard-check open http://127.0.0.1:5184
+playwright-cli -s=deepread-library-keyboard-check run-code --filename e2e/library-keyboard.js
 ```
 
 ## Library fixtures

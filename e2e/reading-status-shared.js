@@ -81,6 +81,16 @@ async (page) => {
   await signIn(readerName, readerCode);
   assert(await status.inputValue() === 'finished', 'Recipient status lost on unshare and reshare');
   assert((await shelf())[0]?.readingStatus === 'finished', 'Server lost recipient status on reshare');
+  const actions = page.getByRole('button', { name: `More actions for ${owned.title}` });
+  await actions.click();
+  assert(await page.getByRole('button', { name: `Edit ${owned.title}` }).count() === 0, 'Recipient must not edit the owner book');
+  assert(await page.getByRole('button', { name: `Share ${owned.title}` }).count() === 0, 'Recipient must not reshare the owner book');
+  await page.getByRole('button', { name: `Remove ${owned.title} from my shelf` }).waitFor();
+  await page.getByRole('button', { name: `Pin ${owned.title} to top` }).click();
+  await page.getByRole('region', { name: 'Pinned' }).getByRole('listitem').waitFor();
+  await actions.click();
+  await page.getByRole('button', { name: `Unpin ${owned.title}` }).click();
+  await page.getByRole('region', { name: 'Your books' }).getByRole('listitem').waitFor();
   assert(errors.length === 0, `UI page errors: ${errors.join('; ')}`);
-  return 'Owner/recipient status isolation, recipient reload persistence, and unshare/reshare restoration passed';
+  return 'Owner/recipient status isolation, reload and reshare restoration, and recipient actions passed';
 }
