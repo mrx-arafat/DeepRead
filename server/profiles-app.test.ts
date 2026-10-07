@@ -585,11 +585,15 @@ describe("DeepRead with profiles", () => {
     expect(await json<SessionInfo>(single.request("/api/session"))).toEqual({ mode: "single" });
     expect(await json<PublicProfile[]>(single.request("/api/profiles"))).toEqual([]);
     const before = await uploadSingle(single, "Kept From Before");
+    const pinned = await json<{ pinnedAt: string }>(single.request(`/api/books/${before}/pin`, { method: "PUT" }));
 
     await start();
     const owner = (await json<PublicProfile[]>(call("GET", "/api/profiles")))[0]!;
     const adminCookie = await signIn(owner.id, PASSKEY);
     expect(await titles(adminCookie)).toEqual(["Kept From Before"]);
+    // The pin goes with the book: the admin's shelf still has it at the top.
+    expect((await json<BookSummary[]>(call("GET", "/api/books", adminCookie)))[0]?.pinnedAt).toBe(pinned.pinnedAt);
+    await expect(readdir(dataDir)).resolves.not.toContain("pins.json");
     expect(await readdir(join(dataDir, "books"))).toEqual([]);
     expect(await readdir(join(dataDir, "profiles", owner.id, "books"))).toEqual([before]);
 
@@ -862,6 +866,90 @@ describe("DeepRead with profiles", () => {
       expect((await call("DELETE", `/api/admin/shares/${mina.id}/${hers}/${admin}`, adminCookie)).status).toBe(204);
       expect((await shelf(adminCookie)).map((b) => b.title)).toEqual(["No Longer Human"]);
       expect((await call("DELETE", `/api/admin/shares/${mina.id}/${hers}/${admin}`, adminCookie)).status).toBe(404);
+    });
+
+    describe("pinning", () => {
+      const pin = (cookie: string, id: string) => call("PUT", `/api/books/${id}/pin`, cookie);
+      const unpin = (cookie: string, id: string) => call("DELETE", `/api/books/${id}/pin`, cookie);
+      const pinnedAtOf = async (cookie: string, id: string) => (await shelf(cookie)).find((book) => book.id === id)?.pinnedAt;
+      const pinsOf = async (profileId: string) =>
+        JSON.parse(await readFile(join(dataDir, "profiles", profileId, "pins.json"), "utf8").catch(() => "{}")) as Record<string, string>;
+
+      it("should let a reader pin a book shared with them as their own pin, which neither its owner nor another reader sees", async () => {
+        const adminCookie = await signIn(admin, PASSKEY);
+        const mina = await addProfile(adminCookie, "Mina", "246810");
+        const zed = await addProfile(adminCookie, "Zed", "135790");
+        const minaCookie = await signIn(mina.id, "246810");
+        const zedCookie = await signIn(zed.id, "135790");
+        const bookId = await upload(adminCookie, "No Longer Human");
+        const unshared = await upload(adminCookie, "Not For Zed");
+        await share(adminCookie, bookId, mina.id);
+        await share(adminCookie, bookId, zed.id);
+        await share(adminCookie, unshared, mina.id);
+        const id = (await shelf(minaCookie)).find((book) => book.title === "No Longer Human")!.id;
+
+        // The owner's pin is the owner's: it does not pin the book on their readers' shelves.
+        const ownerPin = await json<{ pinnedAt: string }>(pin(adminCookie, bookId));
+        expect(await pinnedAtOf(minaCookie, id)).toBeUndefined();
+        expect(await json<BookDetail>(call("GET", `/api/books/${id}`, minaCookie))).not.toHaveProperty("pinnedAt");
+
+        const response = await pin(minaCookie, id);
+        expect(response.status).toBe(200);
+        const { pinnedAt } = await json<{ pinnedAt: string }>(response);
+        expect(await pinnedAtOf(minaCookie, id)).toBe(pinnedAt);
+        expect(await json<BookDetail>(call("GET", `/api/books/${id}`, minaCookie))).toMatchObject({ pinnedAt });
+        // Hers alone, kept in her own library's file under the shared id.
+        expect(await pinsOf(mina.id)).toEqual({ [id]: pinnedAt });
+        expect(await pinsOf(admin)).toEqual({ [bookId]: ownerPin.pinnedAt });
+        expect(await pinnedAtOf(adminCookie, bookId)).toBe(ownerPin.pinnedAt);
+        expect(await pinnedAtOf(zedCookie, id)).toBeUndefined();
+        expect(await pinsOf(zed.id)).toEqual({});
+
+        // Unpinning the owner's copy leaves hers; a book not shared with a reader is not on their shelf to pin.
+        expect((await unpin(adminCookie, bookId)).status).toBe(204);
+        expect(await pinnedAtOf(minaCookie, id)).toBe(pinnedAt);
+        const notShared = `${admin}--${unshared}`;
+        for (const send of [pin, unpin]) expect((await send(zedCookie, notShared)).status).toBe(404);
+        expect((await pin(zedCookie, `nobody-123456--${bookId}`)).status).toBe(404);
+
+        // The pin goes with her when DeepRead starts again, and comes off with unpin.
+        await start();
+        const again = await signIn(mina.id, "246810");
+        expect(await pinnedAtOf(again, id)).toBe(pinnedAt);
+        expect((await unpin(again, id)).status).toBe(204);
+        expect(await pinnedAtOf(again, id)).toBeUndefined();
+        expect(await pinsOf(mina.id)).toEqual({});
+      });
+
+      it("should hide the pin of a book whose share ended, bring it back if shared again, and clear it away at the next pin", async () => {
+        const adminCookie = await signIn(admin, PASSKEY);
+        const mina = await addProfile(adminCookie, "Mina", "246810");
+        const minaCookie = await signIn(mina.id, "246810");
+        const hers = await upload(minaCookie, "Mina's Book");
+        const bookId = await upload(adminCookie, "No Longer Human");
+        await share(adminCookie, bookId, mina.id);
+        const id = (await shelf(minaCookie)).find((book) => book.sharedBy)!.id;
+        const { pinnedAt } = await json<{ pinnedAt: string }>(pin(minaCookie, id));
+
+        // Off the shelf, the book cannot be pinned or unpinned and shows no pin, but the pin is kept for a later share.
+        expect((await unshare(adminCookie, bookId, mina.id)).status).toBe(204);
+        expect((await shelf(minaCookie)).map((book) => book.pinnedAt)).toEqual([undefined]);
+        expect((await pin(minaCookie, id)).status).toBe(404);
+        expect((await unpin(minaCookie, id)).status).toBe(404);
+        expect(await pinsOf(mina.id)).toEqual({ [id]: pinnedAt });
+        await share(adminCookie, bookId, mina.id);
+        expect(await pinnedAtOf(minaCookie, id)).toBe(pinnedAt);
+
+        // The owner removes the book: its pin is no use to anyone, and the next pin she makes clears it away.
+        expect((await call("DELETE", `/api/books/${bookId}`, adminCookie)).status).toBe(204);
+        expect((await shelf(minaCookie)).map((book) => book.title)).toEqual(["Mina's Book"]);
+        expect(await pinsOf(mina.id)).toEqual({ [id]: pinnedAt });
+        const herAt = (await json<{ pinnedAt: string }>(pin(minaCookie, hers))).pinnedAt;
+        expect(await pinsOf(mina.id)).toEqual({ [hers]: herAt });
+        expect(await upload(adminCookie, "No Longer Human")).toBe(bookId);
+        await share(adminCookie, bookId, mina.id);
+        expect(await pinnedAtOf(minaCookie, id)).toBeUndefined();
+      });
     });
   });
   describe("AI helpers, which the admin gives to readers one by one", () => {

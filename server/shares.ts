@@ -2,6 +2,7 @@
 // whose. The book itself stays in its owner's library and is never written to by the reader: their place, notes and
 // cached answers for it are their own, in profiles/<reader>/shared/<owner>--<book>/. Stopping a share leaves those where
 // they are, so sharing the book again gives the reader back where they were; removing the book clears them away.
+// Pins are the reader's own too: they sit in the reader's own pins.json under the shared id, never in the owner's.
 import type { NoteChange } from "../shared/notes.ts";
 import { applyNoteChange } from "../shared/notes.ts";
 import type { BookSummary, Note, PublicProfile, ReadingProgress } from "../shared/types.ts";
@@ -257,8 +258,18 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
     return share && library && owner ? { library, bookId: parts.bookId, owner, share } : null;
   }
 
-  async function shelved(id: string, summary: BookSummary, owner: PublicProfile, share: Share): Promise<BookSummary> {
-    return { ...summary, id, addedAt: share.sharedAt, progress: await copies.progress(share), sharedBy: owner };
+  /** The ids the books shared with this reader go by on their shelf: the books a pin may name besides their own. */
+  async function sharedIds(): Promise<Set<string>> {
+    return new Set(
+      (await shares.list())
+        .filter((share) => share.recipientId === readerId && deps.libraryOf(share.ownerId) && deps.profileOf(share.ownerId))
+        .map((share) => sharedBookId(share.ownerId, share.bookId)),
+    );
+  }
+
+  async function shelved(id: string, summary: BookSummary, owner: PublicProfile, share: Share, pins: ReadonlyMap<string, string>): Promise<BookSummary> {
+    // The owner's pin is theirs: it is replaced by the reader's own, which is none when they have not pinned the book.
+    return { ...summary, id, addedAt: share.sharedAt, progress: await copies.progress(share), sharedBy: owner, pinnedAt: pins.get(id) };
   }
 
   return {
@@ -266,6 +277,7 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
 
     async list() {
       const mine = await own.list();
+      const pins = await own.pins();
       const received = (await shares.list()).filter((share) => share.recipientId === readerId);
       // One listing for each owner, however many of their books are shared with this reader.
       const owners = new Map<string, Promise<BookSummary[]>>();
@@ -276,7 +288,7 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
           if (!library || !owner) return null;
           if (!owners.has(share.ownerId)) owners.set(share.ownerId, library.list());
           const summary = (await owners.get(share.ownerId))?.find((book) => book.id === share.bookId);
-          return summary ? shelved(sharedBookId(share.ownerId, share.bookId), summary, owner, share) : null;
+          return summary ? shelved(sharedBookId(share.ownerId, share.bookId), summary, owner, share, pins) : null;
         }),
       );
       return [...mine, ...shared.filter((book) => book !== null)].sort(newestFirst);
@@ -286,7 +298,7 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
       if (isBookId(id)) return own.detail(id);
       const from = await source(id);
       const detail = from && (await from.library.detail(from.bookId));
-      return from && detail ? { ...detail, ...(await shelved(id, detail, from.owner, from.share)) } : null;
+      return from && detail ? { ...detail, ...(await shelved(id, detail, from.owner, from.share, await own.pins())) } : null;
     },
 
     async book(id) {
@@ -334,6 +346,14 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
       // Off this reader's shelf only: the owner keeps the book.
       const parts = parseSharedBookId(id);
       return parts !== null && (await shares.remove(parts.ownerId, parts.bookId, readerId));
+    },
+
+    async pin(id) {
+      return own.pin(id, await sharedIds());
+    },
+
+    async unpin(id) {
+      return own.unpin(id, await sharedIds());
     },
 
     async notes(id) {

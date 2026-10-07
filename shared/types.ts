@@ -77,6 +77,8 @@ export type BookSummary = {
   progress: ReadingProgress | null;
   /** Page 1 of the PDF is the book's cover, served at /api/books/<id>/cover. Without one the library draws a cover. */
   hasCover: boolean;
+  /** When the reader pinned the book to the top of their library; absent when it is not pinned. Pins are the reader's own, shared books included. */
+  pinnedAt?: string;
   /**
    * Who shared this book with the reader; absent for their own books. A shared book is read only, its `addedAt` is when
    * it was shared, and its `progress` is the reader's own.

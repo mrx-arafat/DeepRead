@@ -10,6 +10,7 @@ import type { Ai } from "./ai.ts";
 import type { AppEnv } from "./app-env.ts";
 import { createApp } from "./app.ts";
 import type { ParsePdf, RenderCover } from "./deps.ts";
+import { createEncryptedStore, startsSealed } from "./encrypted-store.ts";
 import { createLibrary } from "./library.ts";
 import type { Library } from "./library.ts";
 import { LlmError } from "./llm.ts";
@@ -158,6 +159,11 @@ describe("DeepRead API", () => {
   /** DeepRead starting again on the same data folder, with `limit` set. */
   const restart = (limit: number | null = null) => {
     library = createLibrary(dataDir, { limit });
+    app = appFor(library);
+  };
+  /** DeepRead starting again on the same data folder, reaching the store through `store`. */
+  const restartWith = (store: ObjectStore) => {
+    library = createLibrary(dataDir, { store });
     app = appFor(library);
   };
 
@@ -570,6 +576,136 @@ describe("DeepRead API", () => {
       expect(await bookIds()).toEqual([id]);
       expect(await readdir(join(dataDir, "books"))).toEqual([id]);
       expect((await storage()).used).toBe(before - "%PDF-1.4".length);
+    });
+  });
+
+  describe("pinning books", () => {
+    const pin = (id: string) => send("PUT", `/api/books/${id}/pin`);
+    const unpin = (id: string) => send("DELETE", `/api/books/${id}/pin`);
+    const shelf = async () => (await (await app.request("/api/books")).json()) as BookSummary[];
+    /** When each book on the shelf was pinned, by title: null for a book that is not. */
+    const pinnedAts = async () => Object.fromEntries((await shelf()).map((book) => [book.title, book.pinnedAt ?? null]));
+    const pinsFile = async () => JSON.parse(await readFile(join(dataDir, "pins.json"), "utf8")) as Record<string, string>;
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("should pin a book, move the pin when it is pinned again, and unpin it, however many times", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime("2026-03-01T09:00:00.000Z");
+      const first = await addBook(sampleBook("First Book"));
+      vi.setSystemTime("2026-03-01T09:05:00.000Z");
+      const second = await addBook(sampleBook("Second Book"));
+      expect(await pinnedAts()).toEqual({ "First Book": null, "Second Book": null });
+
+      vi.setSystemTime("2026-03-01T10:00:00.000Z");
+      const pinned = await pin(first);
+      expect(pinned.status).toBe(200);
+      expect(await pinned.json()).toEqual({ pinnedAt: "2026-03-01T10:00:00.000Z" });
+      expect(await pinnedAts()).toEqual({ "First Book": "2026-03-01T10:00:00.000Z", "Second Book": null });
+      expect(await (await app.request(`/api/books/${first}`)).json()).toMatchObject({ pinnedAt: "2026-03-01T10:00:00.000Z" });
+      expect(await (await app.request(`/api/books/${second}`)).json()).not.toHaveProperty("pinnedAt");
+      // Pinned or not, the list stays newest added first: the screen splits the sections.
+      expect((await shelf()).map((book) => book.title)).toEqual(["Second Book", "First Book"]);
+
+      vi.setSystemTime("2026-03-01T10:05:00.000Z");
+      expect(await (await pin(second)).json()).toEqual({ pinnedAt: "2026-03-01T10:05:00.000Z" });
+      vi.setSystemTime("2026-03-01T10:10:00.000Z");
+      expect(await (await pin(first)).json()).toEqual({ pinnedAt: "2026-03-01T10:10:00.000Z" });
+      expect(await pinnedAts()).toEqual({ "First Book": "2026-03-01T10:10:00.000Z", "Second Book": "2026-03-01T10:05:00.000Z" });
+
+      const unpinned = await unpin(first);
+      expect(unpinned.status).toBe(204);
+      expect(await unpinned.text()).toBe("");
+      expect((await unpin(first)).status).toBe(204);
+      expect(await pinnedAts()).toEqual({ "First Book": null, "Second Book": "2026-03-01T10:05:00.000Z" });
+    });
+
+    it("should answer not found for a book that is not on the shelf, and refuse an id that cannot be a book", async () => {
+      await addBook();
+      // The second is shaped like a book shared with the reader, which a library without profiles has none of.
+      for (const id of ["no-such-book-12345678", "nobody--no-such-book-12345678"]) {
+        for (const method of ["PUT", "DELETE"]) {
+          const response = await send(method, `/api/books/${id}/pin`);
+          expect(response.status).toBe(404);
+          expect(await response.json()).toMatchObject({ error: "book_not_found" });
+        }
+      }
+      for (const method of ["PUT", "DELETE"]) {
+        const response = await send(method, "/api/books/Not_A_Book/pin");
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ error: "invalid_id" });
+      }
+      expect(await entries(dataDir)).not.toContain("pins.json");
+    });
+
+    it("should keep pins when DeepRead starts again, and drop a book's pin when the book is removed", async () => {
+      const kept = await addBook(sampleBook("Kept Book"));
+      const removed = await addBook(sampleBook("Removed Book"));
+      const keptAt = ((await (await pin(kept)).json()) as { pinnedAt: string }).pinnedAt;
+      const removedAt = ((await (await pin(removed)).json()) as { pinnedAt: string }).pinnedAt;
+
+      restart();
+      expect(await pinnedAts()).toEqual({ "Kept Book": keptAt, "Removed Book": removedAt });
+      expect((await send("DELETE", `/api/books/${removed}`)).status).toBe(204);
+      expect(await pinsFile()).toEqual({ [kept]: keptAt });
+
+      // The same PDF is the same book id: it does not come back pinned.
+      expect(await addBook(sampleBook("Removed Book"))).toBe(removed);
+      expect(await pinnedAts()).toEqual({ "Kept Book": keptAt, "Removed Book": null });
+      restart();
+      expect(await pinnedAts()).toEqual({ "Kept Book": keptAt, "Removed Book": null });
+    });
+
+    it("should store the pins encrypted when an encryption key is set", async () => {
+      const key = Buffer.alloc(32, 7);
+      app = appFor(createLibrary(dataDir, { store: createEncryptedStore(createLocalStore(dataDir), key) }));
+      const id = await addBook();
+      const { pinnedAt } = (await (await pin(id)).json()) as { pinnedAt: string };
+
+      const onDisk = await readFile(join(dataDir, "pins.json"));
+      expect(startsSealed(onDisk)).toBe(true);
+      expect(onDisk.includes(pinnedAt)).toBe(false);
+      expect(onDisk.includes(id)).toBe(false);
+
+      app = appFor(createLibrary(dataDir, { store: createEncryptedStore(createLocalStore(dataDir), key) }));
+      expect((await shelf())[0]?.pinnedAt).toBe(pinnedAt);
+    });
+
+    it("should not write over the pins when they could not be read, whether the store failed or the file is damaged", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const [a, b, c] = [await addBook(sampleBook("Book A")), await addBook(sampleBook("Book B")), await addBook(sampleBook("Book C"))];
+      const aAt = ((await (await pin(a)).json()) as { pinnedAt: string }).pinnedAt;
+      const bAt = ((await (await pin(b)).json()) as { pinnedAt: string }).pinnedAt;
+      const saved = await readFile(join(dataDir, "pins.json"), "utf8");
+
+      // The store does not answer when pins.json is asked for: the books still show, with no pins, and a pin cannot be saved.
+      let answering = false;
+      const local = createLocalStore(dataDir);
+      restartWith({
+        ...local,
+        read: async (key) => {
+          if (!answering && key === "pins.json") throw new Error("the bucket did not answer");
+          return local.read(key);
+        },
+      });
+      expect(await pinnedAts()).toEqual({ "Book A": null, "Book B": null, "Book C": null });
+      expect((await pin(c)).status).toBe(500);
+      expect(await readFile(join(dataDir, "pins.json"), "utf8")).toBe(saved);
+      // It answers again: nothing was forgotten, and the pin that failed can be made.
+      answering = true;
+      expect((await pin(c)).status).toBe(200);
+      expect(await pinnedAts()).toEqual({ "Book A": aAt, "Book B": bAt, "Book C": expect.any(String) });
+
+      // A damaged file is not an empty one either.
+      await writeFile(join(dataDir, "pins.json"), "{not json");
+      restart();
+      expect(await pinnedAts()).toEqual({ "Book A": null, "Book B": null, "Book C": null });
+      expect((await pin(a)).status).toBe(500);
+      expect((await unpin(a)).status).toBe(500);
+      expect(await readFile(join(dataDir, "pins.json"), "utf8")).toBe("{not json");
     });
   });
 

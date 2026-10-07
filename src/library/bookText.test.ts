@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BookSummary } from "../../shared/types.ts";
-import { CLOTH_COUNT, clothFor, coverTitleSize, latestRead, readingNote, shortTitle } from "./bookText.ts";
+import { CLOTH_COUNT, clothFor, coverTitleSize, latestRead, readingNote, shortTitle, splitPinned } from "./bookText.ts";
 
 /** 36 000 words: exactly 200 minutes of reading at 180 words a minute. */
 function book(title: string, progress?: { percent: number; updatedAt: string }): BookSummary {
@@ -108,5 +108,29 @@ describe("latestRead", () => {
 
   it("should offer nothing when no book has been opened", () => {
     expect(latestRead([book("a"), book("b")])).toBeNull();
+  });
+});
+
+describe("splitPinned", () => {
+  const pinned = (id: string, pinnedAt: string): BookSummary => ({ ...book(id), pinnedAt });
+
+  it("should put the book pinned last first, break a tie by id, and leave the rest in the order they came in", () => {
+    const shelf = [
+      book("rest1"),
+      pinned("x", "2026-03-01T10:00:00.000Z"),
+      pinned("y", "2026-05-01T10:00:00.000Z"),
+      book("rest2"),
+      pinned("w", "2026-05-01T10:00:00.000Z"),
+      pinned("z", "2026-04-01T10:00:00.000Z"),
+    ];
+
+    const split = splitPinned(shelf);
+
+    expect(split.pinned.map((each) => each.id)).toEqual(["w", "y", "z", "x"]);
+    expect(split.rest.map((each) => each.id)).toEqual(["rest1", "rest2"]);
+  });
+
+  it("should leave the shelf as it is when nothing is pinned", () => {
+    expect(splitPinned([book("b"), book("a")])).toEqual({ pinned: [], rest: [book("b"), book("a")] });
   });
 });

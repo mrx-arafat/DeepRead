@@ -110,6 +110,9 @@ export const api = {
   },
   updateBook: (id: string, update: BookUpdate) => request<BookDetail>(`/api/books/${id}`, json("PATCH", update)),
   deleteBook: (id: string) => request<void>(`/api/books/${id}`, { method: "DELETE" }),
+  /** Pins the book to the top of the reader's shelf. Resolves with the time the server pinned it. */
+  pinBook: async (id: string) => (await request<{ pinnedAt: string }>(`/api/books/${id}/pin`, { method: "PUT" })).pinnedAt,
+  unpinBook: (id: string) => request<void>(`/api/books/${id}/pin`, { method: "DELETE" }),
   getChapter: (bookId: string, chapterId: string, signal?: AbortSignal) =>
     request<Chapter>(`/api/books/${bookId}/chapters/${chapterId}`, { signal }),
   uploadBook: async (file: File): Promise<{ book: BookDetail; alreadyHad: boolean }> => {

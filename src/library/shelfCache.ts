@@ -50,9 +50,16 @@ function changeBooks(reader: string, change: (books: BookSummary[]) => BookSumma
   if (books) rememberBooks(reader, change(books));
 }
 
-/** Changes one cached book, as the reader just did (a new title, a place saved). */
+/** Changes one cached book, as the reader just did (a new title, a place saved). A field changed to undefined is removed, as the server leaves it out. */
 export function patchBook(reader: string, id: string, changes: Partial<BookSummary>): void {
-  changeBooks(reader, (books) => books.map((book) => (book.id === id ? { ...book, ...changes } : book)));
+  changeBooks(reader, (books) =>
+    books.map((book) => {
+      if (book.id !== id) return book;
+      const patched: Partial<BookSummary> = { ...book, ...changes };
+      for (const [field, value] of Object.entries(changes)) if (value === undefined) delete patched[field as keyof BookSummary];
+      return patched as BookSummary;
+    }),
+  );
 }
 
 export function dropBook(reader: string, id: string): void {

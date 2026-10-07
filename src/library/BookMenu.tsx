@@ -1,4 +1,4 @@
-import { BookMinus, Ellipsis, Pencil, Share2, Trash2 } from "lucide-react";
+import { BookMinus, Ellipsis, Pencil, Pin, PinOff, Share2, Trash2 } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { FocusEvent, KeyboardEvent, RefObject } from "react";
 
@@ -7,6 +7,10 @@ type Props = {
   disabled: boolean;
   /** The "more" button, so the row can hand focus back to it when an edit or a removal question closes. */
   triggerRef: RefObject<HTMLButtonElement | null>;
+  /** Whether the book is pinned to the top of the shelf, which turns the first action into its undoing. */
+  pinned: boolean;
+  /** Pins the book, or unpins it when it is pinned. Every book has it, the reader's own and the ones shared with them. */
+  onPin: () => void;
   /** Absent for a book shared with the reader: only its owner changes it. */
   onEdit?: () => void;
   /** Absent where the book cannot be shared: without profiles, or a book someone else shared. */
@@ -27,7 +31,7 @@ export function menuOpensAbove(triggerTop: number, triggerBottom: number, panelH
  * button in tab order, and Escape, a click elsewhere or tabbing away folds them back in. The panel is laid over the shelf by the
  * stylesheet, across the width of the book it belongs to.
  */
-export function BookMenu({ title, disabled, triggerRef, onEdit, onShare, onRemove, shared = false }: Props) {
+export function BookMenu({ title, disabled, triggerRef, pinned, onPin, onEdit, onShare, onRemove, shared = false }: Props) {
   const panelId = useId();
   const root = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -93,6 +97,15 @@ export function BookMenu({ title, disabled, triggerRef, onEdit, onShare, onRemov
       </button>
       {open && (
         <div className="shelf-menu-panel" id={panelId} ref={panel} data-above={above || undefined}>
+          {pinned ? (
+            <button type="button" aria-label={`Unpin ${title}`} onClick={() => choose(onPin)}>
+              <PinOff size={18} aria-hidden /> Unpin
+            </button>
+          ) : (
+            <button type="button" aria-label={`Pin ${title} to top`} onClick={() => choose(onPin)}>
+              <Pin size={18} aria-hidden /> Pin to top
+            </button>
+          )}
           {onEdit && (
             <button type="button" aria-label={`Edit ${title}`} onClick={() => choose(onEdit)}>
               <Pencil size={18} aria-hidden /> Edit

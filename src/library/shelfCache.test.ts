@@ -76,6 +76,14 @@ describe("shelf cache", () => {
     expect(readShelf("bob").books).toEqual([book("a")]);
   });
 
+  it("should remove a field that is changed to undefined, as the server leaves it out", () => {
+    rememberBooks("ann", [{ ...book("a"), pinnedAt: "2026-05-01T00:00:00.000Z" }]);
+
+    patchBook("ann", "a", { pinnedAt: undefined });
+
+    expect(readShelf("ann").books).toStrictEqual([book("a")]);
+  });
+
   it("should not invent a shelf when there is nothing cached to change", () => {
     patchBook("ann", "a", { title: "Renamed" });
     dropBook("ann", "a");

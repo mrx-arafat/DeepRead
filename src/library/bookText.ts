@@ -75,6 +75,16 @@ export function latestRead(books: BookSummary[]): StartedBook | null {
   return latest;
 }
 
+/** The shelf in its two parts: pinned books, the one pinned last first (ties by id), and the rest in the order they came in. */
+export function splitPinned(books: BookSummary[]): { pinned: BookSummary[]; rest: BookSummary[] } {
+  // Plain comparison, not localeCompare: the same times and ids must sort the same in every language the reader uses.
+  const order = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  const pinned = books
+    .filter((book): book is BookSummary & { pinnedAt: string } => book.pinnedAt !== undefined)
+    .sort((a, b) => order(b.pinnedAt, a.pinnedAt) || order(a.id, b.id));
+  return { pinned, rest: books.filter((book) => book.pinnedAt === undefined) };
+}
+
 /** Names the file that failed, so the reader knows which one the reason is about. */
 export function addFailure(fileName: string, reason: unknown): string {
   const why = reason instanceof Error ? reason.message : "Please try again.";

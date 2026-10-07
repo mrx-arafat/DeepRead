@@ -212,7 +212,9 @@ Contents, notes and index pages do not count.
 Jumping ahead from the chapter list moves your place, and the percentage with it: it says where you are in the book, not how much you have read.
 
 **More actions.**
-The **...** button under a cover lets you edit the book's title and author, share it with other profiles (see [Share a book](#11-share-a-book)), or remove it.
+The **...** button under a cover lets you pin the book to the top, edit its title and author, share it with other profiles (see [Share a book](#11-share-a-book)), or remove it.
+**Pin to top** moves a book into a **Pinned** row above **Your books**, the one you pinned last first, and **Unpin** puts it back.
+Pins are yours alone, even on a book someone shared with you, and they follow you to any device that opens this DeepRead.
 A book someone shared with you has "From" and their name under it, and only lets you take it off your shelf.
 
 <table><tr><td><img src="docs/images/library.webp" alt="The library with a Continue reading card and a shelf of book covers" width="900"></td></tr></table>
@@ -631,7 +633,7 @@ New books are encrypted as they are added.
 Books you already have stay readable until you run the command, so turning the key on never breaks a library.
 If you use R2 and have books on your computer too, run `pnpm storage:migrate` first and `pnpm storage:encrypt` after it.
 
-What is encrypted: the books, their notes, covers and saved AI answers, and the list of profiles, whether they are in the `data` folder or the bucket.
+What is encrypted: the books, their notes, covers and saved AI answers, the pinned books, and the list of profiles, whether they are in the `data` folder or the bucket.
 What an encrypted copy gives away: the names of the files, which include a short form of each book's title and the profile's id, and how big each file is.
 What is not covered: anyone who can run DeepRead on this computer, or who can read `.env.local`, can read everything.
 Encryption keeps your books private; it does not stop someone who can write to your bucket from putting in a plain file of their own, or an older copy of a file, which DeepRead would read as it finds it.
@@ -813,6 +815,7 @@ That signs everyone out, so they type their codes again.
 - Each profile's books are under `profiles/<id>/books/`, in the same place.
 - `shares.json` says who shares which book with whom, in the same place.
 - What a profile keeps of a book shared with it (its place, notes and saved answers) is under `profiles/<id>/shared/`.
+- The books a profile pinned are in `profiles/<id>/pins.json`, or `pins.json` next to `books/` without profiles.
   The book itself stays in its owner's folder.
 - The sign-in secret is a file named `session-secret` in the `data` folder, on this computer even when your books are in R2.
   Deleting it signs everyone out.
@@ -903,7 +906,13 @@ profiles.json
 shares.json
 profiles/<id>/books/<book id>/...    (the same keys as books/<id>/ above)
 profiles/<id>/shared/<owner id>--<book id>/{progress.json, notes.json, cache/<sha256>.json}
+profiles/<id>/pins.json
 ```
+
+`pins.json` maps each pinned book's id to when it was pinned, a shared book under its `<owner id>--<book id>` id; without profiles it sits at the root of the store.
+`PUT /api/books/:id/pin` pins a book and answers `{ pinnedAt }`, `DELETE /api/books/:id/pin` unpins it, and the book list carries `pinnedAt` for the client to split the shelf.
+Like the list of books, it is kept in memory and written one change at a time; a `pins.json` that cannot be read refuses further pins rather than being overwritten, and removing a book drops its pin.
+`pnpm storage:migrate` and the move into the admin's profile carry it along.
 
 Each profile has its own `Library`, which sees the store only through its own `profiles/<id>/` folder, and its own `tmp` folder for uploads.
 So one profile's books, notes and saved answers never mix with another's.

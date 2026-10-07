@@ -3,11 +3,11 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation } from "wouter";
 import { formatBytes } from "../shared/bytes.ts";
 import { LANGUAGES } from "../shared/types.ts";
-import type { BookUpdate } from "../shared/types.ts";
+import type { BookSummary, BookUpdate } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
-import { addFailure, latestRead, shortTitle } from "./library/bookText.ts";
+import { addFailure, latestRead, shortTitle, splitPinned } from "./library/bookText.ts";
 import { ContinueCard } from "./library/ContinueCard.tsx";
 import { addBook, dropBook, patchBook, readerKey, readShelf, rememberBooks, rememberStorage, watchShelves } from "./library/shelfCache.ts";
 import { useFileDrop } from "./library/useFileDrop.ts";
@@ -34,6 +34,8 @@ export function LibraryPage() {
   // Coming back paints the shelf as it was last time, while the request below brings it up to date. It is read from the
   // cache, not kept in state, so a progress save that is still on its way as this page opens lands on it as well.
   const { books, storage } = useSyncExternalStore(watchShelves, () => readShelf(reader));
+  // Pinned books get a shelf of their own above the others, which stay in the order the server lists them.
+  const { pinned, rest } = splitPinned(books ?? []);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,8 @@ export function LibraryPage() {
   const [pending, setPending] = useState<string | null>(null);
   // Where keyboard focus goes once a removed row is gone: a book's id, or "add". Set for one render.
   const [focusAfterRemoval, setFocusAfterRemoval] = useState<string | null>(null);
+  // The book whose row just moved between the Pinned and Your books lists: focus goes to its "More actions" button. Set for one render.
+  const [focusMenuOf, setFocusMenuOf] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   const uploadingNow = useRef(false);
@@ -75,6 +79,11 @@ export function LibraryPage() {
     // The row that wanted focus has taken it by now (children's effects run first).
     setFocusAfterRemoval(null);
   }, [focusAfterRemoval]);
+
+  useEffect(() => {
+    // The row that wanted focus has taken it by now (children's effects run first).
+    if (focusMenuOf !== null) setFocusMenuOf(null);
+  }, [focusMenuOf]);
 
   function onDrop(files: FileList) {
     if (inDialog) return;
@@ -137,9 +146,10 @@ export function LibraryPage() {
       await api.deleteBook(id);
       // Only now: if the request failed the book is still here, and so are its notes.
       forgetHeldNotes(id, noteOwner(info));
-      // The row the reader was on is about to vanish, and focus would fall to the page: hand it to a neighbour.
-      const at = books?.findIndex((book) => book.id === id) ?? -1;
-      setFocusAfterRemoval(books?.[at + 1]?.id ?? books?.[at - 1]?.id ?? ADD_BUTTON);
+      // The row the reader was on is about to vanish, and focus would fall to the page: hand it to a neighbour, in the order the shelf shows.
+      const shown = [...pinned, ...rest];
+      const at = shown.findIndex((book) => book.id === id);
+      setFocusAfterRemoval(shown[at + 1]?.id ?? shown[at - 1]?.id ?? ADD_BUTTON);
       dropBook(reader, id);
       setActive(null);
       api.storage().then((usage) => rememberStorage(reader, usage), () => {});
@@ -151,8 +161,66 @@ export function LibraryPage() {
     }
   }
 
+  /** Moves the book at once and tells the server after; if the server refuses, the book goes back where it was. */
+  async function togglePin(book: BookSummary): Promise<void> {
+    const { id } = book;
+    const before = book.pinnedAt;
+    const pinning = before === undefined;
+    const guess = pinning ? new Date().toISOString() : undefined;
+    // Whether the shelf still shows what this request put there: the reader may have changed their mind while it was on its way.
+    const unchanged = () => readShelf(reader).books?.find((each) => each.id === id)?.pinnedAt === guess;
+    // The row moves to the other list and starts again there, and focus would fall to the page: hand it to the book's "More actions" button.
+    function move(pinnedAt: string | undefined) {
+      setFocusMenuOf(id);
+      patchBook(reader, id, { pinnedAt });
+    }
+    setError(null);
+    move(guess);
+    try {
+      if (pinning) {
+        // The server's own time, so the order on the shelf is the one the next list will give.
+        const pinnedAt = await api.pinBook(id);
+        if (unchanged()) patchBook(reader, id, { pinnedAt });
+      } else {
+        await api.unpinBook(id);
+      }
+    } catch {
+      if (!unchanged()) return;
+      move(before);
+      setError(`That book could not be ${pinning ? "pinned" : "unpinned"}. Please try again.`);
+    }
+  }
+
   const empty = books?.length === 0;
   const resume = books && latestRead(books);
+
+  function row(book: BookSummary) {
+    const mine = active?.id === book.id ? active : null;
+    return (
+      <BookRow
+        key={book.id}
+        book={book}
+        mode={mine?.kind ?? "view"}
+        pending={pending}
+        deleteError={mine?.kind === "delete" ? mine.error : null}
+        focusLink={focusAfterRemoval === book.id}
+        focusMenu={focusMenuOf === book.id}
+        readerId={session?.profile.id ?? null}
+        onMode={(mode) => show(book.id, mode)}
+        onPin={() => void togglePin(book)}
+        onSave={save}
+        onRemove={remove}
+      />
+    );
+  }
+
+  const storageLine = storage && (
+    <p className="library-storage">
+      {/* Only this reader's books: the limit is enforced on upload, and what others keep is not their business. */}
+      Your books take {formatBytes(storage.used)},{" "}
+      {storage.where === "r2" ? "kept in Cloudflare R2" : "kept on this computer"}.
+    </p>
+  );
 
   return (
     <>
@@ -250,35 +318,19 @@ export function LibraryPage() {
 
         {resume && <ContinueCard book={resume} />}
 
-        {books && books.length > 0 && (
+        {pinned.length > 0 && (
+          <section aria-label="Pinned">
+            <h2 className="library-section">Pinned</h2>
+            <ul className="shelf">{pinned.map(row)}</ul>
+            {rest.length === 0 && storageLine}
+          </section>
+        )}
+
+        {rest.length > 0 && (
           <section aria-label="Your books">
             <h2 className="library-section">Your books</h2>
-            <ul className="shelf">
-              {books.map((book) => {
-                const mine = active?.id === book.id ? active : null;
-                return (
-                  <BookRow
-                    key={book.id}
-                    book={book}
-                    mode={mine?.kind ?? "view"}
-                    pending={pending}
-                    deleteError={mine?.kind === "delete" ? mine.error : null}
-                    focusLink={focusAfterRemoval === book.id}
-                    readerId={session?.profile.id ?? null}
-                    onMode={(mode) => show(book.id, mode)}
-                    onSave={save}
-                    onRemove={remove}
-                  />
-                );
-              })}
-            </ul>
-            {storage && (
-              <p className="library-storage">
-                {/* Only this reader's books: the limit is enforced on upload, and what others keep is not their business. */}
-                Your books take {formatBytes(storage.used)},{" "}
-                {storage.where === "r2" ? "kept in Cloudflare R2" : "kept on this computer"}.
-              </p>
-            )}
+            <ul className="shelf">{rest.map(row)}</ul>
+            {storageLine}
           </section>
         )}
       </main>

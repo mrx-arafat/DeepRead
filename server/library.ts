@@ -3,7 +3,8 @@
 // is a cover. meta.json is written last and removed first, so a book exists exactly while its meta.json does: a crash
 // in between leaves files no listing shows, and the next start clears them away. meta.json carries everything the
 // list view needs, so listing never opens book.json. Once read, the list of books and each meta.json are kept in
-// memory, so listing again asks the store nothing.
+// memory, so listing again asks the store nothing. pins.json, at the root of the store, says when the reader pinned each
+// book to the top of the library, and is kept in memory the same way.
 // Uploads are parsed from <dataDir>/tmp on this computer whatever the store, because the parser reads a file.
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, stat } from "node:fs/promises";
@@ -24,6 +25,7 @@ import type {
 } from "../shared/types.ts";
 import type { CoverImage } from "./cover.ts";
 import type { RenderCover } from "./deps.ts";
+import { isRecord } from "./http.ts";
 import { describePosition } from "./progress.ts";
 import { createLocalStore } from "./storage.ts";
 import type { ByteRange, ObjectStore, StoredObject } from "./storage.ts";
@@ -40,6 +42,9 @@ const COVER_FILES: Record<CoverImage["type"], string> = { "image/webp": "cover.w
 // Not a book id (ids have no spaces), so adding books queues apart from any one book's work.
 const ADDING = "adding books";
 const META_KEY = /^books\/([^/]+)\/meta\.json$/;
+const PINS_KEY = "pins.json";
+// Not a book id either, so pin changes queue apart from any one book's work.
+const PINNING = "pinning books";
 
 /** The key an answer is cached under: a SHA-256 in hex. */
 export const isCacheKey = (key: string): boolean => CACHE_KEY.test(key);
@@ -51,6 +56,23 @@ export function isBookId(id: string): boolean {
 /** The books in a listing of books/: the folders named like a book that hold a meta.json. */
 const bookIdsIn = (objects: StoredObject[]): Set<string> =>
   new Set(objects.map((object) => META_KEY.exec(object.key)?.[1]).filter((id): id is string => id !== undefined && isBookId(id)));
+
+/** The pins pins.json holds, by book id: when each was pinned. A file that is not that is damaged, never taken for empty. */
+function parsePins(data: Buffer | null): ReadonlyMap<string, string> {
+  let parsed: unknown = {};
+  if (data) {
+    try {
+      parsed = JSON.parse(data.toString("utf8"));
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!isRecord(parsed) || !Object.values(parsed).every((at) => typeof at === "string")) {
+    // Treated as empty, the next pin would write over everyone's.
+    throw new Error(`${PINS_KEY} is damaged, so the pinned books cannot be read. Restore it from a copy, or mend it by hand.`);
+  }
+  return new Map(Object.entries(parsed as Record<string, string>));
+}
 
 /** `fallback` names what has no Latin letters at all (a Bangla or Arabic title). */
 export function slugify(title: string, fallback = "book"): string {
@@ -192,6 +214,19 @@ export type Library = {
   notes(id: string): Promise<Note[] | null>;
   /** The caller has validated `change`. False when the book does not exist. */
   changeNotes(id: string, change: NoteChange): Promise<boolean>;
+  /**
+   * When each book was pinned, by id, as the reader's shelf names them. It may hold books that are no longer on the shelf,
+   * which are not shown. Never rejects: pins that cannot be read leave the books unpinned, not the library unreadable.
+   */
+  pins(): Promise<ReadonlyMap<string, string>>;
+  /**
+   * Pins the book, or moves its pin to now, and says when. Null when the book does not exist.
+   * `sharedIds` are the shelf's books that belong to other libraries (a shelf passes them, a plain library has none):
+   * those are pinned here under their own ids, and the pins of books that are in neither place are cleared away.
+   */
+  pin(id: string, sharedIds?: ReadonlySet<string>): Promise<string | null>;
+  /** False when the book does not exist; true also when it was not pinned. `sharedIds` as for `pin`. */
+  unpin(id: string, sharedIds?: ReadonlySet<string>): Promise<boolean>;
   usage(): Promise<StorageUsage>;
   readCache(id: string, key: string): Promise<unknown>;
   writeCache(id: string, key: string, value: unknown): Promise<void>;
@@ -324,7 +359,59 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
     return ids ? ids.has(id) : metas.has(id) || (await store.size(key)) !== null;
   }
 
-  function toSummary(meta: BookMeta): BookSummary {
+  // When each book was pinned, as pins.json holds it once read. Replaced on every change, never changed in place, so a
+  // listing under way keeps the pins it began with. Only one DeepRead may use a store, and every change goes through
+  // changePin and forgetPin, so what is kept stays true.
+  let pinned: ReadonlyMap<string, string> | null = null;
+  // Moves on with every write, like `changes`: a read under way meanwhile may be older than the write, so it is not kept.
+  let pinWrites = 0;
+
+  async function readPins(): Promise<ReadonlyMap<string, string>> {
+    if (pinned) return pinned;
+    const seen = pinWrites;
+    // Not kept when it fails: the next read looks again, and a write waits for one that works.
+    const read = parsePins(await store.read(PINS_KEY));
+    if (pinWrites === seen) pinned = read;
+    return read;
+  }
+
+  /** Makes the pins what `edit` makes of them, unless that is what they are. Only called in the pinning queue. */
+  async function writePins(edit: (current: ReadonlyMap<string, string>) => Map<string, string>): Promise<void> {
+    const current = await readPins();
+    const next = edit(current);
+    if (next.size === current.size && [...next].every(([id, at]) => current.get(id) === at)) return;
+    try {
+      await store.write(PINS_KEY, JSON.stringify(Object.fromEntries(next)));
+      pinned = next;
+    } catch (error) {
+      // It may have reached the store all the same.
+      pinned = null;
+      throw error;
+    } finally {
+      pinWrites += 1;
+    }
+  }
+
+  /** Pins the book at `at`, or unpins it when `at` is null. False when the book does not exist. */
+  const changePin = (id: string, at: string | null, sharedIds?: ReadonlySet<string>): Promise<boolean> =>
+    serialized(PINNING, async () => {
+      // Checked in the queue, so a book removed as it is pinned cannot keep its pin.
+      if (!(isBookId(id) ? await exists(id) : sharedIds?.has(id) === true)) return false;
+      const books = new Set(await bookIds());
+      await writePins((current) => {
+        // Also clears away the pins of books that are no longer on the shelf (a share that ended, a book that went).
+        const next = new Map([...current].filter(([other]) => other !== id && (isBookId(other) ? books.has(other) : sharedIds?.has(other) === true)));
+        if (at !== null) next.set(id, at);
+        return next;
+      });
+      return true;
+    });
+
+  /** The book is gone: so is its pin. */
+  const forgetPin = (id: string): Promise<void> =>
+    serialized(PINNING, () => writePins((current) => new Map([...current].filter(([other]) => other !== id))));
+
+  function toSummary(meta: BookMeta, pinnedAt?: string): BookSummary {
     return {
       id: meta.id,
       title: meta.title,
@@ -335,7 +422,18 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
       addedAt: meta.addedAt,
       progress: meta.progress,
       hasCover: meta.cover === true,
+      ...(pinnedAt === undefined ? {} : { pinnedAt }),
     };
+  }
+
+  /** The pins to show: pins that cannot be read cost the pins on screen, not the library. */
+  async function shownPins(): Promise<ReadonlyMap<string, string>> {
+    try {
+      return await readPins();
+    } catch (error) {
+      console.warn("could not read the pinned books, so none is shown as pinned:", error);
+      return new Map();
+    }
   }
 
   /** Fills in an old meta.json once, so listing never has to open the parsed book again. */
@@ -410,6 +508,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
     },
 
     async list() {
+      const pins = await shownPins();
       const metas = await Promise.all(
         (await bookIds()).map(async (id) => {
           try {
@@ -423,7 +522,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
       );
       const found = metas.filter((meta) => meta !== null);
       found.sort((a, b) => b.addedAt.localeCompare(a.addedAt) || a.id.localeCompare(b.id));
-      return found.map(toSummary);
+      return found.map((meta) => toSummary(meta, pins.get(meta.id)));
     },
 
     async findBySha(sha256) {
@@ -509,7 +608,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
         endPage: chapter.endPage,
         wordCount: meta.chapterWordCounts[chapter.id] ?? chapterWords(chapter),
       }));
-      return { ...toSummary(withDetails(meta, book)), chapters, warnings: book.warnings };
+      return { ...toSummary(withDetails(meta, book), (await shownPins()).get(id)), chapters, warnings: book.warnings };
     },
 
     async book(id) {
@@ -592,6 +691,8 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
         // meta.json first: the book leaves the library in one step, and the rest of its files go after it.
         await changeMeta(id, null, () => store.remove([keyOf(id, "meta.json")]));
         parsedBooks.delete(id);
+        // After meta.json, so a pin made meanwhile either saw the book gone or is cleared here.
+        await forgetPin(id).catch((error: unknown) => console.warn(`could not clear away the pin of removed book ${id}:`, error));
         try {
           await store.removeAll(folderOf(id));
         } catch (error) {
@@ -619,6 +720,15 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
         return true;
       });
     },
+
+    pins: shownPins,
+
+    async pin(id, sharedIds) {
+      const at = new Date().toISOString();
+      return (await changePin(id, at, sharedIds)) ? at : null;
+    },
+
+    unpin: (id, sharedIds) => changePin(id, null, sharedIds),
 
     usage,
 

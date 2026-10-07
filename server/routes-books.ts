@@ -275,6 +275,22 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     return (await library.remove(id)) ? c.body(null, 204) : bookNotFound(c);
   });
 
+  // The pin is the reader's own, so it works on a book shared with them too, and leaves it unchanged for its owner.
+  routes.put("/:id/pin", async (c) => {
+    const { library } = c.var;
+    const id = c.req.param("id");
+    if (!isReadableBookId(id)) return invalidId(c);
+    const pinnedAt = await library.pin(id);
+    return pinnedAt ? c.json({ pinnedAt }) : bookNotFound(c);
+  });
+
+  routes.delete("/:id/pin", async (c) => {
+    const { library } = c.var;
+    const id = c.req.param("id");
+    if (!isReadableBookId(id)) return invalidId(c);
+    return (await library.unpin(id)) ? c.body(null, 204) : bookNotFound(c);
+  });
+
   routes.get("/:id/chapters/:chapterId", async (c) => {
     const { library } = c.var;
     const id = c.req.param("id");

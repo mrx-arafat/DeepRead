@@ -70,6 +70,8 @@ export const MAX_CODE_CHARS = 64;
 export const MAX_PASSKEY_CHARS = 1024;
 
 const PROFILES_KEY = "profiles.json";
+/** Where a library keeps when each of its books was pinned (library.ts). */
+const PINS_KEY = "pins.json";
 // In the data folder on this computer, never in the store: the locks belong to this server, which counts the tries it saw.
 const LOCKS_FILE = "locks.json";
 const ADMIN_PRESET: AvatarPreset = "smile-blue";
@@ -342,6 +344,12 @@ export function createProfiles(options: ProfilesOptions): Profiles {
     try {
       const { copied, skipped } = await copyBooks(store, target, { tempDir, limit: null });
       for (const id of copied) await store.removeAll(`books/${id}/`);
+      // The pins go with the books. The admin's own pins, if they somehow have some, are kept as they are.
+      const pins = await store.read(PINS_KEY);
+      if (pins) {
+        if ((await target.size(PINS_KEY)) === null) await target.write(PINS_KEY, pins);
+        await store.remove([PINS_KEY]);
+      }
       const books = (ids: string[]): string => `${ids.length} book${ids.length === 1 ? "" : "s"} from before profiles`;
       if (copied.length > 0) console.log(`Moved ${books(copied)} into ${admin.name}'s profile: ${copied.join(", ")}.`);
       if (skipped.length > 0) {

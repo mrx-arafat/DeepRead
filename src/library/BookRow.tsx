@@ -19,15 +19,18 @@ type Props = {
   deleteError: string | null;
   /** True once, right after the book next to this one was removed: focus lands on this book's link. */
   focusLink: boolean;
+  /** True once, right after this book moved between the Pinned and Your books lists: focus lands on its "More actions" button. */
+  focusMenu: boolean;
   /** Who is reading, with profiles on: they may share their own books with the others. Null without profiles. */
   readerId: string | null;
   onMode: (mode: Mode) => void;
+  onPin: () => void;
   onSave: (id: string, update: BookUpdate) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 };
 
 /** One book on the shelf: its cover (a link to the book), how far the reader is, and what else can be done to it. */
-export function BookRow({ book, mode, pending, deleteError, focusLink, readerId, onMode, onSave, onRemove }: Props) {
+export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu, readerId, onMode, onPin, onSave, onRemove }: Props) {
   const questionId = useId();
   const link = useRef<HTMLAnchorElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -50,6 +53,10 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, readerId,
   useEffect(() => {
     if (focusLink) link.current?.focus();
   }, [focusLink]);
+
+  useEffect(() => {
+    if (focusMenu) menuButton.current?.focus();
+  }, [focusMenu]);
 
   function close() {
     returnFocus.current = true;
@@ -110,6 +117,8 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, readerId,
             title={book.title}
             disabled={pending !== null}
             triggerRef={menuButton}
+            pinned={book.pinnedAt !== undefined}
+            onPin={onPin}
             shared={sharedBy !== undefined}
             onEdit={sharedBy ? undefined : () => onMode("edit")}
             onShare={sharedBy || readerId === null ? undefined : () => onMode("share")}
