@@ -45,6 +45,68 @@ Keep these Pages instances separate from the Scroll areas because saved progress
 
 The test book `fixtures/problems-of-philosophy.pdf` is Bertrand Russell's *The Problems of Philosophy*, from Project Gutenberg, in the public domain.
 
+## Headless Playwright checks
+
+The scripts below run against the same isolated fixture instance, without a Momentic account or AI calls.
+Use `playwright-cli` in separate named sessions; `open` is headless unless `--headed` is added.
+Save a reading position partway through a chapter first, so **Where I left off** has preceding text to show.
+Keep other reader sessions idle during the library check, which compares the fixture's progress before and after opening and dismissing context.
+
+```bash
+playwright-cli -s=deepread-resume-check open http://127.0.0.1:5182
+playwright-cli -s=deepread-resume-check run-code --filename e2e/library-resume.js
+```
+
+`library-resume.js` checks context text, Close/Escape focus return, no progress writes or AI requests while opening and dismissing, a mocked connection error and retry, dialog bounds at 390/768/1440 pixels, and Continue navigation.
+Its title/author filter and clear checks add a second book only to a mocked shelf metadata response; they do not add a book to the server.
+Screenshots are written under the ignored `.playwright-cli/` directory.
+
+On a reader route, run the settings and recovery checks in their own sessions:
+
+```bash
+playwright-cli -s=deepread-comfort-check open http://127.0.0.1:5182
+playwright-cli -s=deepread-comfort-check run-code 'async (page) => { await page.getByRole("link", { name: /^Continue reading / }).click(); }'
+playwright-cli -s=deepread-comfort-check run-code --filename e2e/reader-comfort.js
+playwright-cli -s=deepread-recovery-check open http://127.0.0.1:5182
+playwright-cli -s=deepread-recovery-check run-code 'async (page) => { await page.getByRole("link", { name: /^Continue reading / }).click(); }'
+playwright-cli -s=deepread-recovery-check run-code --filename e2e/note-recovery.js
+```
+
+`reader-comfort.js` checks split settings, language persistence, focus, player dismissal, three widths and themes, and Scroll/Pages navigation.
+`note-recovery.js` aborts a highlight save, checks that recovery stays visible when the Pages toolbar hides, retries and verifies the server's acknowledgement, then deletes only its test-created highlight.
+Run recovery only against the isolated fixture library: it writes and removes a note, and reader checks can update saved progress and browser preferences.
+
+For source visits and exact return, use a separate headless session on an isolated fixture instance. The script creates and removes its own highlight, and resets the fixture reading place during the run:
+
+```bash
+playwright-cli -s=deepread-detour-check open http://127.0.0.1:5184
+playwright-cli -s=deepread-detour-check run-code --filename e2e/reading-detour.js
+```
+
+`reading-detour.js` checks source navigation, unchanged server progress during a visit, Return after viewport resizing in Scroll and Pages, and preservation after reload or leaving the visit. Point it at a Vite instance backed by a local test API and the uploaded Gutenberg fixture; replace the example port with that instance's actual port.
+To exercise a failed cross-chapter return and its Back to passage recovery on the same isolated instance, run `playwright-cli -s=deepread-detour-error-check open http://127.0.0.1:5184` followed by `playwright-cli -s=deepread-detour-error-check run-code --filename e2e/reading-detour-error.js`. That script routes the return chapter to a temporary 503 and then removes the route. Both detour scripts write fixture progress, so run them only with scratch test data.
+
+`in-book-search.js` searches a repeated term from a saved chapter, selects its second exact occurrence in another chapter, verifies the text mark, and returns without changing server progress in Scroll and Pages. It also checks no-results, Escape dismissal, a mocked chapter-fetch failure, and retry. Run it only on the isolated Gutenberg fixture instance; it resets that fixture's saved place:
+
+```bash
+playwright-cli -s=deepread-search-check open http://127.0.0.1:5184
+playwright-cli -s=deepread-search-check run-code --filename e2e/in-book-search.js
+```
+
+`reading-status.js` needs an isolated two-book shelf: upload `e2e/fixtures/problems-of-philosophy.pdf` and a different PDF such as two copies combined with `pdfunite`. It resets those fixture books to Reading, then verifies Saved for later, Finished, filtering, reload persistence, manual correction, rollback after a mocked failed status write, and unchanged progress:
+
+```bash
+playwright-cli -s=deepread-status-check open http://127.0.0.1:5184
+playwright-cli -s=deepread-status-check run-code --filename e2e/reading-status.js
+```
+
+`reading-status-shared.js` needs a fresh profile-enabled local instance with `ADMIN_NAME=Owner`, `ADMIN_PASSKEY=shared-status-test-code-2026`, and the Gutenberg PDF fixture present. It creates a reader profile, shares a book, and checks that the recipient's Finished status survives reload and unshare/reshare while the owner remains Reading:
+
+```bash
+playwright-cli -s=deepread-status-shared-check open http://127.0.0.1:5184
+playwright-cli -s=deepread-status-shared-check run-code --filename e2e/reading-status-shared.js
+```
+
 ## Library fixtures
 
 The library journeys upload a few odd files from `data/e2e-library`, which is not in git.

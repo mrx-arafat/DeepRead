@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
 id: dr-read-phone-controls
-description: "Journeys 5, 6 and 7 at phone 390: which top bar controls a phone reader actually has, touch target sizes, whether the top bar names the book and the chapter, and whether text size, theme and language can be changed from the Aa menu."
+description: "Journeys 5, 6 and 7 at phone 390: which top bar controls a phone reader actually has, touch target sizes, whether the top bar names the book and the chapter, and whether text size and theme can be changed in Aa and language in Reader preferences."
 viewport: "390, 844"
 steps:
   - module: ./modules/open-book.module.yaml
@@ -18,8 +18,28 @@ steps:
       environment: browser
       saveAs: PHONE_CONTROLS
       code: |-
-        const all = Array.from(document.querySelectorAll('.topbar button, .topbar a, .topbar select, .topbar-percent, .topbar-title'));
+        const all = Array.from(document.querySelectorAll('.topbar button, .topbar a, .topbar select, .topbar-percent, .topbar-title, #reading-settings button')).filter((el) => el.getClientRects().length);
         return JSON.stringify(all.map((el) => { const cs = getComputedStyle(el); const b = el.getBoundingClientRect(); return { cls: el.className, label: el.getAttribute('aria-label') || (el.textContent || '').trim().slice(0, 30), display: cs.display, w: Math.round(b.width), h: Math.round(b.height), x: Math.round(b.x) }; }));
+  - click:
+      css: '#reading-settings button[aria-label="Larger text"]'
+  - click:
+      css: '#reading-settings button[aria-label="Reader preferences"]'
+  - checkElementVisible:
+      css: '#reader-preferences #reading-settings-lang'
+  - select:
+      css: '#reading-settings-lang'
+      label: Spanish
+  - javascript:
+      environment: browser
+      saveAs: PHONE_PREFERENCES
+      code: |-
+        const panel = document.querySelector('#reader-preferences');
+        const language = panel.querySelector('#reading-settings-lang');
+        const b = language.getBoundingClientRect();
+        return JSON.stringify({ language: language.selectedOptions[0].text, w: Math.round(b.width), h: Math.round(b.height), open: panel.matches(':popover-open'), appearanceOpen: document.querySelector('#reading-settings').matches(':popover-open') });
+  - assertVisually:
+      that: Reader preferences shows Spanish selected under Explain in, along with End-of-chapter notes, AI helper and Voice settings, within the phone screen
+      timeout: 20000
   - press: Escape
   - scrollDown: 900
   - assertVisually:
@@ -42,7 +62,7 @@ steps:
       if (where.bookCut) failures.push(`the book title "${where.book}" is cut off in the top bar`);
       if (where.chapterWidth < 60) failures.push('the top bar does not show which chapter is being read');
       for (const label of ['Smaller text', 'Larger text']) if (!by(label) || by(label).w === 0) failures.push(`"${label}" is not available on a phone`);
-      const lang = items.find((i) => i.label.startsWith('Bangla'));
-      if (!lang || lang.w === 0) failures.push('the language picker is not available on a phone');
+      const prefs = JSON.parse(env.PHONE_PREFERENCES);
+      if (!prefs.open || prefs.appearanceOpen || prefs.language !== 'Spanish' || prefs.w < 44 || prefs.h < 44) failures.push(`the language picker is not usable in Reader preferences: ${JSON.stringify(prefs)}`);
       for (const i of items.filter((x) => x.w > 0 && x.cls !== 'topbar-title' && x.cls !== 'topbar-percent')) if (i.h < 44 || i.w < 44) failures.push(`"${i.label}" is ${i.w}x${i.h}px, smaller than a 44px touch target`);
       assert(failures.length === 0, failures.join('; '))

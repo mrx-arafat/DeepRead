@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import { Link } from "wouter";
-import type { BookSummary, BookUpdate } from "../../shared/types.ts";
+import type { BookSummary, BookUpdate, ReadingStatus } from "../../shared/types.ts";
 import { BookEditDialog } from "./BookEditDialog.tsx";
 import { BookMenu } from "./BookMenu.tsx";
 import { readingNote, shortTitle } from "./bookText.ts";
@@ -25,12 +25,13 @@ type Props = {
   readerId: string | null;
   onMode: (mode: Mode) => void;
   onPin: () => void;
+  onStatus: (status: ReadingStatus) => void;
   onSave: (id: string, update: BookUpdate) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 };
 
 /** One book on the shelf: its cover (a link to the book), how far the reader is, and what else can be done to it. */
-export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu, readerId, onMode, onPin, onSave, onRemove }: Props) {
+export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu, readerId, onMode, onPin, onStatus, onSave, onRemove }: Props) {
   const questionId = useId();
   const link = useRef<HTMLAnchorElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -71,13 +72,13 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
   const note = readingNote(book);
   const { sharedBy } = book;
   return (
-    <li className="shelf-item" data-state={note.state} onKeyDown={handleKeyDown}>
+    <li className="shelf-item" data-state={note.state} data-new={(book.progress === null && book.readingStatus === "reading") || undefined} onKeyDown={handleKeyDown}>
       {/* The tooltip carries the whole title: a long one is cut short on the cover. */}
       <Link ref={link} href={`/book/${book.id}`} className="shelf-link" title={book.title}>
         <Cover book={book} />
       </Link>
       {/* Always there, so books that have not been started line up with the ones that have. */}
-      <span className="read-bar" aria-hidden data-empty={note.state === "new" || undefined}>
+      <span className="read-bar" aria-hidden data-empty={book.progress === null || undefined}>
         <span style={{ width: `${note.percent}%` }} />
       </span>
       {mode === "delete" ? (
@@ -102,7 +103,7 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
             <span className="shelf-meta-lead">{note.lead}</span>
             {note.detail && <span>{note.detail}</span>}
             {/* The chapter is on the Continue card for the book read last; every book tells a screen reader where it stopped. */}
-            {note.state === "reading" && book.progress && <span className="visually-hidden">Stopped in {book.progress.chapterTitle}</span>}
+            {book.progress && <span className="visually-hidden">Stopped in {book.progress.chapterTitle}</span>}
             {sharedBy && (
               <span className="shelf-from">
                 <Avatar profile={sharedBy} size={18} />
@@ -124,6 +125,16 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
             onShare={sharedBy || readerId === null ? undefined : () => onMode("share")}
             onRemove={() => onMode("delete")}
           />
+        </div>
+      )}
+      {mode !== "delete" && (
+        <div className="shelf-status">
+          <label className="visually-hidden" htmlFor={`status-${book.id}`}>Reading status for {book.title}</label>
+          <select id={`status-${book.id}`} value={book.readingStatus} disabled={pending !== null} onChange={(event) => onStatus(event.target.value as ReadingStatus)}>
+            <option value="saved">Saved for later</option>
+            <option value="reading">Reading</option>
+            <option value="finished">Finished</option>
+          </select>
         </div>
       )}
       {deleteError && (

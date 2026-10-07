@@ -228,6 +228,11 @@ a {
   text-underline-offset: 0.2em;
 }
 
+::highlight(dr-search) {
+  background-color: var(--pen-wash);
+  color: var(--pen);
+}
+
 /* The reader's own highlights: a highlighter wash in the colour they chose, lying under every other mark. Tuned per
    paper so the ink on each keeps at least 4.5:1 (light 12.1:1 or more, sepia 8.3:1, dark 5.5:1). The green leans to
    mint and the blue to sky, apart from the read-aloud green and the selection's blue. */
@@ -964,8 +969,29 @@ select {
   font-weight: 600;
 }
 
-.shelf-item[data-state="new"] .shelf-meta-lead {
+.shelf-item[data-new] .shelf-meta-lead {
   color: var(--pen);
+}
+
+.shelf-status {
+  margin-top: 0.25rem;
+}
+
+.shelf-status select {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.shelf-status select:disabled {
+  opacity: 0.65;
 }
 
 /* The "more" button is a touch target, so it is 44px. */
@@ -1153,15 +1179,107 @@ select {
   font-size: 0.9375rem;
 }
 
-.continue-action {
+.continue-actions {
   grid-area: action;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
 }
 
 /* The link's box is the whole card, so a click anywhere on it carries on reading. */
-.continue-action::after {
+.continue-card .continue-action::after {
   content: "";
   position: absolute;
   inset: 0;
+}
+
+.continue-context {
+  position: relative;
+  z-index: 1;
+  white-space: normal;
+}
+
+.continue-single .continue-chapter {
+  margin: 0.75rem 0;
+}
+
+.continue-single .continue-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.library-search {
+  margin-top: 2rem;
+}
+
+.library-status-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 1.75rem;
+}
+
+.library-status-filters button {
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  cursor: pointer;
+}
+
+.library-status-filters button[aria-pressed="true"] {
+  border-color: var(--pen);
+  background: var(--pen-wash);
+  color: var(--pen);
+}
+
+.library-status-filters button span {
+  margin-left: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.library-status-filters + .library-search {
+  margin-top: 1rem;
+}
+
+.library-search label {
+  display: block;
+  margin-bottom: 0.375rem;
+  color: var(--ink-soft);
+}
+
+.library-search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--ink-faint);
+  border-radius: var(--radius);
+  background: var(--raised);
+}
+
+.library-search-field input {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.75rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+.library-search-field svg {
+  flex: none;
+  color: var(--ink-soft);
+}
+
+.library-search-count,
+.library-no-results {
+  margin-top: 1rem;
+  color: var(--ink-soft);
 }
 
 @media (max-width: 40rem) {
@@ -1211,6 +1329,69 @@ select {
 
 .shelf-dialog::backdrop {
   background: rgb(0 0 0 / 0.4);
+}
+
+.resume-dialog {
+  width: min(38rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+}
+
+.resume-heading {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.resume-heading h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.resume-book {
+  margin-top: 1rem;
+  font-family: var(--font-book);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.resume-chapter,
+.resume-quiet {
+  margin-top: 0.5rem;
+  color: var(--ink-soft);
+}
+
+.resume-passage,
+.resume-highlight {
+  margin: 1.25rem 0;
+}
+
+.resume-passage h3,
+.resume-highlight h3 {
+  font-size: 1rem;
+}
+
+.resume-passage blockquote,
+.resume-highlight blockquote {
+  margin-top: 0.5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-book);
+  line-height: 1.65;
+}
+
+.resume-source {
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
+.resume-view-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  margin-top: 0.5rem;
 }
 
 .shelf-dialog h2 {
@@ -1393,6 +1574,109 @@ select {
   flex: none;
 }
 
+.note-sync {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+.note-sync__summary {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.reader-overlays {
+  position: fixed;
+  z-index: 25;
+  right: 1rem;
+  bottom: 3.5rem;
+  display: grid;
+  gap: 0.5rem;
+  width: min(27rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - var(--topbar) - 4rem);
+  overflow: auto;
+}
+
+.reader:has(.listen-bar) .reader-overlays {
+  bottom: 9rem;
+  max-height: calc(100dvh - var(--topbar) - 9.5rem);
+}
+
+.note-sync:is(.note-sync--offline, .note-sync--rejected, .note-sync--storage-unavailable) {
+  position: fixed;
+  z-index: 25;
+  inset: auto 1rem 3.5rem auto;
+  width: min(27rem, calc(100vw - 2rem));
+  padding: 1rem;
+  border: 1px solid var(--ink-faint);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: 0 2px 12px #0002;
+}
+
+.reader-overlays .note-sync {
+  position: static;
+  width: 100%;
+}
+
+.reading-detour {
+  padding: 0.75rem;
+  border: 1px solid var(--ink-faint);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: 0 2px 12px #0002;
+  font-size: 0.875rem;
+}
+
+.reading-detour__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.reading-detour__actions > button {
+  min-height: 2.75rem;
+}
+
+.note-sync__detail {
+  display: block;
+  margin-top: 0.5rem;
+  white-space: normal;
+}
+
+.note-sync__retry,
+.note-sync__discard {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 2.75rem;
+  margin: 0.5rem 0.5rem 0 0;
+  padding: 0.375rem 0.5rem;
+  background: var(--raised);
+  color: var(--pen);
+  border: 1px solid var(--ink-faint);
+  border-radius: var(--radius);
+  white-space: normal;
+  cursor: pointer;
+}
+
+.reader:has(.listen-bar) .note-sync:is(.note-sync--offline, .note-sync--rejected, .note-sync--storage-unavailable) {
+  bottom: 9rem;
+}
+
+@media (max-width: 40rem) {
+  .note-sync:is(.note-sync--saved, .note-sync--saving) .note-sync__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+    overflow: hidden;
+  }
+}
+
 /* Reading settings: the "Aa" button opens a small panel under the right end of the top bar. */
 .settings-button {
   font-family: var(--font-book);
@@ -1426,6 +1710,38 @@ select {
   margin: 0;
   padding: 0;
   border: 0;
+}
+
+.settings-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.settings-heading h2 {
+  flex: 1;
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+.settings-next {
+  width: 100%;
+  justify-content: flex-start;
+  margin-top: 1rem;
+  min-height: 2.75rem;
+}
+
+.settings-next + .settings-group {
+  margin-top: 1rem;
+}
+
+.reader:has(.listen-bar) .voice-settings {
+  top: auto;
+  bottom: 6rem;
+  max-height: calc(100dvh - 10rem);
 }
 
 .settings-group + .settings-group,
@@ -1752,6 +2068,142 @@ li:not(.toc-matter) + .toc-matter {
   border-top: 1px solid var(--rule);
 }
 
+.book-search {
+  width: min(42rem, calc(100vw - 2rem));
+  max-width: none;
+  height: min(42rem, calc(100dvh - 2rem));
+  max-height: none;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.book-search[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.book-search::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+
+.book-search__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: var(--topbar);
+  padding: 0 0.75rem 0 1.25rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.book-search__head h2 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.book-search__form {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.book-search__form label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.book-search__input-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.book-search__input-row input {
+  min-width: 0;
+  flex: 1;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--ink-faint);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+}
+
+.book-search__input-row .button {
+  flex: none;
+  gap: 0.375rem;
+}
+
+.book-search__body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.book-search__status,
+.book-search__empty,
+.book-search__body > .inline-error {
+  padding: 0.75rem 1.25rem;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+.book-search__status:empty {
+  display: none;
+}
+
+.book-search__results {
+  list-style: none;
+  padding: 0 0 1rem;
+}
+
+.book-search__result {
+  display: grid;
+  gap: 0.25rem;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.75rem 1.25rem;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.book-search__result:hover,
+.book-search__result:focus-visible {
+  background: var(--wash);
+}
+
+.book-search__chapter {
+  color: var(--pen);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.book-search__excerpt {
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.book-search__excerpt mark {
+  background: var(--pen-wash);
+  color: var(--pen);
+  font-weight: 700;
+}
+
+@media (max-width: 30rem) {
+  .book-search__input-row .button {
+    padding-inline: 0.75rem;
+  }
+}
+
 .page-wait,
 .page-message {
   padding: 4rem 1.5rem;
@@ -2043,13 +2495,13 @@ li:not(.toc-matter) + .toc-matter {
   margin-top: 0.75rem;
   font-family: var(--book-face);
   /* Twice the book text, so it keeps its place above a column that grows and shrinks with it; smaller on a phone. */
-  font-size: min(var(--book-size) * 2, max(1.75rem, 1.2rem + 2vw));
+  font-size: calc(var(--book-size) * 1.65);
   font-weight: 600;
   /* Titles in the PDFs are often all capitals: as small capitals they read as a heading, not as shouting. */
   font-variant-caps: all-small-caps;
   /* Small capitals stand lower than the font size: a tighter line keeps a two-line title together. */
   line-height: 1.1;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   overflow-wrap: anywhere;
   text-wrap: balance;
 }
@@ -2059,6 +2511,33 @@ li:not(.toc-matter) + .toc-matter {
   font-family: var(--book-face);
   font-size: var(--book-size);
   line-height: var(--leading);
+}
+
+@media (max-width: 40rem) {
+  .chapter {
+    padding-top: 2rem;
+  }
+
+  .chapter + .chapter .chapter-head {
+    padding-top: 2rem;
+  }
+
+  .flow-back {
+    min-height: 2rem;
+    padding-top: 0.5rem;
+  }
+
+  .chapter-head h2 {
+    font-size: calc(var(--book-size) * 1.45);
+  }
+
+  .chapter-head::after {
+    margin-top: 1rem;
+  }
+
+  .chapter-text {
+    margin-top: 1.5rem;
+  }
 }
 
 /* Justified like a printed page, with words broken at line ends so the gaps between them stay even. */

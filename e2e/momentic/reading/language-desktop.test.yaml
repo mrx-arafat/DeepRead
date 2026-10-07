@@ -10,15 +10,17 @@ steps:
       timeout: 15000
   - click:
       css: button[aria-label="Reading settings"]
+  - click:
+      css: '#reading-settings button[aria-label="Reader preferences"]'
   - javascript:
       environment: browser
       saveAs: LANGUI
       code: |-
         const sel = document.querySelector('#reading-settings-lang'); const label = sel.labels[0]; const hint = document.getElementById(sel.getAttribute('aria-describedby'));
         const b = sel.getBoundingClientRect(); const l = label.getBoundingClientRect();
-        return JSON.stringify({ selected: sel.options[sel.selectedIndex].text, options: Array.from(sel.options).map((o) => o.text), label: label.textContent, labelVisible: l.width > 1 && l.height > 1, hint: hint && hint.textContent, visibleTextNearby: document.querySelector('.settings').innerText, rect: { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }, stored: localStorage.getItem('deepread.prefs') });
+        return JSON.stringify({ selected: sel.options[sel.selectedIndex].text, options: Array.from(sel.options).map((o) => o.text), label: label.textContent, labelVisible: l.width > 1 && l.height > 1, hint: hint && hint.textContent, visibleTextNearby: document.querySelector('#reader-preferences').innerText, rect: { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }, stored: localStorage.getItem('deepread.prefs') });
   - assertVisually:
-      that: An open reading settings menu shows a visible "Explain in" label over a language picker set to Bangla, and a sentence under it saying word meanings and explanations come in Bangla while the book stays in English
+      that: An open Reader preferences panel shows a visible "Explain in" label over a language picker set to Bangla, and a sentence under it saying word meanings and explanations come in Bangla while the book stays in English
       timeout: 20000
   - javascript: |-
       const ui = JSON.parse(env.LANGUI);
@@ -43,6 +45,8 @@ steps:
   - press: Escape
   - click:
       css: button[aria-label="Reading settings"]
+  - click:
+      css: '#reading-settings button[aria-label="Reader preferences"]'
   - select:
       css: "#reading-settings-lang"
       label: Spanish
@@ -50,7 +54,8 @@ steps:
       environment: browser
       saveAs: AFTER_SWITCH
       code: |-
-        return JSON.stringify({ selected: document.querySelector('#reading-settings-lang').selectedOptions[0].text, hint: document.querySelector('.settings-hint').textContent, dialogOpen: !!document.querySelector('[role="dialog"]'), bodyLang: document.documentElement.lang, toasts: document.querySelectorAll('[role="status"],[role="alert"]').length, stored: localStorage.getItem('deepread.prefs') });
+        const sel = document.querySelector('#reading-settings-lang');
+        return JSON.stringify({ selected: sel.selectedOptions[0].text, hint: document.getElementById(sel.getAttribute('aria-describedby')).textContent, dialogOpen: !!document.querySelector('[role="dialog"]'), bodyLang: document.documentElement.lang, toasts: document.querySelectorAll('[role="status"],[role="alert"]').length, stored: localStorage.getItem('deepread.prefs') });
   - javascript: |-
       const after = JSON.parse(env.AFTER_SWITCH);
       assert(after.hint.includes('Spanish'), `after choosing Spanish the hint still says: "${after.hint}"`)
@@ -78,3 +83,5 @@ steps:
       environment: browser
       saveAs: LANG_AFTER_RELOAD
       code: return document.querySelector('#reading-settings-lang').selectedOptions[0].text
+  - javascript: |-
+      assert(env.LANG_AFTER_RELOAD === 'Spanish', `after reload the language is ${env.LANG_AFTER_RELOAD}, expected Spanish`)

@@ -369,6 +369,23 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
   });
 
   routes.put(
+    "/:id/reading-status",
+    bodyLimit({ maxSize: 16 * 1024, onError: (c) => invalidBody(c, "the body is too large.") }),
+    async (c) => {
+      const id = c.req.param("id");
+      if (!isReadableBookId(id)) return invalidId(c);
+      const body = await readJsonObject(c);
+      const status = body?.status;
+      if (
+        !body || Object.keys(body).length !== 1 ||
+        (status !== "saved" && status !== "reading" && status !== "finished")
+      ) return invalidBody(c, "send JSON like {\"status\": \"saved\"}, \"reading\", or \"finished\".");
+      const readingStatus = await c.var.library.setReadingStatus(id, status);
+      return readingStatus ? c.json({ readingStatus }) : bookNotFound(c);
+    },
+  );
+
+  routes.put(
     "/:id/progress",
     bodyLimit({
       maxSize: 16 * 1024,

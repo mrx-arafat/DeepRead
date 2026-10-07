@@ -1,14 +1,36 @@
-import { ArrowRight, Bookmark } from "lucide-react";
+import { ArrowRight, Bookmark, History } from "lucide-react";
 import { useId } from "react";
+import type { ReactElement } from "react";
 import { Link } from "wouter";
 import { readingNote } from "./bookText.ts";
 import type { StartedBook } from "./bookText.ts";
 import { Cover } from "./Cover.tsx";
 
-/** The book read last, with a way straight back in. The whole card is the link: the button's own box is stretched over it. */
-export function ContinueCard({ book }: { book: StartedBook }) {
+/** The book read last, with direct resume and an optional reminder of the saved passage. */
+export function ContinueCard({ book, compact = false, onContext }: { book: StartedBook; compact?: boolean; onContext: () => void }): ReactElement {
   const headingId = useId();
   const note = readingNote(book);
+  const actions = (
+    <div className="continue-actions">
+      <Link href={`/book/${book.id}`} className="button continue-action" title={book.title}>
+        Continue
+        <span className="visually-hidden"> reading {book.title}</span>
+        <ArrowRight size={18} aria-hidden />
+      </Link>
+      <button type="button" className="quiet-button continue-context" onClick={onContext}>
+        <History size={17} aria-hidden /> Where I left off
+      </button>
+    </div>
+  );
+  if (compact) {
+    return (
+      <section className="continue-single" aria-labelledby={headingId}>
+        <h2 className="library-section" id={headingId}>Continue reading</h2>
+        <p className="continue-chapter"><Bookmark size={16} aria-hidden /><span>{book.progress.chapterTitle}</span></p>
+        {actions}
+      </section>
+    );
+  }
   return (
     <section aria-labelledby={headingId}>
       <h2 className="library-section" id={headingId}>
@@ -34,15 +56,9 @@ export function ContinueCard({ book }: { book: StartedBook }) {
             </span>
             <span className="continue-percent">{note.lead}</span>
           </div>
-          <p className="continue-left">About {note.detail}</p>
+          <p className="continue-left">{note.percent >= 100 ? note.detail : `About ${note.detail}`}</p>
         </div>
-        {/* The tooltip carries the whole title, which the card cuts after a few lines. It sits on the link because the
-            link's box covers the whole card, heading included. */}
-        <Link href={`/book/${book.id}`} className="button continue-action" title={book.title}>
-          Continue
-          <span className="visually-hidden"> reading {book.title}</span>
-          <ArrowRight size={18} aria-hidden />
-        </Link>
+        {actions}
       </div>
     </section>
   );

@@ -5,7 +5,7 @@
 // Pins are the reader's own too: they sit in the reader's own pins.json under the shared id, never in the owner's.
 import type { NoteChange } from "../shared/notes.ts";
 import { applyNoteChange } from "../shared/notes.ts";
-import type { BookSummary, Note, PublicProfile, ReadingProgress } from "../shared/types.ts";
+import type { BookSummary, Note, PublicProfile, ReadingProgress, ReadingStatus } from "../shared/types.ts";
 import { isRecord } from "./http.ts";
 import { isBookId, isCacheKey } from "./library.ts";
 import type { Library } from "./library.ts";
@@ -180,9 +180,12 @@ function readerCopies(store: ObjectStore) {
   // The reader's place in each shared book, by share: while a share lasts only this shelf writes it, and Shares keeps one
   // object per share, so a share that ends and starts again is a new one whose place is read afresh.
   const places = new WeakMap<Share, ReadingProgress | null>();
+  const statuses = new WeakMap<Share, ReadingStatus>();
   // Moves on with every save: a read under way meanwhile may be older than the save, so it is not kept.
   let saves = 0;
+  let statusSaves = 0;
   const placeOf = (share: Share): string => `${sharedBookId(share.ownerId, share.bookId)}/progress.json`;
+  const statusOf = (share: Share): string => `${sharedBookId(share.ownerId, share.bookId)}/reading-status.json`;
 
   return {
     async progress(share: Share): Promise<ReadingProgress | null> {
@@ -204,6 +207,30 @@ function readerCopies(store: ObjectStore) {
           throw error;
         } finally {
           saves += 1;
+        }
+      }),
+    async readingStatus(share: Share): Promise<ReadingStatus> {
+      const known = statuses.get(share);
+      if (known) return known;
+      const seen = statusSaves;
+      const value = await readJson(statusOf(share));
+      if (value !== null && value !== "saved" && value !== "reading" && value !== "finished") {
+        throw new Error(`${statusOf(share)} is damaged; restore it from a copy or mend it by hand.`);
+      }
+      const status = value ?? "reading";
+      if (statusSaves === seen) statuses.set(share, status);
+      return status;
+    },
+    saveReadingStatus: (share: Share, status: ReadingStatus) =>
+      serialized(sharedBookId(share.ownerId, share.bookId), async () => {
+        try {
+          await store.write(statusOf(share), JSON.stringify(status));
+          statuses.set(share, status);
+        } catch (error) {
+          statuses.delete(share);
+          throw error;
+        } finally {
+          statusSaves += 1;
         }
       }),
     notes: async (id: string) => ((await readJson(`${id}/notes.json`)) as Note[] | null) ?? [],
@@ -269,7 +296,8 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
 
   async function shelved(id: string, summary: BookSummary, owner: PublicProfile, share: Share, pins: ReadonlyMap<string, string>): Promise<BookSummary> {
     // The owner's pin is theirs: it is replaced by the reader's own, which is none when they have not pinned the book.
-    return { ...summary, id, addedAt: share.sharedAt, progress: await copies.progress(share), sharedBy: owner, pinnedAt: pins.get(id) };
+    const [progress, readingStatus] = await Promise.all([copies.progress(share), copies.readingStatus(share)]);
+    return { ...summary, id, addedAt: share.sharedAt, progress, readingStatus, sharedBy: owner, pinnedAt: pins.get(id) };
   }
 
   return {
@@ -330,6 +358,14 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
       const progress: ReadingProgress = { chapterId, blockId, offset, updatedAt: new Date().toISOString(), ...where };
       await copies.saveProgress(from.share, progress);
       return progress;
+    },
+
+    async setReadingStatus(id, status) {
+      if (isBookId(id)) return own.setReadingStatus(id, status);
+      const from = await source(id);
+      if (!from || !(await from.library.detail(from.bookId))) return null;
+      await copies.saveReadingStatus(from.share, status);
+      return status;
     },
 
     async update(id, patch) {

@@ -6,7 +6,7 @@ It says what was just built, what is left, in what order, and how to do each par
 ## Where things stand
 
 The reader and the library were redesigned to feel like a calm e-reader.
-Everything below is on `main`, with unit tests and reader-journey tests passing.
+The historical shipped sections describe the existing baseline. The implementation checkpoint below distinguishes new local work from committed releases and broader acceptance still to verify.
 
 | Area | What it does | Main files |
 | --- | --- | --- |
@@ -258,12 +258,33 @@ The first release should combine reading comfort with returning to a book; the n
 - [ ] UX-08: Optional reflection and saved vocabulary.
 - [ ] UX-09: Connections between ideas, subject to reader evidence.
 
-### Developer handoff: implement next
+### Implementation checkpoint: 2026-10-07
+
+Implemented locally, not yet committed or deployed:
+
+| Track | Available now | Remaining before closing the track |
+| --- | --- | --- |
+| UX-01 | Aa contains appearance only; Reader preferences contains language, chapter-note visibility and helper configuration; Voice settings is reachable from the player; shorter phone chapter openings; Escape preserves playback and returns useful focus | Full contextual-help/selection/physical mobile-keyboard checks and logical-position matrix across typography changes |
+| UX-02 | Quiet save status; browser-only recovery messaging; explicit retry and discard-refused actions; profile-scoped immutable pending records; separate short append and network locks; malformed recovery records retained without blocking valid work | Broader authenticated live session-expiry and browser-support matrix; cross-tab network ordering requires native Web Locks, though immutable records prevent shared-outbox overwrite without them |
+| UX-03 | Optional library dialog with bounded real preceding text and a resolved preceding highlight; exact highlight source link; one-action Return or deliberate Keep reading here; direct Continue retained. Progress stays at the saved place throughout a source visit, including reload and tab exit | Verify the same access and privacy behavior with live shared profiles before closing the entire track |
+| UX-04 | Compact single-book Continue controls without a duplicate cover; title/author and status filtering; manual Reading, Saved for later, and Finished states persisted per reader, including shared copies; bounded literal in-book search with chapter/excerpt results, exact repeated-match marking, and a progress-safe return path | Complete the empty, pinned, and keyboard shelf acceptance checks before closing the track |
+
+Fresh verification: 525 tests across 56 files, typecheck, and production build passed during the status slice. Headless Playwright CLI previously checked appearance/preferences/player interactions, three themes, 390/768/1440 widths, Scroll/Pages navigation, context open/dismiss/retry/Continue, shelf filtering, and a failed highlight save followed by explicit retry and server acknowledgement. Source visits additionally passed exact Return after resize in Scroll and Pages, no progress writes during a visit, reload/exit preservation, Keep reading here adoption, and recovery from a mocked failed cross-chapter return. In-book search passed repeated-result selection and exact text marking, cross-chapter Return with unchanged server progress in Scroll and Pages, no-results, a mocked failed chapter fetch, retry, and Escape dismissal. The status slice passed a two-book browser journey for manual status changes, filter transitions, reload persistence, rollback after a mocked failed write, unchanged progress, and More actions. A separate shared-profile browser journey passed recipient persistence through reload and unshare/reshare while preserving the owner's status. Independent checks also covered short 390x600 panels. Retry/error tests deliberately mock failed requests. These are not production deployment or physical-device claims. Repeatable scripts and fixture requirements are in `e2e/README.md`; the updated Momentic journeys were not executed in this pass.
+
+The save-recovery browser regression first failed because a fixed recovery panel inside the transformed Pages toolbar moved off-screen. Recovery now renders outside that toolbar, while successful save feedback remains quiet inside it. The design detector ran on rendered reader HTML; its advisory book-prose punctuation finding does not justify editing the source text. Existing text/control tokens used by the new UI exceeded 4.5:1 on paper and raised surfaces in all three themes.
+
+An additional headless regression preserved the existing More actions/Edit/Cancel behavior (metadata unchanged and focus restored), chapter navigation back through the shelf and Continue, and theme/font/text-size persistence after reload. Automatic chapter-line generation was blocked for that final navigation rerun; live AI-provider behavior was not re-certified.
+
+Next developer: close the remaining first-release acceptance gaps above before starting UX-05. Keep the unchecked workstream boxes until the entire track, not just this slice, meets its acceptance list. Do not add a notebook schema or generated resume recap as part of that verification work.
+
+Independent browser review also reproduced an existing Pages-mode mouse edge case in `usePages.ts`: entering the top margin reveals the toolbar on pointer move, then clicking that same margin can immediately toggle it away. Moving the pointer to the top again recovers it. Investigate with a reproducing pointer sequence before changing the shared page-turn handlers; this pass does not alter them.
+
+### Developer handoff: implementation sequence
 
 **Start with UX-01, then UX-02 and UX-03. Do not implement this entire roadmap in one change.**
 The immediate deliverable is a more comfortable reader with reorganized controls, preserving current behavior and saved preferences.
 Ship that bounded improvement before adding notebook schemas, new AI interactions, quizzes, vocabulary, or connections.
-The full first-release experience is UX-01 through UX-03 plus the small shelf improvements in UX-04; book search and explicit reading statuses can follow separately.
+The first-release sequence began with UX-01 through UX-03 and the small shelf improvements in UX-04. The current local checkpoint also includes book search and explicit reading statuses; finish the remaining acceptance checks before closing UX-04.
 
 #### Step 1: establish the current baseline
 
@@ -429,10 +450,10 @@ Decide whether a last-highlight timestamp is required: current stored notes do n
 
 Acceptance:
 
-- [ ] A returning reader can resume without passing through a mandatory recap.
-- [ ] Context contains no passage after the saved reading boundary and does not silently change progress.
-- [ ] Source navigation and return restore the logical block/offset in both reading layouts, including a resized viewport.
-- [ ] Books without highlights still provide useful, truthful context.
+- [x] A returning reader can resume without passing through a mandatory recap.
+- [x] Context contains no passage after the saved reading boundary and does not silently change progress.
+- [x] Source navigation and return restore the logical block/offset in both reading layouts, including a resized viewport.
+- [x] Books without highlights still provide useful, truthful context.
 - [ ] Shared-book context remains private to the current reader and respects current access.
 
 ### UX-04: Library organization and finding passages
@@ -455,10 +476,10 @@ Explicit reading status and book search require new contracts; pinning alone doe
 Acceptance:
 
 - [ ] Empty, one-book, many-book, shared, and pinned libraries retain all necessary actions.
-- [ ] Title/author filtering is responsive and has an accessible clear action and empty state.
-- [ ] Repeated search terms navigate to the selected occurrence, not merely the first match in the chapter.
-- [ ] Search detours can return to the previous reading location without leaving misleading saved progress.
-- [ ] Status changes persist per reader, including for shared books, and can be undone or corrected.
+- [x] Title/author filtering is responsive and has an accessible clear action and empty state.
+- [x] Repeated search terms navigate to the selected occurrence, not merely the first match in the chapter.
+- [x] Search detours can return to the previous reading location without leaving misleading saved progress.
+- [x] Status changes persist per reader, including for shared books, and can be undone or corrected.
 
 ### UX-05: My edition notebook and personal reflections
 

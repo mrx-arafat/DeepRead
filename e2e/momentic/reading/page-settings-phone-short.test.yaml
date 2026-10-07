@@ -27,7 +27,7 @@ steps:
       code: |-
         const menu = document.getElementById('reading-settings');
         menu.scrollTop = menu.scrollHeight;
-        const last = Array.from(menu.querySelectorAll('select')).pop().getBoundingClientRect();
+        const last = menu.querySelector('button[aria-label="Reader preferences"]').getBoundingClientRect();
         const box = menu.getBoundingClientRect();
         return JSON.stringify({ scrollTop: Math.round(menu.scrollTop), room: Math.round(menu.scrollHeight - menu.clientHeight), lastBottom: Math.round(last.bottom), menuBottom: Math.round(box.bottom), screen: innerHeight, scrollY: Math.round(scrollY) });
   - javascript: |-
@@ -36,5 +36,27 @@ steps:
       assert(e.lastBottom <= e.menuBottom && e.menuBottom <= e.screen, `the last control ends ${e.lastBottom}px down, in a menu ending at ${e.menuBottom}px on a ${e.screen}px screen`)
       assert(e.scrollY === s.scrollY, `scrolling the menu moved the book from ${s.scrollY}px to ${e.scrollY}px`)
   - assertVisually:
-      that: The open reading settings menu is scrolled to its end, showing the Explain in language picker and the AI helper picker, and the menu stays inside the phone screen
+      that: The open reading settings menu is scrolled to its end, showing the Layout choices and the Reader preferences button, and the menu stays inside the phone screen
       timeout: 20000
+  - click:
+      css: '#reading-settings button[aria-label="Reader preferences"]'
+  - checkElementVisible:
+      css: '#reader-preferences #reading-settings-lang'
+  - assertVisually:
+      that: Reader preferences is a separate panel inside the phone screen, showing the Explain in language picker and End-of-chapter notes switch
+      timeout: 20000
+  - click:
+      css: '#reader-preferences button[aria-label="Voice settings"]'
+  - checkElementVisible:
+      css: '#reading-voice input[value="device"]'
+  - assertVisually:
+      that: Voice settings shows This device and Natural choices with the voice status, and the panel stays inside the phone screen
+      timeout: 20000
+  - press: Escape
+  - javascript:
+      environment: browser
+      code: |-
+        const open = document.querySelectorAll('#reading-settings:popover-open, #reader-preferences:popover-open, #reading-voice:popover-open');
+        if (open.length) throw new Error('Escape left a reader panel open');
+        if (document.activeElement?.getAttribute('aria-label') !== 'Reading settings') throw new Error('Escape did not return focus to Aa');
+        return 'panels closed and Aa focused';

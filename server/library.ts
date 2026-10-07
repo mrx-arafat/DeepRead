@@ -21,6 +21,7 @@ import type {
   Note,
   ParsedBook,
   ReadingProgress,
+  ReadingStatus,
   StorageUsage,
 } from "../shared/types.ts";
 import type { CoverImage } from "./cover.ts";
@@ -98,7 +99,9 @@ function chapterWords(chapter: Chapter): number {
 }
 
 /** What meta.json holds: the list-view summary plus what dedupe and the detail view need. */
-type BookMeta = Omit<BookSummary, "hasCover"> & {
+type BookMeta = Omit<BookSummary, "hasCover" | "readingStatus"> & {
+  /** Absent for books stored before shelf status was introduced. */
+  readingStatus?: ReadingStatus;
   sha256: string;
   chapterWordCounts: Record<string, number>;
   /** Whether page 1 is the book's cover. Absent in books stored before covers were kept: not looked at yet. */
@@ -207,6 +210,8 @@ export type Library = {
    */
   addMissingCovers(renderCover: RenderCover): Promise<void>;
   setProgress(id: string, chapterId: string, blockId: string, offset: number): Promise<ReadingProgress | null>;
+  /** A manual correction; saving reading progress does not change this. */
+  setReadingStatus(id: string, status: ReadingStatus): Promise<ReadingStatus | null>;
   /** The caller has validated and trimmed `patch`. False when the book does not exist. */
   update(id: string, patch: BookUpdate): Promise<boolean>;
   remove(id: string): Promise<boolean>;
@@ -421,6 +426,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
       wordCount: meta.wordCount,
       addedAt: meta.addedAt,
       progress: meta.progress,
+      readingStatus: meta.readingStatus ?? "reading",
       hasCover: meta.cover === true,
       ...(pinnedAt === undefined ? {} : { pinnedAt }),
     };
@@ -567,6 +573,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
               wordCount: bodyWords,
               addedAt: new Date().toISOString(),
               progress: null,
+              readingStatus: "reading",
               sha256,
               chapterWordCounts,
               cover: cover !== null,
@@ -669,6 +676,15 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
         const progress: ReadingProgress = { chapterId, blockId, offset, updatedAt: new Date().toISOString(), ...where };
         await writeMeta({ ...meta, progress });
         return progress;
+      });
+    },
+
+    setReadingStatus(id, status) {
+      return serialized(id, async () => {
+        const meta = await readMeta(id);
+        if (!meta) return null;
+        await writeMeta({ ...meta, readingStatus: status });
+        return status;
       });
     },
 

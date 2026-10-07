@@ -1,14 +1,16 @@
-import { FileUp, LoaderCircle } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { FileUp, LoaderCircle, Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation } from "wouter";
 import { formatBytes } from "../shared/bytes.ts";
 import { LANGUAGES } from "../shared/types.ts";
-import type { BookSummary, BookUpdate } from "../shared/types.ts";
+import type { BookSummary, BookUpdate, ReadingStatus } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
-import { addFailure, latestRead, shortTitle, splitPinned } from "./library/bookText.ts";
+import { addFailure, filterBooks, latestRead, shortTitle, splitPinned } from "./library/bookText.ts";
+import type { StartedBook } from "./library/bookText.ts";
 import { ContinueCard } from "./library/ContinueCard.tsx";
+import { ResumeContext } from "./library/ResumeContext.tsx";
 import { addBook, dropBook, patchBook, readerKey, readShelf, rememberBooks, rememberStorage, watchShelves } from "./library/shelfCache.ts";
 import { useFileDrop } from "./library/useFileDrop.ts";
 import { APP_NAME, useDocumentTitle } from "./pageTitle.ts";
@@ -19,6 +21,12 @@ import { useSession } from "./profiles/session.tsx";
 import { forgetHeldNotes, noteOwner } from "./reader/noteSync.ts";
 
 const ADD_BUTTON = "add";
+const STATUS_FILTERS: { value: ReadingStatus | "all"; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "reading", label: "Reading" },
+  { value: "saved", label: "Saved for later" },
+  { value: "finished", label: "Finished" },
+];
 
 /** The one row that is being edited or asked to confirm its removal. */
 type Active = { kind: "edit" | "share"; id: string } | { kind: "delete"; id: string; error: string | null };
@@ -34,8 +42,14 @@ export function LibraryPage() {
   // Coming back paints the shelf as it was last time, while the request below brings it up to date. It is read from the
   // cache, not kept in state, so a progress save that is still on its way as this page opens lands on it as well.
   const { books, storage } = useSyncExternalStore(watchShelves, () => readShelf(reader));
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ReadingStatus | "all">("all");
+  const [focusFilterAfterStatus, setFocusFilterAfterStatus] = useState(false);
+  const [context, setContext] = useState<{ book: StartedBook; reader: string } | null>(null);
+  const searchedBooks = useMemo(() => filterBooks(books ?? [], query), [books, query]);
+  const visibleBooks = useMemo(() => filterBooks(searchedBooks, "", statusFilter), [searchedBooks, statusFilter]);
   // Pinned books get a shelf of their own above the others, which stay in the order the server lists them.
-  const { pinned, rest } = splitPinned(books ?? []);
+  const { pinned, rest } = useMemo(() => splitPinned(visibleBooks), [visibleBooks]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -50,9 +64,11 @@ export function LibraryPage() {
   const [focusMenuOf, setFocusMenuOf] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
+  const selectedFilter = useRef<HTMLButtonElement>(null);
   const uploadingNow = useRef(false);
   // A file dropped on a dialog over the shelf is not meant for the shelf.
-  const inDialog = active?.kind === "edit" || active?.kind === "share";
+  const showingContext = context?.reader === reader && books?.some((book) => book.id === context.book.id) === true;
+  const inDialog = active?.kind === "edit" || active?.kind === "share" || showingContext;
   const dragging = useFileDrop(onDrop, !inDialog);
 
   useEffect(() => {
@@ -84,6 +100,12 @@ export function LibraryPage() {
     // The row that wanted focus has taken it by now (children's effects run first).
     if (focusMenuOf !== null) setFocusMenuOf(null);
   }, [focusMenuOf]);
+
+  useEffect(() => {
+    if (!focusFilterAfterStatus) return;
+    selectedFilter.current?.focus();
+    setFocusFilterAfterStatus(false);
+  }, [focusFilterAfterStatus, visibleBooks]);
 
   function onDrop(files: FileList) {
     if (inDialog) return;
@@ -191,6 +213,25 @@ export function LibraryPage() {
     }
   }
 
+  async function setReadingStatus(book: BookSummary, status: ReadingStatus): Promise<void> {
+    if (book.readingStatus === status) return;
+    const { id, readingStatus: before } = book;
+    const unchanged = () => readShelf(reader).books?.find((each) => each.id === id)?.readingStatus === status;
+    setError(null);
+    setPending(id);
+    if (statusFilter !== "all" && statusFilter !== status) setFocusFilterAfterStatus(true);
+    patchBook(reader, id, { readingStatus: status });
+    try {
+      const saved = await api.setReadingStatus(id, status);
+      if (unchanged()) patchBook(reader, id, { readingStatus: saved });
+    } catch {
+      if (unchanged()) patchBook(reader, id, { readingStatus: before });
+      setError(`The reading status for "${shortTitle(book.title)}" could not be saved. Please try again.`);
+    } finally {
+      setPending(null);
+    }
+  }
+
   const empty = books?.length === 0;
   const resume = books && latestRead(books);
 
@@ -208,6 +249,7 @@ export function LibraryPage() {
         readerId={session?.profile.id ?? null}
         onMode={(mode) => show(book.id, mode)}
         onPin={() => void togglePin(book)}
+        onStatus={(status) => void setReadingStatus(book, status)}
         onSave={save}
         onRemove={remove}
       />
@@ -316,7 +358,42 @@ export function LibraryPage() {
           </div>
         )}
 
-        {resume && <ContinueCard book={resume} />}
+        {resume && (statusFilter === "all" || statusFilter === "reading") && <ContinueCard book={resume} compact={books?.length === 1} onContext={() => setContext({ book: resume, reader })} />}
+
+        {books && books.length > 1 && (
+          <div className="library-status-filters" role="group" aria-label="Filter by reading status">
+            {STATUS_FILTERS.map(({ value, label }) => (
+              <button
+                key={value}
+                ref={statusFilter === value ? selectedFilter : undefined}
+                type="button"
+                aria-pressed={statusFilter === value}
+                onClick={() => setStatusFilter(value)}
+              >
+                {label} <span>{value === "all" ? searchedBooks.length : searchedBooks.filter((book) => book.readingStatus === value).length}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {books && books.length > 1 && (
+          <div className="library-search">
+            <label htmlFor="library-search">Find a book</label>
+            <div className="library-search-field">
+              <Search size={18} aria-hidden />
+              <input id="library-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} />
+              {query && <button type="button" className="icon-button" aria-label="Clear book search" title="Clear book search" onClick={() => setQuery("")}><X size={18} aria-hidden /></button>}
+            </div>
+            {query.trim() && <p className="library-search-count" role="status">{visibleBooks.length} {visibleBooks.length === 1 ? "book" : "books"} found</p>}
+          </div>
+        )}
+
+        {books && books.length > 0 && visibleBooks.length === 0 && (
+          <div className="library-no-results">
+            <p role="status">{query.trim() ? `No ${statusFilter === "all" ? "" : STATUS_FILTERS.find((item) => item.value === statusFilter)?.label.toLowerCase() + " "}books match "${query.trim()}".` : `No books marked ${STATUS_FILTERS.find((item) => item.value === statusFilter)?.label.toLowerCase()}.`}</p>
+            <button type="button" className="quiet-button" onClick={() => { setQuery(""); setStatusFilter("all"); }}><X size={16} aria-hidden /> Show all books</button>
+          </div>
+        )}
 
         {pinned.length > 0 && (
           <section aria-label="Pinned">
@@ -333,6 +410,7 @@ export function LibraryPage() {
             {storageLine}
           </section>
         )}
+        {showingContext && context && <ResumeContext key={`${reader}:${context.book.id}`} book={context.book} onClose={() => setContext(null)} />}
       </main>
     </>
   );

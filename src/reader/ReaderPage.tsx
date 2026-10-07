@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Headphones, List } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Headphones, List, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import type { BookDetail, ExplainMode } from "../../shared/types.ts";
@@ -6,16 +6,19 @@ import { api } from "../api.ts";
 import { readerTitle, useDocumentTitle } from "../pageTitle.ts";
 import { usePrefs } from "../prefs.ts";
 import { readableBlocks } from "./book.ts";
+import { BookSearch } from "./BookSearch.tsx";
+import type { BookSearchResult } from "./bookSearch.ts";
 import { ChapterList } from "./ChapterList.tsx";
 import { ChapterSection } from "./ChapterSection.tsx";
 import type { TextActions } from "./ChapterText.tsx";
 import { ListenBar } from "./ListenBar.tsx";
+import { NoteSyncStatus } from "./NoteSyncStatus.tsx";
 import { listenBlocks } from "./listenBlocks.ts";
 import { lookupTipDone, markLookupTipDone } from "./lookupTip.ts";
 import { ReadingSettings } from "./ReadingSettings.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
 import { canSpeak } from "./speech.ts";
-import { setHighlight } from "./textRanges.ts";
+import { rangeInBlock, setHighlight } from "./textRanges.ts";
 import { UndoToast } from "./UndoToast.tsx";
 import { useChapterFlow } from "./useChapterFlow.ts";
 import { useHighlightChoice } from "./useHighlightChoice.ts";
@@ -47,11 +50,13 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const [book, setBook] = useState<BookDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tocOpen, setTocOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchTarget, setSearchTarget] = useState<BookSearchResult | null>(null);
   const [word, setWord] = useState<Lookup | null>(null);
   const [selection, setSelection] = useState<Lookup | null>(null);
   // Until the reader has looked something up, a tip beside the first chapter shows how.
   const [tipOpen, setTipOpen] = useState(() => !lookupTipDone());
-  const { notes, highlights, addNote, addHighlight, removeNote, removed, restoreNote, forgetRemoved } = useNotes(bookId, prefs.lang);
+  const { notes, highlights, addNote, addHighlight, removeNote, removed, restoreNote, forgetRemoved, syncState, retryNotes, discardRejectedNotes } = useNotes(bookId, prefs.lang);
   const [undoFocus, setUndoFocus] = useState(false);
   // What takes focus back after Undo, when focus was on it.
   const focusAfterUndo = useRef<string | null>(null);
@@ -60,6 +65,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const shown = useMemo(() => (book ? flow.chapters : []), [book, flow.chapters]);
   useNoteMarks(notes, highlights, shown);
   const position = useReadingPosition(bookId, chapterId, book, flow.start);
+  const noteNeedsAttention = Boolean(book && syncState.phase !== "saved" && syncState.phase !== "saving");
   const turning = prefs.layout === "pages";
   const pages = usePages(turning, Boolean(book && flow.start), Boolean(word || selection));
 
@@ -100,6 +106,14 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     return () => setHighlight("dr-word", null);
   }, [word]);
 
+  useEffect(() => {
+    const range = searchTarget && position.detour
+      ? rangeInBlock(searchTarget.blockId, { start: searchTarget.offset, end: searchTarget.offset + searchTarget.matchLength })
+      : null;
+    setHighlight("dr-search", range);
+    return () => setHighlight("dr-search", null);
+  }, [searchTarget, flow.chapters, position.detour]);
+
   const dismiss = useCallback(() => {
     setWord(null);
     setSelection(null);
@@ -116,7 +130,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   // The chapter list is a modal dialog that closes itself and puts focus back, so it is left to do that.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || tocOpen) return;
+      if (event.key !== "Escape" || tocOpen || document.querySelector(":popover-open")) return;
       if (word || selection) {
         dismiss();
       } else if (listenActive) {
@@ -237,6 +251,12 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     listen.startAtLine(start, eyeLine());
   }
 
+  function openSearchResult(result: BookSearchResult): boolean {
+    const opened = position.visitPlace({ chapterId: result.chapterId, blockId: result.blockId, offset: result.offset });
+    if (opened) setSearchTarget(result);
+    return opened;
+  }
+
   const pageError = error ?? flow.error;
   const currentTitle = book?.chapters.find((item) => item.id === position.chapterId)?.title;
   // The tab and the history menu name the book and the chapter being read, so several tabs do not look alike.
@@ -246,6 +266,9 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     return (
       <main className="page-message">
         <p>{pageError}</p>
+        {flow.error && position.detour?.returning && (
+          <button type="button" className="button" onClick={position.cancelReturn}>Back to passage</button>
+        )}
         <Link href="/" className="button">
           Back to your books
         </Link>
@@ -279,6 +302,12 @@ export function ReaderPage({ bookId, chapterId }: Props) {
           </span>
         )}
         <div className="topbar-tools">
+          {book && (syncState.phase === "saved" || syncState.phase === "saving") && <NoteSyncStatus state={syncState} onRetry={retryNotes} onDiscard={discardRejectedNotes} />}
+          {book && (
+            <button type="button" className="icon-button" aria-label="Find in this book" onClick={() => setSearchOpen(true)}>
+              <Search size={20} aria-hidden />
+            </button>
+          )}
           {canSpeak && (
             <button
               ref={listenButton}
@@ -307,10 +336,29 @@ export function ReaderPage({ bookId, chapterId }: Props) {
         )}
       </header>
 
+      {(noteNeedsAttention || position.detour) && (
+        <div className="reader-overlays">
+          {noteNeedsAttention && <NoteSyncStatus state={syncState} onRetry={retryNotes} onDiscard={discardRejectedNotes} />}
+          {position.detour && (
+            <section className="reading-detour" aria-label="Source visit">
+              <p>Visiting a passage</p>
+              {position.detourError && <p className="inline-error" role="alert">{position.detourError}</p>}
+              <div className="reading-detour__actions">
+                <button type="button" className="button" onClick={position.returnToPlace} disabled={position.returning}>
+                  <ArrowLeft size={16} aria-hidden /> {position.returning ? "Returning..." : "Return to your place"}
+                </button>
+                <button type="button" className="quiet-button" onClick={position.stayHere} disabled={position.returning}>Keep reading here</button>
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+
       {/* Right after the top bar in the page order, so a keyboard reader reaches it in a Tab or two. It is fixed to the window, so it looks the same. */}
       {listen.active && <ListenBar listen={listen} rate={prefs.rate} playRef={playButton} onStop={stopListening} />}
 
       {tocOpen && book && <ChapterList book={book} currentId={position.chapterId ?? chapterId} onClose={() => setTocOpen(false)} />}
+      {searchOpen && book && <BookSearch book={book} onClose={() => setSearchOpen(false)} onPick={openSearchResult} />}
 
       <main className="page" style={{ paddingBottom: listen.active ? "9rem" : undefined }}>
         {!book || !flow.start ? (

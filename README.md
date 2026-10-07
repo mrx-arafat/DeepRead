@@ -134,15 +134,13 @@ It explains words and passages through an AI you already have, and there are thr
 | **API Model** | An API call to an AI model, paid for with an API key from [OpenRouter](https://openrouter.ai). It uses nobody's Claude Code or Codex sign-in. | Put `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` in `.env` (see [The API Model](#the-api-model)) |
 
 DeepRead finds the first two by itself.
-Open **Aa** in the reader: **AI helper** lists all three, the ones that work to pick and the others greyed with the reason (**Not installed on this computer**, or what the API Model still needs).
+Open **Aa**, then **Reader preferences** in the reader: **AI helper** lists all three, the ones that work to pick and the others greyed with the reason (**Not installed on this computer**, or what the API Model still needs).
 DeepRead remembers your pick, and if you install one later it shows up the next time you open the menu.
 
 With profiles on, the helpers are the admin's to give.
 Claude Code and Codex run on the admin's computer under the admin's own sign-in, and the API Model runs on the admin's key, so a reader uses only the ones the admin has switched on for them (see [Read together](#read-together-profiles-and-sharing)).
 Everyone else sees the same list, with a helper they do not have yet greyed and an **Ask** button beside it.
 A reader who is using one is told whose it is: "You are using Arafat's Claude Code. Sharing is caring."
-
-<table><tr><td><img src="docs/images/settings.webp" alt="The Aa menu with theme, font, text size, line spacing, margins, alignment, layout, read-aloud voice, explanation language and the AI helper picker" width="900"></td></tr></table>
 
 **With no AI helper at all**, you can still read, listen, change settings, and tap a word to see a quick translation in your language.
 Only the explanations (the meaning, the example sentence and the passage notes) need an AI helper, and DeepRead tells you how to add one.
@@ -200,9 +198,19 @@ Scanned books, where each page is a photo, need OCR first.
 
 Your books stand on a shelf with their own covers when the PDF has a cover on its first page.
 Otherwise DeepRead makes a cloth cover from the title, and shows it too when a cover image is slow or broken.
-The book you read last waits at the top in a **Continue reading** card, with the chapter you stopped in and how much of the book is left.
-Click **Continue**, or the card, to open it right there.
+The book you read last waits at the top under **Continue reading**, with the chapter you stopped in.
+With several books, its card also shows how much of the book is left; with one book, the resume controls sit above its cover without a second card.
+Click **Continue** to open it right there.
+**Where I left off** opens an optional dialog over the shelf with a short passage before your saved position and the nearest saved highlight before that position in the same chapter, when one exists.
+It uses the book's own text and makes no AI request. Close it to stay on the shelf, or press **Continue** to read without a detour.
+When it shows a highlight, **View highlight in book** opens that exact passage. **Return to your place** brings back your saved line, even after changing screen size or reading layout. DeepRead holds your saved progress during the visit; **Keep reading here** deliberately adopts the new location instead.
+At the beginning of a chapter there may be no preceding passage yet; if the saved passage is missing, DeepRead says so.
 Under each cover a thin line shows how far you are, with the time left, or **New** and the time it takes to read for a book you have not opened.
+
+Each book also has a **Reading status** menu below its cover: **Reading**, **Saved for later**, or **Finished**. New books start in Reading; you can change the status at any time, including for a book shared with you. It belongs to your profile and survives reloads. The progress line remains your last place, not a judgement that you finished; even reaching the end never changes the status for you. On a larger shelf, the status filters show each group. Moving a book out of Reading removes it from **Continue reading** until you put it back.
+
+With more than one book, **Find a book** filters the shelf by title or author as you type, keeping the matching books in their existing order.
+Clear the search to show the whole shelf again.
 
 **Where you stopped.**
 Click a cover, or the title, to open that book on the very line you stopped at.
@@ -225,6 +233,8 @@ The book reads as one long page.
 It opens at the book itself, past the title page and contents, and the next chapter follows as you scroll.
 Scroll up from the start of a chapter and the one before it comes in above, without moving the text you are on, so you can re-read how the last chapter ended.
 Your place is saved as you go.
+
+Use the magnifying glass in the reader toolbar to **Find in this book**. Search results show a chapter and a short excerpt; choosing one marks that occurrence in the text. **Return to your place** restores the line you were reading without replacing saved progress, or **Keep reading here** makes the found passage your new place. Search uses the book text already available to this reader, not an AI answer.
 
 <table><tr><td><img src="docs/images/reader.webp" alt="The reading view in the sepia theme at the start of a chapter: a centred chapter title, a Before you read box and the book text in one column" width="900"></td></tr></table>
 
@@ -256,10 +266,13 @@ Select a sentence or a paragraph, then choose what you want:
 <table><tr><td><img src="docs/images/select-passage.webp" alt="A selected passage with the Explain, Example, In Bangla and Listen buttons, and the Highlight button with its four colours" width="900"></td></tr></table>
 
 The answer is pinned beside the paragraph like a teacher's note, and it stays there when you come back to the book.
-DeepRead keeps these notes with the book, not in the browser, so clearing your browser does not lose them and they show on your phone too.
+Once DeepRead confirms **Notes saved**, these notes are kept with the book, so clearing your browser does not lose them and they show on your phone too.
 A book you already have open picks up notes made on another device when you come back to it, and every 30 seconds while it is on screen, so you never need to reload.
 Notes that were saved in a browser before are moved up automatically the next time you open that book.
-If DeepRead cannot be reached when you make a note, your browser holds it until it can.
+The reader shows whether notes are saving, saved or waiting for a connection.
+When DeepRead cannot be reached, it holds changes in this browser when browser storage is available; other devices do not have them until DeepRead saves them.
+**Retry save** sends held changes again. If DeepRead refuses a change, it stays available for retry; **Discard refused changes** removes only those refused changes.
+If recovery is unavailable, follow the message and keep the page open while unsaved changes are present. Clearing browser storage can remove changes DeepRead has not saved yet.
 Your reading settings under **Aa** are different: they stay in each browser, so a phone has its own.
 
 <table><tr><td><img src="docs/images/explain.webp" alt="An explanation note in the margin beside the passage" width="900"></td></tr></table>
@@ -279,13 +292,13 @@ Under it, a short note in softer ink says one thing from the chapter you can now
 It never praises you, scores you or counts a streak: it only points at something true in the book.
 Your AI helper writes it as you near the end of the chapter, so it is there when you arrive, and the server keeps it for next time.
 Without an AI helper, or if one is not available, it says what the book and your own marks show instead: the passage you highlighted, that this was the longest chapter, that half the book is behind you, or that the next chapter is a short one.
-Turn it off under **Aa** with **End-of-chapter notes**.
+Turn it off under **Aa → Reader preferences** with **End-of-chapter notes**.
 
 ### 7. Listen
 
 Press **Listen** in the top bar.
 DeepRead reads from the line you are looking at, chapter titles included, and marks the sentence in green and the word being spoken in a stronger green.
-The player has previous and next sentence, pause, speed (0.6x to 1.5x) and stop.
+The player has previous and next sentence, pause, speed (0.6x to 1.5x), voice settings and stop.
 If you scroll away, the page stays where you put it, and the player offers a way back to the voice.
 
 <table><tr><td><img src="docs/images/listen.webp" alt="Reading aloud with the sentence and spoken word highlighted, and the player at the bottom" width="900"></td></tr></table>
@@ -296,7 +309,8 @@ DeepRead pauses where a person would: a little after each sentence, longer betwe
 ### 8. A more natural voice
 
 By default DeepRead reads with the voice built into your browser and computer.
-For a more human one, open the **Aa** menu and choose **Natural** under **Read-aloud voice** (pictured in [AI helpers](#ai-helpers)).
+For a more human one, open **Aa → Reader preferences → Voice settings** and choose **Natural** under **Read-aloud voice**.
+You can also open **Voice settings** from the player while listening.
 It downloads once (326 MB, with a progress figure in the menu), and from then on it runs on your computer's graphics card and works offline.
 It needs a browser with WebGPU, which means a recent Chrome or Edge on a computer from the last few years.
 If your browser or computer cannot run it, or runs it too slowly to keep up with the reading, DeepRead says so in the menu and keeps the voice built into your computer.
@@ -316,7 +330,9 @@ After a jump, the browser's Back button returns you to the paragraph you were re
 ### 10. Make it yours
 
 Open **Aa** at the top right to set the page the way an e-reader does: a light, sepia or dark theme, the book's font (Literata or Atkinson), text size, line spacing, margins and justified text.
-Below those are the read-aloud voice (see [A more natural voice](#8-a-more-natural-voice)), the language explanations come in and your AI helper, all pictured in [AI helpers](#ai-helpers).
+**Reader preferences** at the bottom opens a separate panel for the language explanations come in, end-of-chapter notes and your AI helper.
+Its **Voice settings** button opens the read-aloud voice choices (see [A more natural voice](#8-a-more-natural-voice)).
+Opening one panel closes the previous one. Escape closes it, returning focus to **Aa** after settings navigation, or to the player's **Voice settings** button when opened there.
 The footer under the text tells you how many minutes of the chapter are left, then marks the end of the book when you reach its closing panel.
 
 **Layout** chooses how you move through the book: **Scroll** (the default) reads it as one long page, and **Pages** turns it a page at a time like an e-reader.
@@ -392,7 +408,7 @@ Then press **Try again** on the card.
 <summary><b>Explanations say "DeepRead needs an AI helper"</b></summary>
 
 No AI helper is set up on this computer.
-Install Claude Code or Codex as shown in [AI helpers](#ai-helpers), or set up the [API Model](#the-api-model), then open **Aa** in the reader.
+Install Claude Code or Codex as shown in [AI helpers](#ai-helpers), or set up the [API Model](#the-api-model), then open **Aa → Reader preferences** in the reader.
 
 </details>
 
@@ -400,7 +416,7 @@ Install Claude Code or Codex as shown in [AI helpers](#ai-helpers), or set up th
 <summary><b>Explanations say "You do not have an AI helper yet"</b></summary>
 
 With profiles on, the admin decides who may use which AI helper.
-Open **Aa**, find the helper you would like under **AI helper**, and press **Ask** beside it.
+Open **Aa → Reader preferences**, find the helper you would like under **AI helper**, and press **Ask** beside it.
 The admin sees your request on their page, and the helper works for you as soon as they switch it on.
 Reading and listening work in the meantime.
 
@@ -492,7 +508,7 @@ Restarting DeepRead also clears the lock.
 <details>
 <summary><b>The natural voice will not turn on</b></summary>
 
-Open **Aa** and read the line under **Read-aloud voice**: it says why.
+Open **Voice settings** from the player or **Aa → Reader preferences**, and read the line under **Read-aloud voice**: it says why.
 A message about the graphics card means this browser has no WebGPU, so try a recent Chrome or Edge.
 A message about speed means this computer could not make speech as fast as it is read, so DeepRead keeps the voice built into it.
 If the download stopped partway, check your connection, then choose **This device** and **Natural** again to start it once more.
@@ -733,7 +749,7 @@ These are the rules behind it:
 
 A new profile has no AI helper.
 Claude Code and Codex run under the admin's own sign-in and the API Model runs on the admin's key, so the admin decides who may use which.
-A reader sees all three in **Aa**, under **AI helper**, each in the state it is in for them:
+A reader sees all three in **Aa → Reader preferences**, under **AI helper**, each in the state it is in for them:
 
 - **Given to them.** It can be picked, and says who shared it: "Shared with you by Arafat."
 - **Installed but not given.** It is greyed, says "Needs Arafat's approval", and has an **Ask Arafat** button.
@@ -911,6 +927,7 @@ profiles/<id>/pins.json
 
 `pins.json` maps each pinned book's id to when it was pinned, a shared book under its `<owner id>--<book id>` id; without profiles it sits at the root of the store.
 `PUT /api/books/:id/pin` pins a book and answers `{ pinnedAt }`, `DELETE /api/books/:id/pin` unpins it, and the book list carries `pinnedAt` for the client to split the shelf.
+`PUT /api/books/:id/reading-status` accepts `{ "status": "saved" | "reading" | "finished" }` and answers `{ readingStatus }`. The book list and detail carry that per-reader status; shared-book recipients keep their own choice. Existing books without a stored status default to Reading, without changing their saved progress.
 Like the list of books, it is kept in memory and written one change at a time; a `pins.json` that cannot be read refuses further pins rather than being overwritten, and removing a book drops its pin.
 `pnpm storage:migrate` and the move into the admin's profile carry it along.
 
@@ -951,9 +968,10 @@ The server refuses an unknown colour, a colour on a question, and a highlight wi
 [`src/reader/useNoteMarks.ts`](src/reader/useNoteMarks.ts) paints each colour with the browser's CSS Custom Highlight API, so the text itself is never changed.
 The API takes them as `GET /api/books/:id/notes`, `PUT /api/books/:id/notes/:noteId` with `{ note, before }`, and `DELETE /api/books/:id/notes/:noteId`.
 The server applies each change inside the book's queue, so two devices never overwrite each other.
-In the browser, [`src/reader/noteSync.ts`](src/reader/noteSync.ts) (`createNoteSync`) shows a change at once and keeps it in a `localStorage` outbox, `deepread.pendingNotes.<bookId>`, until the server has taken it.
-It sends the outbox in order.
-It drops a change the server refuses with a 4xx, and retries the others on the next change or load.
+In the browser, [`src/reader/noteSync.ts`](src/reader/noteSync.ts) (`createNoteSync`) shows a change at once and keeps each pending operation separately in `localStorage`, under `deepread.pendingNotes.<profileId>.<bookId>.operations.<operationId>` (`single` replaces the profile id without profiles), until the server has taken it.
+It sends operations in order, using Web Locks when available to coordinate sending across tabs.
+It retains refused changes for explicit retry or discard; connection failures, expired sign-ins and temporary refusals wait for another attempt.
+[`src/reader/NoteSyncStatus.tsx`](src/reader/NoteSyncStatus.tsx) distinguishes acknowledged saves from changes held only in this browser, and exposes retry, discard and storage-recovery warnings.
 It also adopts notes from the old `localStorage` keys, `deepread.notes.<bookId>` and `deepread.notes.<bookId>.<chapterId>`.
 [`src/reader/useNotes.ts`](src/reader/useNotes.ts) is a thin React hook around it.
 It calls `refresh()` when the page comes back into view, gets focus or goes online, and every 30 seconds while it is visible, so notes made on another device appear without a reload; a refresh that finds nothing new does not draw the page again.
@@ -1052,7 +1070,7 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 | Path | What lives there |
 | --- | --- |
 | `shared/types.ts` | The contract between the server and the web app |
-| `shared/notes.ts`, `src/reader/noteSync.ts`, `src/reader/useNotes.ts` | A note change and the one function that applies it, used by the server and the browser; the browser's outbox that sends changes in order; the React hook around it |
+| `shared/notes.ts`, `src/reader/noteSync.ts`, `src/reader/useNotes.ts`, `src/reader/NoteSyncStatus.tsx` | A note change and the one function that applies it, used by the server and the browser; profile-scoped pending operations, save status and recovery controls; the React hook around them |
 | `src/reader/highlights.ts`, `HighlightGroup.tsx`, `useHighlightChoice.ts` | Highlights: deciding whether a selection lies inside one, the colour row shared by the selection bar and the word card, and the choice and last colour behind it |
 | `src/reader/ChapterClosing.tsx`, `closingPresets.ts` | The note after a chapter: asked for near the end, shown only once the reader gets there and never swapped after, and the note built from the book's shape and the reader's marks when no AI writes one |
 | `shared/bytes.ts` | Sizes as text, such as `1.2 GB`, the same in server messages and on the library page |
@@ -1072,9 +1090,9 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 | `server/routes-session.ts`, `server/routes-admin.ts` | The routes under `/api/session`, `/api/profiles` and `/api/admin` |
 | `server/shares.ts`, `server/routes-shares.ts` | Who shares which book with whom (`shares.json`), each profile's shelf with the shared books on it, and the sharing routes |
 | `src/` | The web app: library and reader |
-| `src/reader/helperState.ts`, `aiStatusStore.ts`, `helperCredit.ts` | The AI helper list in the Aa menu, and whose AI it says is answering |
+| `src/reader/helperState.ts`, `aiStatusStore.ts`, `helperCredit.ts` | The AI helper list in Reader preferences, and whose AI it says is answering |
 | `src/admin/AiAccessDialog.tsx`, `AdminApiModel.tsx` | The admin's switches for what each reader may use, and the API Model's key, model, limit and test |
-| `src/library/` | The shelf: covers, the book menu, the Share dialog and the Sharing page; `shelfCache.ts` keeps each reader's last shelf in memory, so coming back to the library shows it at once while it is brought up to date |
+| `src/library/` | The shelf: covers, the book menu, the Share dialog and the Sharing page; `ResumeContext.tsx` and `resumeText.ts` show a read-only reminder before the saved position; `bookText.ts` filters titles and authors; `shelfCache.ts` keeps each reader's last shelf in memory, so coming back to the library shows it at once while it is brought up to date |
 | `src/reader/speech.ts`, `natural*.ts`, `voicing.ts` | Reading aloud: the device voice, the natural voice, and where the pauses fall |
 | `public/`, `scripts/make-icons.mjs` | The icon: `favicon.svg` is the source, and the script draws the PNG sizes from it |
 | `src/favicon.ts` | The tab icon in the colour of the reader's theme (the cover's cloth in light, sepia or dark), swapped in while the app runs |

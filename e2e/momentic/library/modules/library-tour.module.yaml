@@ -74,7 +74,7 @@ steps:
   - click: Back to your books
   - checkPageContains: Your books
   # The book was only opened, not scrolled, so its progress reads "Just started"; a percentage appears once the reader has moved.
-  - assertVisually: Under a Continue reading heading a card shows the book cover, the title in serif, the chapter, a progress line with its label (the words Just started, or a percentage) and the time left, and a blue Continue button at the right (a phone puts the button below, full width). Under the Your books heading there is one cloth-coloured book cover with the title stamped in cream serif, a thin progress line, a smaller line of grey text and a three-dot button. Contrast is comfortable and nothing overlaps
+  - assertVisually: Under a Continue reading heading a card shows the book cover, the title in serif, the chapter, a progress line with its label (the words Just started, or a percentage) and the time left, and a blue Continue button at the right (a phone puts the button below, full width). Under the Your books heading there is one cloth-coloured book cover with the title stamped in cream serif, a thin progress line, a smaller line of grey text, a Reading status selector and a three-dot button. Contrast is comfortable and nothing overlaps
   - javascript:
       environment: browser
       code: return window.__measure();

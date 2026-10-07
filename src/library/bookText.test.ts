@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { BookSummary } from "../../shared/types.ts";
-import { CLOTH_COUNT, clothFor, coverTitleSize, latestRead, readingNote, shortTitle, splitPinned } from "./bookText.ts";
+import type { BookSummary, ReadingStatus } from "../../shared/types.ts";
+import { CLOTH_COUNT, clothFor, coverTitleSize, filterBooks, latestRead, readingNote, shortTitle, splitPinned } from "./bookText.ts";
 
 /** 36 000 words: exactly 200 minutes of reading at 180 words a minute. */
-function book(title: string, progress?: { percent: number; updatedAt: string }): BookSummary {
+function book(title: string, progress?: { percent: number; updatedAt: string }, readingStatus: ReadingStatus = "reading"): BookSummary {
   return {
     id: title,
     title,
@@ -14,6 +14,7 @@ function book(title: string, progress?: { percent: number; updatedAt: string }):
     addedAt: "2026-01-01T00:00:00.000Z",
     progress: progress ? { chapterId: "c1", blockId: "c1-b1", chapterTitle: "One", ...progress } : null,
     hasCover: false,
+    readingStatus,
   };
 }
 
@@ -61,7 +62,7 @@ describe("coverTitleSize", () => {
 
 describe("readingNote", () => {
   it("should call an unopened book new and say how long it takes to read", () => {
-    expect(readingNote(book("A"))).toEqual({ state: "new", lead: "New", detail: "3 h 15 min to read", percent: 0 });
+    expect(readingNote(book("A"))).toEqual({ state: "reading", lead: "New", detail: "3 h 15 min to read", percent: 0 });
   });
 
   it("should give the percentage and the time left for a book part way through", () => {
@@ -79,12 +80,11 @@ describe("readingNote", () => {
     expect(readingNote({ ...book("A"), wordCount: 180 * 60 * 20 }).detail).toBe("20 h to read");
   });
 
-  it("should call a book finished once its end is reached, with no time left", () => {
-    expect(readingNote(book("A", { percent: 100, updatedAt: "2026-02-01T00:00:00.000Z" }))).toMatchObject({
-      state: "finished",
-      lead: "Finished",
-      detail: "",
-    });
+  it("should use the reader's manual status rather than infer finished from position", () => {
+    const place = { percent: 25, updatedAt: "2026-02-01T00:00:00.000Z" };
+    expect(readingNote(book("A", place, "saved")).lead).toBe("Saved for later");
+    expect(readingNote(book("A", place, "finished")).lead).toBe("Finished");
+    expect(readingNote(book("A", { ...place, percent: 100 }, "reading")).lead).toBe("100%");
   });
 });
 
@@ -98,12 +98,13 @@ describe("latestRead", () => {
     expect(latestRead(books)?.title).toBe("recent");
   });
 
-  it("should skip a finished book, since there is nothing to continue", () => {
+  it("should skip saved and finished books but still offer a reading book at the end", () => {
     const books = [
-      book("done", { percent: 100, updatedAt: "2026-03-01T10:00:00.000Z" }),
-      book("half", { percent: 50, updatedAt: "2026-02-01T10:00:00.000Z" }),
+      book("done", { percent: 25, updatedAt: "2026-04-01T10:00:00.000Z" }, "finished"),
+      book("later", { percent: 50, updatedAt: "2026-03-01T10:00:00.000Z" }, "saved"),
+      book("reading", { percent: 100, updatedAt: "2026-02-01T10:00:00.000Z" }, "reading"),
     ];
-    expect(latestRead(books)?.title).toBe("half");
+    expect(latestRead(books)?.title).toBe("reading");
   });
 
   it("should offer nothing when no book has been opened", () => {
@@ -132,5 +133,22 @@ describe("splitPinned", () => {
 
   it("should leave the shelf as it is when nothing is pinned", () => {
     expect(splitPinned([book("b"), book("a")])).toEqual({ pinned: [], rest: [book("b"), book("a")] });
+  });
+});
+
+describe("filterBooks", () => {
+  it("should match titles and authors without case or outside spaces changing results", () => {
+    const books = [book("Meditations"), { ...book("Philosophy"), author: "Bertrand Russell" }];
+    expect(filterBooks(books, "  MEDIT  ").map((each) => each.id)).toEqual(["Meditations"]);
+    expect(filterBooks(books, "russell").map((each) => each.id)).toEqual(["Philosophy"]);
+    expect(filterBooks(books, "unknown")).toEqual([]);
+    expect(filterBooks(books, "  ")).toEqual(books);
+  });
+
+  it("should combine title search with the selected manual reading status", () => {
+    const books = [book("Philosophy", undefined, "saved"), book("Philosophy II", undefined, "finished"), book("Literature", undefined, "reading")];
+    expect(filterBooks(books, "philosophy", "saved").map((each) => each.id)).toEqual(["Philosophy"]);
+    expect(filterBooks(books, "", "finished").map((each) => each.id)).toEqual(["Philosophy II"]);
+    expect(filterBooks(books, "", "all")).toEqual(books);
   });
 });

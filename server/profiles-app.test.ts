@@ -677,6 +677,13 @@ describe("DeepRead with profiles", () => {
       expect(shared!.id).not.toBe(bookId);
       const id = shared!.id;
 
+      expect(shared!.readingStatus).toBe("reading");
+      expect((await call("PUT", `/api/books/${id}/reading-status`, minaCookie, { status: "finished" })).status).toBe(200);
+      expect((await shelf(minaCookie))[0]?.readingStatus).toBe("finished");
+      expect((await shelf(adminCookie))[0]?.readingStatus).toBe("reading");
+      expect((await call("PUT", `/api/books/${id}/reading-status`, adminCookie, { status: "reading" })).status).toBe(404);
+      expect(await stat(join(dataDir, "profiles", admin, "shared", id, "reading-status.json")).catch(() => null)).toBeNull();
+
       expect(await json<BookDetail>(call("GET", `/api/books/${id}`, minaCookie))).toMatchObject({ title: "No Longer Human", sharedBy: { name: "Arafat" } });
       expect((await call("GET", `/api/books/${id}/chapters/c1`, minaCookie)).status).toBe(200);
       // She reads it here; the owner's PDF file stays with the owner.
@@ -686,6 +693,7 @@ describe("DeepRead with profiles", () => {
       expect((await call("PUT", `/api/books/${id}/progress`, minaCookie, { chapterId: "c1", blockId: "c1-b0", offset: 4 })).status).toBe(200);
       expect((await call("PUT", `/api/books/${id}/notes/n1`, minaCookie, { note: note("n1"), before: null })).status).toBe(204);
       expect((await shelf(minaCookie))[0]?.progress).toMatchObject({ chapterId: "c1", blockId: "c1-b0", offset: 4 });
+      expect((await shelf(minaCookie))[0]?.readingStatus).toBe("finished");
       expect(await json<Note[]>(call("GET", `/api/books/${id}/notes`, minaCookie))).toEqual([note("n1")]);
       expect((await shelf(adminCookie))[0]?.progress).toBeNull();
       expect(await json<Note[]>(call("GET", `/api/books/${bookId}/notes`, adminCookie))).toEqual([]);
@@ -708,6 +716,7 @@ describe("DeepRead with profiles", () => {
       // Shared again, she finds her place and her notes where she left them.
       await share(adminCookie, bookId, mina.id);
       expect((await shelf(minaCookie))[0]?.progress).toMatchObject({ blockId: "c1-b0", offset: 4 });
+      expect((await shelf(minaCookie))[0]?.readingStatus).toBe("finished");
       expect(await json<Note[]>(call("GET", `/api/books/${id}/notes`, minaCookie))).toEqual([note("n1")]);
     });
 

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
+import { ArrowDown, ArrowUp, AudioWaveform, Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
 import type { Ref } from "react";
 import { RATES, setPrefs } from "../prefs.ts";
 import type { Listen } from "./useListen.ts";
@@ -70,6 +70,9 @@ export function ListenBar({
             ))}
           </select>
         </label>
+        <button type="button" className="icon-button" aria-label="Voice settings" title="Voice settings" popoverTarget="reading-voice">
+          <AudioWaveform size={18} aria-hidden />
+        </button>
         <button type="button" className="icon-button" aria-label="Stop listening" title="Stop listening" onClick={onStop}>
           <X size={18} aria-hidden />
         </button>

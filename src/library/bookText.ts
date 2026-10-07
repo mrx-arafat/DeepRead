@@ -1,4 +1,4 @@
-import type { BookSummary, ReadingProgress } from "../../shared/types.ts";
+import type { BookSummary, ReadingProgress, ReadingStatus } from "../../shared/types.ts";
 import { minutes } from "../reader/book.ts";
 
 /** A book the reader has opened: the library can say where they stopped. */
@@ -40,7 +40,7 @@ export function duration(totalMinutes: number): string {
 
 /** What a book says about itself on the shelf. */
 export type ReadingNote = {
-  state: "new" | "reading" | "finished";
+  state: ReadingStatus;
   /** The short first line: "New", "35%", "Finished". */
   lead: string;
   /** The line under it: how long the book is, or how much of it is left. */
@@ -49,11 +49,17 @@ export type ReadingNote = {
   percent: number;
 };
 
-/** Where a book stands: unread, part way with the time left in it, or finished. */
+/** Manual reading status and separate position, so reaching the end never claims the reader finished. */
 export function readingNote(book: BookSummary): ReadingNote {
-  const { progress } = book;
-  if (!progress) return { state: "new", lead: "New", detail: `${duration(minutes(book.wordCount))} to read`, percent: 0 };
-  if (progress.percent >= 100) return { state: "finished", lead: "Finished", detail: "", percent: 100 };
+  const { progress, readingStatus } = book;
+  const percent = progress?.percent ?? 0;
+  if (readingStatus === "finished") return { state: "finished", lead: "Finished", detail: progress && percent > 0 ? `Last place: ${percent}%` : "", percent };
+  if (readingStatus === "saved") {
+    const detail = !progress ? `${duration(minutes(book.wordCount))} to read` : percent > 0 ? `${percent}% through` : "At the beginning";
+    return { state: "saved", lead: "Saved for later", detail, percent };
+  }
+  if (!progress) return { state: "reading", lead: "New", detail: `${duration(minutes(book.wordCount))} to read`, percent: 0 };
+  if (percent >= 100) return { state: "reading", lead: "100%", detail: "At end of book", percent: 100 };
   const left = minutes(book.wordCount * (1 - progress.percent / 100));
   return {
     state: "reading",
@@ -64,12 +70,12 @@ export function readingNote(book: BookSummary): ReadingNote {
   };
 }
 
-/** The book read most recently that still has pages left: the one the library offers to carry on with. */
+/** The book marked Reading and opened most recently: its position is not a completion verdict. */
 export function latestRead(books: BookSummary[]): StartedBook | null {
   let latest: StartedBook | null = null;
   for (const book of books) {
     const { progress } = book;
-    if (!progress || progress.percent >= 100) continue;
+    if (!progress || book.readingStatus !== "reading") continue;
     if (!latest || progress.updatedAt > latest.progress.updatedAt) latest = { ...book, progress };
   }
   return latest;
@@ -83,6 +89,12 @@ export function splitPinned(books: BookSummary[]): { pinned: BookSummary[]; rest
     .filter((book): book is BookSummary & { pinnedAt: string } => book.pinnedAt !== undefined)
     .sort((a, b) => order(b.pinnedAt, a.pinnedAt) || order(a.id, b.id));
   return { pinned, rest: books.filter((book) => book.pinnedAt === undefined) };
+}
+
+/** Match shelf titles and authors, preserving the shelf's order. */
+export function filterBooks(books: BookSummary[], query: string, status: ReadingStatus | "all" = "all"): BookSummary[] {
+  const text = query.trim().toLowerCase();
+  return books.filter((book) => (status === "all" || book.readingStatus === status) && (!text || `${book.title}\n${book.author ?? ""}`.toLowerCase().includes(text)));
 }
 
 /** Names the file that failed, so the reader knows which one the reason is about. */

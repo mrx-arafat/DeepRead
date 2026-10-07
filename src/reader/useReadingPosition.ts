@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
+import { useHistoryState } from "wouter/use-browser-location";
 import type { BookDetail, Chapter, ReadingProgress } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { bookPercent, chapterMinutesLeft, indexAtLine, textFraction } from "./book.ts";
 import { inPages, pageFrame } from "./paging.ts";
 
-export type ReadingPosition = {
+type Position = {
   /** The chapter at the top of the window. */
   chapterId: string | null;
   /** How much of the whole book lies above the top of the window, 0 to 100. */
@@ -15,6 +16,23 @@ export type ReadingPosition = {
   /** The closing panel has entered the visible reading area. */
   completed: boolean;
 };
+
+export type ReadingPosition = Position & {
+  detour: ReadingDetour | null;
+  returning: boolean;
+  detourError: string | null;
+  visitPlace: (target: Place) => boolean;
+  returnToPlace: () => void;
+  cancelReturn: () => void;
+  stayHere: () => void;
+};
+
+export interface ReadingDetour {
+  bookId: string;
+  returnTo: Place;
+  returning?: boolean;
+  from?: Place;
+}
 
 /** The chapter at the eye line, and the block there or next below it; no block once its text is behind the reader. */
 type Spot = { chapter: HTMLElement; block: HTMLElement | null; blocks: NodeListOf<HTMLElement> };
@@ -75,7 +93,7 @@ function offsetAtLine(block: HTMLElement, line: number): number {
 /** How far down the window the line holding character `offset` of `block` is, in px. */
 function lineTop(block: HTMLElement, offset: number): number {
   const text = block.firstChild;
-  return text instanceof Text ? charRange(text, offset).getBoundingClientRect().top : block.getBoundingClientRect().top;
+  return text instanceof Text && text.length > 0 ? charRange(text, offset).getBoundingClientRect().top : block.getBoundingClientRect().top;
 }
 
 // The place the last text size change kept on screen. Until the reader scrolls, the next change keeps that same
@@ -115,10 +133,10 @@ function atBookEnd(): boolean {
   return heading.getBoundingClientRect().bottom <= footerTop;
 }
 
-const same = (a: ReadingPosition, b: ReadingPosition) =>
+const same = (a: Position, b: Position) =>
   a.chapterId === b.chapterId && a.percent === b.percent && a.minutesLeft === b.minutesLeft && a.completed === b.completed;
 
-type Place = Required<Pick<ReadingProgress, "chapterId" | "blockId" | "offset">>;
+export type Place = Required<Pick<ReadingProgress, "chapterId" | "blockId" | "offset">>;
 
 /** The block at the eye line and how far into it the line there starts. */
 function placeOf(spot: Spot | null): Place | null {
@@ -138,9 +156,29 @@ export function placeIn(state: unknown): Place | null {
   const place: unknown = typeof state === "object" && state !== null ? (state as { place?: unknown }).place : null;
   if (typeof place !== "object" || place === null) return null;
   const { chapterId, blockId, offset } = place as Record<string, unknown>;
-  return typeof chapterId === "string" && typeof blockId === "string" && typeof offset === "number"
+  return typeof chapterId === "string" && chapterId.length > 0 && typeof blockId === "string" && blockId.length > 0 && typeof offset === "number" && Number.isSafeInteger(offset) && offset >= 0
     ? { chapterId, blockId, offset }
     : null;
+}
+
+/** A deliberate source visit can restore only the validated return position belonging to this book. */
+export function detourIn(state: unknown, bookId: string): ReadingDetour | null {
+  if (!state || typeof state !== "object" || !("readingDetour" in state)) return null;
+  const detour = state.readingDetour;
+  if (!detour || typeof detour !== "object" || !("bookId" in detour) || detour.bookId !== bookId || !("returnTo" in detour)) return null;
+  const returnTo = placeIn({ place: detour.returnTo });
+  if (!returnTo) return null;
+  const returning = "returning" in detour && detour.returning === true;
+  const from = returning && "from" in detour ? placeIn({ place: detour.from }) : null;
+  return { bookId, returnTo, ...(returning ? { returning: true } : {}), ...(from ? { from } : {}) };
+}
+
+/** Resolves the logical text anchor against the current viewport, in either reading layout. */
+function restorePlace(place: Place): HTMLElement | null {
+  const element = document.querySelector<HTMLElement>(`[data-block="${CSS.escape(place.blockId)}"]`);
+  if (!element || element.closest<HTMLElement>("[data-chapter]")?.dataset.chapter !== place.chapterId) return null;
+  window.scrollBy({ top: lineTop(element, place.offset) - eyeLine(), behavior: "instant" });
+  return element;
 }
 
 /** Safari refuses more than 100 history changes in 30 s; a refused one only costs what it would have kept. */
@@ -164,11 +202,86 @@ export function useReadingPosition(
   start: Chapter | undefined,
 ): ReadingPosition {
   const [, navigate] = useLocation();
-  const [position, setPosition] = useState<ReadingPosition>({ chapterId: null, percent: 0, minutesLeft: null, completed: false });
+  const historyState = useHistoryState();
+  const detour = detourIn(historyState, bookId);
+  const detourKey = JSON.stringify(detour);
+  const [detourError, setDetourError] = useState<string | null>(null);
+  const [position, setPosition] = useState<Position>({ chapterId: null, percent: 0, minutesLeft: null, completed: false });
   // The newest progress saved from this page; the copy in `book` is only as fresh as the page load.
   const saved = useRef<Place | null>(null);
   const opened = useRef<Chapter | null>(null);
   const inUrl = useRef(chapterId);
+  const restored = useRef<{ place: Place; scrollY: number } | null>(null);
+
+  const finishReturn = useCallback((target: Place): boolean => {
+    const element = restorePlace(target);
+    if (!element) return false;
+    saved.current = target;
+    restored.current = { place: target, scrollY: window.scrollY };
+    const { readingDetour: _detour, ...state } = history.state ?? {};
+    changingHistory(() => history.replaceState({ ...state, place: target }, ""));
+    element.focus({ preventScroll: true });
+    setDetourError(null);
+    return true;
+  }, []);
+
+  const visitPlace = useCallback((target: Place): boolean => {
+    const place = placeIn({ place: target });
+    const returnTo = detourIn(history.state, bookId)?.returnTo ?? placeAtEyeLine();
+    if (!place || !book?.chapters.some((chapter) => chapter.id === place.chapterId) || !returnTo) {
+      setDetourError("The passage is not available yet. Keep reading and try the search result again.");
+      return false;
+    }
+    setDetourError(null);
+    restored.current = null;
+    const state = { ...history.state, place, readingDetour: { bookId, returnTo } };
+    navigate(`/book/${bookId}/${place.chapterId}`, { state });
+    const element = restorePlace(place);
+    if (element) {
+      restored.current = { place, scrollY: window.scrollY };
+      element.focus({ preventScroll: true });
+    }
+    return true;
+  }, [bookId, book, navigate]);
+
+  const returnToPlace = useCallback(() => {
+    const active = detourIn(history.state, bookId);
+    if (!active) return;
+    setDetourError(null);
+    const from = active.from ?? placeAtEyeLine() ?? placeIn(history.state);
+    const state = { ...history.state, place: active.returnTo, readingDetour: { ...active, returning: true, ...(from ? { from } : {}) } };
+    changingHistory(() => navigate(`/book/${bookId}/${active.returnTo.chapterId}`, { replace: true, state }));
+    if (finishReturn(active.returnTo)) return;
+    if (start?.id === active.returnTo.chapterId || !book?.chapters.some((chapter) => chapter.id === active.returnTo.chapterId)) {
+      setDetourError("The saved passage could not be found. Retry Return or keep reading here.");
+    }
+  }, [bookId, book, start, navigate, finishReturn]);
+
+  const cancelReturn = useCallback(() => {
+    const active = detourIn(history.state, bookId);
+    if (!active?.returning || !active.from) return;
+    setDetourError(null);
+    const state = { ...history.state, place: active.from, readingDetour: { bookId, returnTo: active.returnTo } };
+    changingHistory(() => navigate(`/book/${bookId}/${active.from!.chapterId}`, { replace: true, state }));
+  }, [bookId, navigate]);
+
+  const stayHere = useCallback(() => {
+    if (!detourIn(history.state, bookId)) return;
+    const spot = spotAtEyeLine();
+    const last = spot?.blocks[spot.blocks.length - 1];
+    const chapterId = spot?.chapter.dataset.chapter;
+    const place = placeOf(spot) ?? (last?.dataset.block && chapterId ? { chapterId, blockId: last.dataset.block, offset: last.textContent?.length ?? 0 } : null);
+    if (!place) {
+      setDetourError("No chapter text is available yet. Retry when the chapter loads or return to the source.");
+      return;
+    }
+    const { readingDetour: _detour, ...state } = history.state ?? {};
+    changingHistory(() => history.replaceState({ ...state, place }, ""));
+    restored.current = null;
+    saved.current = place;
+    setDetourError(null);
+    void api.saveProgress(bookId, place.chapterId, place.blockId, place.offset).catch(() => {});
+  }, [bookId]);
 
   // A layout effect: a measurement already waiting on a timer must see a chapter the reader just jumped to.
   useLayoutEffect(() => {
@@ -188,7 +301,14 @@ export function useReadingPosition(
   // Forward to a page of history returns to the place kept with it, not to where the reader went after it.
   // Once per start: chapters added above and below leave `start` as it is.
   useEffect(() => {
-    if (!book || !start || opened.current === start) return;
+    if (detour?.returning) {
+      if (finishReturn(detour.returnTo)) { opened.current = start ?? null; return; }
+      if (start?.id === detour.returnTo.chapterId || (book && !book.chapters.some((chapter) => chapter.id === detour.returnTo.chapterId))) {
+        setDetourError("The saved passage could not be found. Retry Return or keep reading here.");
+      }
+      return;
+    }
+    if (!book || !start || (opened.current === start && !detour)) return;
     opened.current = start;
     const kept = placeIn(history.state);
     const progress = (kept?.chapterId === start.id ? kept : null) ?? saved.current ?? book.progress;
@@ -202,13 +322,13 @@ export function useReadingPosition(
       // lines were kept has no offset and opens at the paragraph.
       window.scrollBy(0, lineTop(element, progress.offset ?? 0) - lineTop(element, 0));
     } else window.scrollTo({ top: 0 });
-  }, [book, start]);
+  }, [book, start, detourKey, finishReturn]);
 
   useEffect(() => {
     if (!book || !start) {
       // While a chapter opens, the top bar already names it and where it starts in the book.
       const id = book && inUrl.current;
-      const opening: ReadingPosition = id
+      const opening: Position = id
         ? { chapterId: id, percent: bookPercent(book.chapters, id, 0), minutesLeft: null, completed: false }
         : { chapterId: null, percent: 0, minutesLeft: null, completed: false };
       setPosition((prev) => (same(prev, opening) ? prev : opening));
@@ -219,6 +339,9 @@ export function useReadingPosition(
     let saving: number | undefined;
     // The place at the last measurement: once the page is leaving, its text is gone and the eye line cannot be read.
     let latest: Place | null = null;
+    // A cleanup from the source visit must remain quiet even when Return/Stay Here has just cleared its marker.
+    const visiting = detourIn(history.state, bookId) !== null;
+    const protectedPlace = () => restored.current?.scrollY === window.scrollY ? restored.current.place : null;
 
     const measure = () => {
       measuring = undefined;
@@ -228,7 +351,7 @@ export function useReadingPosition(
       const fraction = fractionRead(spot);
       latest = placeOf(spot);
       const completed = atBookEnd();
-      const next: ReadingPosition = {
+      const next: Position = {
         chapterId: id,
         percent: completed ? 100 : bookPercent(book.chapters, id, fraction),
         minutesLeft: completed ? 0 : chapterMinutesLeft(book.chapters, id, fraction),
@@ -245,13 +368,15 @@ export function useReadingPosition(
 
     // Soon after the reader stops, well before they could open the chapter list and jump elsewhere.
     const keep = () => {
-      const place = placeAtEyeLine();
+      if (detourIn(history.state, bookId)?.returning) return;
+      const place = protectedPlace() ?? placeAtEyeLine();
       if (place) changingHistory(() => history.replaceState({ ...history.state, place }, ""));
     };
 
     const save = (leaving = false) => {
+      if (visiting || detourIn(history.state, bookId)) return;
       // A page that is going away is read from the last measurement; one that is only hidden still has its text.
-      const place = leaving ? latest : (placeAtEyeLine() ?? latest);
+      const place = protectedPlace() ?? (leaving ? latest : (placeAtEyeLine() ?? latest));
       if (!place || (saved.current?.blockId === place.blockId && saved.current.offset === place.offset)) return;
       saved.current = place;
       api.saveProgress(bookId, place.chapterId, place.blockId, place.offset).catch(() => {
@@ -260,6 +385,7 @@ export function useReadingPosition(
     };
 
     const onScroll = () => {
+      if (restored.current && restored.current.scrollY !== window.scrollY) restored.current = null;
       measuring ??= window.setTimeout(measure, 150);
       window.clearTimeout(keeping);
       keeping = window.setTimeout(keep, 300);
@@ -275,11 +401,18 @@ export function useReadingPosition(
     // away on a phone is how a tab ends, and it gives no other warning.
     const hidden = () => document.visibilityState === "hidden" && save();
     const leave = () => save();
+    const resized = () => {
+      const anchor = restored.current;
+      if (anchor && restorePlace(anchor.place)) anchor.scrollY = window.scrollY;
+      measure();
+    };
     window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", resized);
     window.addEventListener("pagehide", leave);
     document.addEventListener("visibilitychange", hidden);
     return () => {
       window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", resized);
       window.removeEventListener("pagehide", leave);
       document.removeEventListener("visibilitychange", hidden);
       save(true);
@@ -287,7 +420,7 @@ export function useReadingPosition(
       window.clearTimeout(keeping);
       window.clearTimeout(saving);
     };
-  }, [book, start, bookId, navigate]);
+  }, [book, start, bookId, navigate, detourKey]);
 
-  return position;
+  return { ...position, detour, returning: detour?.returning === true && detourError === null, detourError, visitPlace, returnToPlace, cancelReturn, stayHere };
 }

@@ -202,6 +202,27 @@ describe("DeepRead API", () => {
   });
 
   describe("library", () => {
+    it("should keep manually corrected reading status independent of progress", async () => {
+      const id = await addBook();
+      const status = () => app.request(`/api/books/${id}`);
+      expect((await (await status()).json()) as BookDetail).toMatchObject({ readingStatus: "reading", progress: null });
+      expect((await send("PUT", `/api/books/${id}/reading-status`, { status: "finished" })).status).toBe(200);
+      expect((await (await status()).json()) as BookDetail).toMatchObject({ readingStatus: "finished", progress: null });
+      expect((await send("PUT", `/api/books/${id}/progress`, { chapterId: "c1", blockId: "c1-b3" })).status).toBe(200);
+      expect((await (await status()).json()) as BookDetail).toMatchObject({ readingStatus: "finished", progress: { blockId: "c1-b3" } });
+      expect(await (await send("PUT", `/api/books/${id}/reading-status`, { status: "saved" })).json()).toEqual({ readingStatus: "saved" });
+      expect((await (await status()).json()) as BookDetail).toMatchObject({ readingStatus: "saved", progress: { blockId: "c1-b3" } });
+      expect(await (await send("PUT", `/api/books/${id}/reading-status`, { status: "reading" })).json()).toEqual({ readingStatus: "reading" });
+      expect((await (await app.request("/api/books")).json()) as BookSummary[]).toMatchObject([{ readingStatus: "reading" }]);
+      restart();
+      expect((await (await status()).json()) as BookDetail).toMatchObject({ readingStatus: "reading", progress: { blockId: "c1-b3" } });
+      for (const body of [{ status: "done" }, { status: null }, {}, { status: "reading", extra: true }]) {
+        expect((await send("PUT", `/api/books/${id}/reading-status`, body)).status).toBe(400);
+      }
+      expect((await (await status()).json()) as BookDetail).toMatchObject({ readingStatus: "reading" });
+      expect((await send("PUT", "/api/books/missing-book/reading-status", { status: "saved" })).status).toBe(404);
+    });
+
     it("should upload, list, read, track progress, serve the PDF and delete a book", async () => {
       const created = await upload(sampleBook());
       expect(created.status).toBe(201);
@@ -257,12 +278,14 @@ describe("DeepRead API", () => {
       const metaPath = join(dataDir, "books", id, "meta.json");
       const meta = JSON.parse(await readFile(metaPath, "utf8")) as Record<string, unknown>;
       const legacy = { chapterId: "c2", blockId: "c2-b1", updatedAt: "2026-01-01T00:00:00.000Z" };
-      await writeFile(metaPath, JSON.stringify({ ...meta, progress: legacy }));
+      const { readingStatus: _newStatus, ...oldMeta } = meta;
+      await writeFile(metaPath, JSON.stringify({ ...oldMeta, progress: legacy }));
       restart();
 
       const list = (await (await app.request("/api/books")).json()) as BookSummary[];
       // Chapter two starts after the 19 words of chapter one, out of 24.
       expect(list[0]?.progress).toEqual({ ...legacy, chapterTitle: "Second Chapter", percent: 79 });
+      expect(list[0]?.readingStatus).toBe("reading");
     });
 
     it("should name a book without a title after the file the reader chose", async () => {

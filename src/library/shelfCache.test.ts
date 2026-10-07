@@ -26,6 +26,7 @@ function book(id: string, progress: ReadingProgress | null = null): BookSummary 
     addedAt: "2026-01-01T00:00:00.000Z",
     progress,
     hasCover: false,
+    readingStatus: "reading",
   };
 }
 
@@ -92,12 +93,12 @@ describe("shelf cache", () => {
     expect(readShelf("ann").books).toBeNull();
   });
 
-  it("should move the Continue card to the book whose place was saved", () => {
+  it("should move the Continue card to the most recently saved Reading book", () => {
     const read = book("a", place("2026-05-01T00:00:00.000Z", 10));
     rememberBooks("ann", [read, book("b")]);
     expect(latestRead(readShelf("ann").books ?? [])?.id).toBe("a");
 
-    patchBook("ann", "b", { progress: place("2026-05-02T00:00:00.000Z", 35) });
+    patchBook("ann", "b", { progress: place("2026-05-02T00:00:00.000Z", 35), readingStatus: "reading" });
 
     expect(latestRead(readShelf("ann").books ?? [])).toMatchObject({ id: "b", progress: { percent: 35 } });
   });

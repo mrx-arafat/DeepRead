@@ -66,6 +66,9 @@ export type ReadingProgress = {
   percent: number;
 };
 
+/** A reader's manual shelf state, independent of how far they have scrolled. */
+export type ReadingStatus = "saved" | "reading" | "finished";
+
 export type BookSummary = {
   id: string;
   title: string;
@@ -75,6 +78,7 @@ export type BookSummary = {
   wordCount: number;
   addedAt: string;
   progress: ReadingProgress | null;
+  readingStatus: ReadingStatus;
   /** Page 1 of the PDF is the book's cover, served at /api/books/<id>/cover. Without one the library draws a cover. */
   hasCover: boolean;
   /** When the reader pinned the book to the top of their library; absent when it is not pinned. Pins are the reader's own, shared books included. */

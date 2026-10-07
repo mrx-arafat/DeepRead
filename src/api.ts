@@ -24,6 +24,7 @@ import type {
   PublicProfile,
   QuickTranslation,
   ReadingProgress,
+  ReadingStatus,
   Session,
   SessionInfo,
   SharingOverview,
@@ -113,6 +114,8 @@ export const api = {
   /** Pins the book to the top of the reader's shelf. Resolves with the time the server pinned it. */
   pinBook: async (id: string) => (await request<{ pinnedAt: string }>(`/api/books/${id}/pin`, { method: "PUT" })).pinnedAt,
   unpinBook: (id: string) => request<void>(`/api/books/${id}/pin`, { method: "DELETE" }),
+  setReadingStatus: async (id: string, status: ReadingStatus): Promise<ReadingStatus> =>
+    (await request<{ readingStatus: ReadingStatus }>(`/api/books/${id}/reading-status`, json("PUT", { status }))).readingStatus,
   getChapter: (bookId: string, chapterId: string, signal?: AbortSignal) =>
     request<Chapter>(`/api/books/${bookId}/chapters/${chapterId}`, { signal }),
   uploadBook: async (file: File): Promise<{ book: BookDetail; alreadyHad: boolean }> => {
@@ -134,7 +137,7 @@ export const api = {
     saving = done.catch(() => {});
     return done;
   },
-  getNotes: (bookId: string) => request<Note[]>(`/api/books/${bookId}/notes`),
+  getNotes: (bookId: string, signal?: AbortSignal) => request<Note[]>(`/api/books/${bookId}/notes`, { signal }),
   changeNote: (bookId: string, change: NoteChange) =>
     change.kind === "put"
       ? request<void>(`/api/books/${bookId}/notes/${encodeURIComponent(change.note.id)}`, json("PUT", { note: change.note, before: change.before }))

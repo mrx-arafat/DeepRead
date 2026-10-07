@@ -49,6 +49,8 @@ steps:
         };
   - click:
       css: button[aria-label="Reading settings"]
+  - click:
+      css: '#reading-settings button[aria-label="Reader preferences"]'
   - select:
       css: "#reading-settings-lang"
       label: Hindi

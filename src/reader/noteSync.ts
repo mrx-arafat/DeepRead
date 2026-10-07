@@ -26,25 +26,40 @@ export type NoteSyncOptions = NoteOwner & {
   lang: LangCode;
   /** Called with the notes as the reader should see them, whenever that changes. */
   onChange: (notes: Note[]) => void;
+  onStatus?: (state: NoteSyncState) => void;
   api?: Pick<typeof api, "changeNote" | "getNotes">;
   /** This browser's localStorage when not given. */
   storage?: Storage | null;
 };
 
+export interface NoteSyncState {
+  phase: "saving" | "saved" | "offline" | "rejected" | "storage-unavailable";
+  pending: number;
+  /** Pending changes survive reopening this browser; only `saved` means DeepRead acknowledged them. */
+  durable: boolean;
+  reason?: "sign-in" | "connection" | "refused";
+}
+
 export type NoteSync = {
   /** The notes as the reader sees them: those DeepRead has, with the changes still on their way. */
   current(): Note[];
+  state(): NoteSyncState;
   /** Shows the change at once and sends it. Resolves once DeepRead took it, refused it, or could not be reached. */
   change(change: NoteChange): Promise<void>;
   /** Sends what waits from before, then loads the book's notes. */
   load(): Promise<void>;
   /** Sends what waits, then looks again for notes added on another device. Asks that come while one is on its way share it. */
   refresh(): Promise<void>;
+  /** Explicitly retries refused changes as well as changes waiting for a connection. */
+  retry(): Promise<void>;
+  /** Discards only refused changes; other pending changes are still sent. */
+  discardRejected(): Promise<void>;
   /** The page has moved on: nothing more is reported or sent. */
   close(): void;
 };
 
 const outboxKey = (owner: NoteOwner, bookId: string) => `deepread.pendingNotes.${owner.profileId ?? "single"}.${bookId}`;
+const operationPrefix = (owner: NoteOwner, bookId: string) => `${outboxKey(owner, bookId)}.operations.`;
 // Where the previous version kept the outbox, before it was filed under a profile.
 const unfiledOutboxKey = (bookId: string) => `deepread.pendingNotes.${bookId}`;
 // Where this browser kept the notes before they were kept with the book: per book, and before that per chapter.
@@ -78,12 +93,34 @@ function oldKeys(storage: Storage, bookId: string): string[] {
   return keys;
 }
 
+function matchingKeys(storage: Storage, prefix: string): string[] {
+  return Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter((key): key is string => !!key?.startsWith(prefix));
+}
+
+interface PendingNote {
+  id: string;
+  order: number;
+  change: NoteChange;
+  persisted: boolean;
+  rejected: boolean;
+  legacySource?: string;
+}
+
+function isChange(value: unknown): value is NoteChange {
+  if (!value || typeof value !== "object" || !("kind" in value)) return false;
+  if (value.kind === "remove") return "id" in value && typeof value.id === "string";
+  if (value.kind !== "put" || !("note" in value) || !value.note || typeof value.note !== "object" || !("before" in value)) return false;
+  const note = value.note;
+  return ["id", "chapterId", "blockId", "quote", "mode"].every((field) => field in note && typeof Reflect.get(note, field) === "string") &&
+    (value.before === null || typeof value.before === "string");
+}
+
 /** Clears what this browser holds of a removed book's notes for this reader: other profiles' copies are theirs. */
 export function forgetHeldNotes(bookId: string, owner: NoteOwner, storage = browserStorage()): void {
   try {
     if (!storage) return;
     const keys = owner.inheritsOldNotes ? [unfiledOutboxKey(bookId), ...oldKeys(storage, bookId)] : [];
-    for (const key of [outboxKey(owner, bookId), ...keys]) storage.removeItem(key);
+    for (const key of [outboxKey(owner, bookId), ...matchingKeys(storage, operationPrefix(owner, bookId)), ...keys]) storage.removeItem(key);
   } catch (error) {
     // The book is already gone; notes that could not be cleared are only wasted space.
     console.warn("could not remove the notes of a deleted book:", error);
@@ -98,105 +135,237 @@ export function createNoteSync(options: NoteSyncOptions): NoteSync {
 
   // The notes DeepRead has (none until they load), and the changes it has not taken yet.
   let kept: Note[] = [];
-  let outbox = readOutbox();
+  let outbox: PendingNote[] = [];
+  let storageHealthy = storage !== null;
+  let legacyProblem = false;
+  let phase: NoteSyncState["phase"] = "saving";
+  let reason: NoteSyncState["reason"];
   // Sends and the load run one after another, so changes reach DeepRead in the order they were made.
   let queue: Promise<void> = Promise.resolve();
+  let appending: Promise<void> = Promise.resolve();
   let closed = false;
   // The refresh that is waiting its turn or running, so asking again meanwhile does not fetch twice.
   let refreshing: Promise<void> | null = null;
   // The notes last reported, so a refresh that finds nothing new does not make the page draw them again.
   let shown: string | null = null;
+  let shownStatus: string | null = null;
+  const completed = new Set<string>();
+  const prefix = operationPrefix(owner, bookId);
+  const operationKey = (entry: PendingNote) => `${prefix}${entry.id}`;
+  const rejectionKey = (entry: PendingNote) => `${operationKey(entry)}.rejected`;
+  const legacySourceKey = (id: string): string | null => {
+    const match = /^legacy-(.+)-\d+$/.exec(id);
+    try { return match ? decodeURIComponent(match[1]!) : null; } catch { return null; }
+  };
 
   /** The changes waiting from before, notes this browser kept before they were kept with the book among them. */
-  function readOutbox(): NoteChange[] {
-    if (!storage) return [];
-    try {
-      const read = (key: string) => JSON.parse(storage.getItem(key) ?? "[]") as NoteChange[];
-      // What older versions kept belongs to the library from before profiles, so only that library's reader takes it.
-      const inherited = owner.inheritsOldNotes ? read(unfiledOutboxKey(bookId)) : [];
-      const old = (owner.inheritsOldNotes ? oldKeys(storage, bookId) : []).flatMap((key) => {
-        const saved = JSON.parse(storage.getItem(key) ?? "[]") as Note[];
-        const chapterId = key.slice(oldKey(bookId).length + 1);
-        return chapterId ? saved.map((note) => ({ ...note, chapterId })) : saved;
-      });
-      const adopted = old.map((note): NoteChange => ({ kind: "put", note: note.lang ? note : { ...note, lang }, before: null }));
-      return [...adopted, ...inherited, ...read(outboxKey(owner, bookId))];
-    } catch {
-      return [];
-    }
-  }
-
-  function writeOutbox(): void {
+  function reconcile(): void {
     if (!storage) return;
     try {
-      if (outbox.length > 0) storage.setItem(outboxKey(owner, bookId), JSON.stringify(outbox));
-      else storage.removeItem(outboxKey(owner, bookId));
-      // Only once the outbox holds them (or they are sent) do the old notes give up their keys, and only ones that were read.
-      if (owner.inheritsOldNotes) for (const key of [unfiledOutboxKey(bookId), ...oldKeys(storage, bookId)]) storage.removeItem(key);
+      let healthy = true;
+      const entries: PendingNote[] = [];
+      const local = new Map(outbox.map((entry) => [entry.id, entry]));
+      for (const key of matchingKeys(storage, prefix).filter((key) => !key.endsWith(".rejected") && !key.endsWith(".done"))) {
+        const id = key.slice(prefix.length);
+        if (completed.has(id) || storage.getItem(`${key}.done`) !== null) {
+          try {
+            storage.removeItem(key);
+            storage.removeItem(`${key}.rejected`);
+            const source = legacySourceKey(id);
+            if (!source || storage.getItem(source) === null) storage.removeItem(`${key}.done`);
+          } catch { healthy = false; }
+          continue;
+        }
+        try {
+          const saved: unknown = JSON.parse(storage.getItem(key) ?? "null");
+          if (!saved || typeof saved !== "object" || !("order" in saved) || !Number.isSafeInteger(saved.order) || !("change" in saved) || !isChange(saved.change)) {
+            throw new Error("Unreadable pending note");
+          }
+          entries.push({ id, order: saved.order as number, change: saved.change, persisted: true, rejected: local.get(id)?.rejected === true || storage.getItem(`${key}.rejected`) !== null });
+        } catch {
+          healthy = false;
+        }
+      }
+      // A missing durable operation was acknowledged or discarded in another tab. Never write it back.
+      outbox = [...entries, ...outbox.filter((entry) => !entry.persisted && !entries.some((saved) => saved.id === entry.id) && (!entry.legacySource || storage.getItem(entry.legacySource) !== null))];
+      outbox.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+      storageHealthy = healthy;
     } catch {
-      // Storage full or unavailable: changes are still sent while the page is open.
+      storageHealthy = false;
     }
   }
 
-  const current = (): Note[] => outbox.reduce(applyNoteChange, kept);
+  function persist(entry: PendingNote): void {
+    if (!storage) { storageHealthy = false; return; }
+    try {
+      storage.setItem(operationKey(entry), JSON.stringify({ order: entry.order, change: entry.change }));
+      entry.persisted = true;
+      if (entry.rejected) storage.setItem(rejectionKey(entry), "true");
+    } catch {
+      storageHealthy = false;
+    }
+  }
+
+  function migrate(): void {
+    if (!storage) return;
+    legacyProblem = false;
+    let keys: string[];
+    try { keys = [...(owner.inheritsOldNotes ? oldKeys(storage, bookId) : []), ...(owner.inheritsOldNotes ? [unfiledOutboxKey(bookId)] : []), outboxKey(owner, bookId)]; }
+    catch { storageHealthy = false; legacyProblem = true; return; }
+    for (const key of keys) {
+      try {
+        const source = storage.getItem(key);
+        if (source === null) continue;
+        const saved: unknown = JSON.parse(source);
+        if (!Array.isArray(saved)) throw new Error("Unreadable pending notes");
+        const old = key === oldKey(bookId) || key.startsWith(`${oldKey(bookId)}.`);
+        const changes: unknown[] = old ? saved.map((value: Note) => ({ kind: "put", note: { ...value, lang: value.lang ?? lang, ...(key !== oldKey(bookId) ? { chapterId: key.slice(oldKey(bookId).length + 1) } : {}) }, before: null })) : saved;
+        if (!changes.every(isChange)) throw new Error("Unreadable pending notes");
+        const migrated = changes.map((change, index) => {
+          const id = `legacy-${encodeURIComponent(key)}-${index}`;
+          if (completed.has(id) || storage.getItem(`${prefix}${id}.done`) !== null) return null;
+          const existing = outbox.find((entry) => entry.id === id);
+          if (existing) { if (!existing.persisted) persist(existing); return existing; }
+          const entry: PendingNote = { id, order: Math.max(0, ...outbox.map((pending) => pending.order)) + 1, change, persisted: false, rejected: false, legacySource: key };
+          outbox.push(entry);
+          persist(entry);
+          return entry;
+        });
+        if (migrated.every((entry) => entry === null || entry.persisted) && storage.getItem(key) === source) {
+          storage.removeItem(key);
+          changes.forEach((_, index) => storage.removeItem(`${prefix}legacy-${encodeURIComponent(key)}-${index}.done`));
+        }
+      } catch {
+        storageHealthy = false;
+        legacyProblem = true;
+      }
+    }
+  }
+
+  reconcile();
+
+  const current = (): Note[] => outbox.reduce((notes, entry) => applyNoteChange(notes, entry.change), kept);
+  const state = (): NoteSyncState => ({
+    phase: outbox.some((entry) => entry.rejected) ? "rejected" : !storageHealthy || legacyProblem ? "storage-unavailable" : phase,
+    pending: outbox.length,
+    durable: storageHealthy && !legacyProblem && outbox.every((entry) => entry.persisted),
+    ...(reason ? { reason } : {}),
+  });
 
   function report(): void {
     if (closed) return;
     const notes = current();
     const now = JSON.stringify(notes);
-    if (now === shown) return;
-    shown = now;
-    onChange(notes);
+    if (now !== shown) { shown = now; onChange(notes); }
+    const status = state();
+    const statusText = JSON.stringify(status);
+    if (statusText !== shownStatus) { shownStatus = statusText; options.onStatus?.(status); }
+  }
+
+  function prepareOutbox(): void {
+    reconcile();
+    migrate();
+    let nextOrder = Math.max(0, ...outbox.filter((entry) => entry.persisted).map((entry) => entry.order));
+    for (const entry of outbox.filter((entry) => !entry.persisted)) { entry.order = ++nextOrder; persist(entry); }
+    outbox.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  }
+
+  async function append(work: () => void): Promise<void> {
+    const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+    if (locks) await locks.request(`${outboxKey(owner, bookId)}.append`, work);
+    else work();
   }
 
   /** Sends the waiting changes in order, and stops at one DeepRead cannot take now: it waits for the next try. */
   async function send(): Promise<void> {
+    await append(prepareOutbox);
+    if (outbox.some((entry) => entry.rejected)) { report(); return; }
+    phase = outbox.length ? "saving" : phase;
+    reason = undefined;
+    report();
     while (outbox.length > 0 && !closed) {
-      const change = outbox[0]!;
+      const entry = outbox[0]!;
+      const { change } = entry;
       try {
         await server.changeNote(bookId, change);
         kept = applyNoteChange(kept, change);
       } catch (error) {
-        // DeepRead answered that it never will (the book is gone, or the note is not one): dropped, not retried.
-        // Not 401 (the session ended: the same profile signing in again sends it), 408 or 429: those say "not now".
         const refused = error instanceof ApiFailure && error.status >= 400 && error.status < 500 && !NOT_NOW.includes(error.status);
-        if (!refused) return;
+        phase = refused ? "rejected" : "offline";
+        reason = refused ? "refused" : error instanceof ApiFailure && error.status === 401 ? "sign-in" : "connection";
+        if (refused) {
+          entry.rejected = true;
+          const pending = outbox.find((current) => current.id === entry.id);
+          if (pending) pending.rejected = true;
+          try { if (entry.persisted) storage?.setItem(rejectionKey(entry), "true"); } catch { storageHealthy = false; }
+        }
+        report();
+        return;
       }
-      outbox = outbox.slice(1);
-      writeOutbox();
+      outbox = outbox.filter((pending) => pending.id !== entry.id);
+      completed.add(entry.id);
+      try {
+        const source = legacySourceKey(entry.id);
+        if (source && storage?.getItem(source) !== null) storage?.setItem(`${operationKey(entry)}.done`, "true");
+        storage?.removeItem(operationKey(entry)); storage?.removeItem(rejectionKey(entry));
+      } catch {
+        storageHealthy = false;
+        // An acknowledgement must survive a reload even if this browser refuses to remove the old operation.
+        try { storage?.setItem(`${operationKey(entry)}.done`, "true"); } catch { storageHealthy = false; }
+      }
+      await append(prepareOutbox);
+      if (outbox.some((pending) => pending.rejected)) break;
     }
+    if (!outbox.length) { phase = "saved"; reason = undefined; }
     report();
   }
 
   function queued(work: () => Promise<void>): Promise<void> {
-    queue = queue.then(work);
+    queue = queue.then(async () => {
+      if (closed) return;
+      // Web Locks orders mutation requests across tabs too, including migration and explicit recovery.
+      const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+      if (locks) await locks.request(outboxKey(owner, bookId), () => closed ? undefined : work());
+      else await work();
+    });
     return queue;
   }
 
   /** Sends the waiting changes, then takes the notes DeepRead has. */
   async function pull(): Promise<void> {
     await send();
+    if (closed) return;
     try {
       kept = await server.getNotes(bookId);
+      if (!outbox.length) { phase = "saved"; reason = undefined; }
       report();
-    } catch {
-      // DeepRead cannot be reached: the reader sees the changes this browser holds, and they go when it can.
+    } catch (error) {
+      if (!outbox.some((entry) => entry.rejected)) {
+        phase = "offline";
+        reason = error instanceof ApiFailure && error.status === 401 ? "sign-in" : "connection";
+      }
+      report();
     }
   }
 
   return {
     current,
+    state,
 
     change(change) {
-      outbox = [...outbox, change];
-      writeOutbox();
+      if (closed) return Promise.resolve();
+      reconcile();
+      const entry: PendingNote = { id: crypto.randomUUID(), order: Math.max(0, ...outbox.map((pending) => pending.order)) + 1, change, persisted: false, rejected: false };
+      outbox.push(entry);
+      phase = "saving";
       report();
-      return queued(send);
+      // A short storage lock never waits for network I/O. Navigation stops sending, but must finish this append.
+      appending = appending.then(() => append(() => { prepareOutbox(); report(); }));
+      return appending.then(() => queued(send));
     },
 
     load() {
-      // Notes this browser kept before are in the outbox now: their old keys can go.
-      writeOutbox();
+      if (closed) return Promise.resolve();
       report();
       return queued(pull);
     },
@@ -212,6 +381,37 @@ export function createNoteSync(options: NoteSyncOptions): NoteSync {
         }
       });
       return refreshing;
+    },
+
+    retry() {
+      if (closed) return Promise.resolve();
+      return queued(async () => {
+        reconcile();
+        for (const entry of outbox) {
+          entry.rejected = false;
+          try { storage?.removeItem(rejectionKey(entry)); } catch { storageHealthy = false; }
+        }
+        phase = "saving";
+        await pull();
+      });
+    },
+
+    discardRejected() {
+      if (closed) return Promise.resolve();
+      return queued(async () => {
+        reconcile();
+        for (const entry of outbox.filter((pending) => pending.rejected)) {
+          try {
+            const source = legacySourceKey(entry.id);
+            if (source && storage?.getItem(source) !== null) storage?.setItem(`${operationKey(entry)}.done`, "true");
+            storage?.removeItem(operationKey(entry)); storage?.removeItem(rejectionKey(entry));
+          } catch { storageHealthy = false; continue; }
+          outbox = outbox.filter((pending) => pending.id !== entry.id);
+          completed.add(entry.id);
+        }
+        report();
+        await pull();
+      });
     },
 
     close() {

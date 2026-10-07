@@ -1,4 +1,4 @@
-import { AlignJustify, AlignLeft, AudioWaveform, BookOpen, Monitor, ScrollText } from "lucide-react";
+import { AlignJustify, AlignLeft, ArrowLeft, AudioWaveform, BookOpen, Monitor, ScrollText, Settings, X } from "lucide-react";
 import { useEffect, useState, type FocusEvent, type ReactNode, type ToggleEvent } from "react";
 import { LANGUAGES, type AiProviderId, type AiStatus, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
@@ -178,10 +178,10 @@ function VoiceChoice({ voice }: { voice: Prefs["voice"] }) {
 /** A change that reflows the book, made so the line being read stays where it is on screen. */
 const reflow = (patch: Partial<Prefs>) => keepingLine(() => setPrefs(patch));
 
-/** Tabbing on past the last control closes the menu, as a tap outside does; going back to the "Aa" button keeps it. */
+/** Tabbing past a panel closes it, except when returning to its trigger. */
 function closeWhenTabbedAway(event: FocusEvent<HTMLElement>) {
   const next = event.relatedTarget;
-  if (next && !event.currentTarget.contains(next) && next.getAttribute("popovertarget") !== PANEL) {
+  if (next && !event.currentTarget.contains(next) && next.getAttribute("popovertarget") !== event.currentTarget.id) {
     event.currentTarget.hidePopover();
   }
 }
@@ -303,10 +303,8 @@ function AiHelper({ open, viewer }: { open: boolean; viewer: Viewer }) {
 }
 
 /**
- * The "Aa" menu at the end of the top bar, laid out like an e-reader's: the page colour, the book's font, text size,
- * line spacing, margins, alignment and whether the book scrolls or turns pages, then the language explanations
- * come in and the AI tool that writes them.
- * A native popover, so a tap outside or Escape closes it and focus goes back to the button, on every screen size.
+ * Appearance, reader preferences and voice setup use separate native popovers.
+ * The same saved preferences and reflow path apply whichever panel holds a control.
  */
 export function ReadingSettings({ prefs }: { prefs: Prefs }) {
   const [open, setOpen] = useState(false);
@@ -324,7 +322,6 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
         className="popover settings"
         aria-label="Reading settings"
         onBlur={closeWhenTabbedAway}
-        onToggle={(event: ToggleEvent<HTMLElement>) => setOpen(event.newState === "open")}
       >
         <Choice
           name="theme"
@@ -402,6 +399,24 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
 
         <Choice name="layout" legend="Layout" value={prefs.layout} options={LAYOUT_OPTIONS} onChange={(layout) => reflow({ layout })} />
 
+        <button type="button" className="quiet-button settings-next" aria-label="Reader preferences" onClick={() => switchPanel(PANEL, "reader-preferences")}>
+          <Settings size={18} aria-hidden /> Reader preferences
+        </button>
+      </section>
+
+      <section
+        id="reader-preferences"
+        popover="auto"
+        className="popover settings"
+        aria-label="Reader preferences"
+        onBlur={closeWhenTabbedAway}
+        onToggle={(event: ToggleEvent<HTMLElement>) => {
+          setOpen(event.newState === "open");
+          returnFocus(event);
+        }}
+      >
+        <PanelHeading title="Reader preferences" back={PANEL} />
+
         {/* The label is tied to the switch, so a tap on the words turns it too. */}
         <div className="settings-group settings-switch">
           <label className="settings-label" htmlFor={`${PANEL}-chapter-notes`}>
@@ -425,8 +440,6 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
 
         <hr className="settings-divider" />
 
-        <VoiceChoice voice={prefs.voice} />
-
         <div className="settings-group">
           <label className="settings-label" htmlFor={`${PANEL}-lang`}>
             Explain in
@@ -449,8 +462,48 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
           </p>
         </div>
 
+        <button type="button" className="quiet-button settings-next" aria-label="Voice settings" onClick={() => switchPanel("reader-preferences", "reading-voice")}>
+          <AudioWaveform size={18} aria-hidden /> Voice settings
+        </button>
+
         <AiHelper open={open} viewer={viewer} />
       </section>
+
+      <section id="reading-voice" popover="auto" className="popover settings voice-settings" aria-label="Voice settings" onBlur={closeWhenTabbedAway} onToggle={returnFocus}>
+        <PanelHeading title="Voice settings" back="reader-preferences" />
+        <VoiceChoice voice={prefs.voice} />
+      </section>
     </>
+  );
+}
+
+/** Replace a panel without nesting popovers or moving the book underneath. */
+function switchPanel(from: string, to: string): void {
+  document.getElementById(from)?.hidePopover();
+  const next = document.getElementById(to);
+  next?.showPopover();
+  next?.querySelector<HTMLElement>("button, input, select")?.focus({ preventScroll: true });
+}
+
+/** A replaced panel has no visible trigger; return to Aa when dismissal leaves focus hidden. */
+function returnFocus(event: ToggleEvent<HTMLElement>): void {
+  if (event.newState !== "closed") return;
+  const focus = document.activeElement;
+  if (focus === document.body || (focus instanceof Element && focus.closest("[popover]") && !focus.closest(":popover-open"))) {
+    document.querySelector<HTMLButtonElement>(".settings-button")?.focus({ preventScroll: true });
+  }
+}
+
+function PanelHeading({ title, back }: { title: string; back: string }) {
+  return (
+    <header className="settings-heading">
+      <button type="button" className="icon-button" aria-label={back === PANEL ? "Back to appearance" : "Back to reader preferences"} onClick={(event) => switchPanel(event.currentTarget.closest("[popover]")!.id, back)}>
+        <ArrowLeft size={18} aria-hidden />
+      </button>
+      <h2>{title}</h2>
+      <button type="button" className="icon-button" aria-label={`Close ${title.toLowerCase()}`} onClick={(event) => event.currentTarget.closest<HTMLElement>("[popover]")?.hidePopover()}>
+        <X size={18} aria-hidden />
+      </button>
+    </header>
   );
 }
