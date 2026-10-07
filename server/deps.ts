@@ -1,5 +1,6 @@
 import type { ParsedBook } from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
+import type { Translation } from "./chapter-translation.ts";
 import type { CoverImage } from "./cover.ts";
 import type { Library } from "./library.ts";
 import type { OpenRouter } from "./openrouter.ts";
@@ -27,6 +28,8 @@ type SharedDeps = {
   /** The admin's OpenRouter key and model, which answer for readers whose computer has no helper of its own. */
   openrouter?: OpenRouter;
   quickTranslate: QuickTranslate;
+  /** Chapter translation: the admin's choice and the services that translate. Absent: DeepRead has none, and its addresses are unknown. */
+  translation?: Translation;
   /** Built web app to serve (production only). Unknown paths fall back to its index.html. */
   webRoot?: string;
   /** When set, devices on other host names (a tunnel) may use the app after unlocking with this key. */

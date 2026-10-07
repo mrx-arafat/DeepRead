@@ -1,9 +1,11 @@
 // Instant, keyless translation for the moment a word is tapped.
-// Uses the unofficial Google dictionary-extension endpoint (the better-known gtx one serves a block page
-// from here), so every failure is expected and the UI falls back to the AI word explanation.
+// Uses the unofficial Google dictionary-extension endpoint (the better-known gtx one serves a block page from some
+// addresses), and Microsoft's Edge endpoint (chapter-translation.ts) when Google refuses: it sends some addresses to its
+// robot check. Both are unofficial, so every failure is expected and the UI falls back to the AI word explanation.
 import { readFile } from "node:fs/promises";
 import type { LangCode } from "../shared/types.ts";
 import { writeFileAtomic } from "./atomic-write.ts";
+import { translateTexts } from "./chapter-translation.ts";
 
 export type QuickTranslate = (text: string, lang: LangCode) => Promise<string>;
 
@@ -85,16 +87,12 @@ export function createQuickTranslate(options: QuickTranslateOptions): { translat
     saveTimer.unref();
   }
 
-  const translate: QuickTranslate = async (text, lang) => {
-    const entries = (cache ??= await load());
-    const key = `${lang}\n${text.replace(/\s+/g, " ").trim()}`;
-    const hit = entries.get(key);
-    if (hit !== undefined) return hit;
-
+  async function fromGoogle(text: string, lang: LangCode): Promise<string> {
     const url = `${ENDPOINT}?client=dict-chrome-ex&sl=auto&tl=${lang}&q=${encodeURIComponent(text)}`;
     let body: unknown;
     try {
-      const response = await doFetch(url, { signal: AbortSignal.timeout(options.timeoutMs ?? TIMEOUT_MS) });
+      // A redirect is not followed: it leads to Google's robot check, and asking Microsoft is quicker than loading that page.
+      const response = await doFetch(url, { redirect: "manual", signal: AbortSignal.timeout(options.timeoutMs ?? TIMEOUT_MS) });
       if (!response.ok) throw new TranslateError(`translate service answered ${response.status}`);
       // A block page is HTML, so this throws instead of caching garbage.
       body = JSON.parse(await response.text());
@@ -102,9 +100,35 @@ export function createQuickTranslate(options: QuickTranslateOptions): { translat
       if (error instanceof TranslateError) throw error;
       throw new TranslateError(`translate service unreachable or unreadable: ${String(error)}`);
     }
-
     const translation = parseTranslation(body);
     if (translation === null) throw new TranslateError("translate service returned no translation");
+    return translation;
+  }
+
+  async function fromMicrosoft(text: string, lang: LangCode): Promise<string> {
+    const [made] = await translateTexts([text], lang, "microsoft", { fetchImpl: doFetch, timeoutMs: options.timeoutMs ?? TIMEOUT_MS });
+    const translation = made?.text.trim() ?? "";
+    if (translation === "") throw new TranslateError("Microsoft returned no translation");
+    return translation;
+  }
+
+  const translate: QuickTranslate = async (text, lang) => {
+    const entries = (cache ??= await load());
+    const key = `${lang}\n${text.replace(/\s+/g, " ").trim()}`;
+    const hit = entries.get(key);
+    if (hit !== undefined) return hit;
+
+    let translation: string;
+    try {
+      translation = await fromGoogle(text, lang);
+    } catch (google) {
+      try {
+        translation = await fromMicrosoft(text, lang);
+      } catch (microsoft) {
+        const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+        throw new TranslateError(`${reason(google)}; ${reason(microsoft)}`);
+      }
+    }
 
     entries.set(key, translation);
     dirty = true;

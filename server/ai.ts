@@ -19,7 +19,7 @@ const LOOK_HOLDS_MS = 30_000;
 const IDS = Object.keys(AI_PROVIDERS) as AiProviderId[];
 
 export const NO_AI_MESSAGE =
-  "DeepRead needs an AI helper to explain the book: Claude Code or Codex on this computer, or an OpenRouter key from the admin. Install one and sign in, then pick it under Aa.";
+  "DeepRead needs an AI helper to explain the book: Claude Code or Codex on this computer, or the admin's API model. Install one and sign in, then pick it under Aa.";
 
 /** What one reader may use. With profiles that is what the admin gave them; the admin's own profile and a library without profiles use anything that works. */
 export type AiAccess = {

@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { formatBytes } from "../shared/bytes.ts";
 import { createAi } from "./ai.ts";
 import { createApp } from "./app.ts";
+import { createChapterTranslator, createTranslationSettings } from "./chapter-translation.ts";
 import { checkEncryptionKey, createEncryptedStore, refuseEncryptedObjects } from "./encrypted-store.ts";
 import { createOpenRouter } from "./openrouter.ts";
 import { renderCover } from "./cover.ts";
@@ -67,6 +68,8 @@ const llm = createAi({ dataDir, openrouter });
 // Settles which AI tool answers before the first request, so cache keys name the right model.
 const ai = await llm.status();
 const translator = createQuickTranslate({ cacheFile: join(dataDir, "translate-cache.json") });
+// Chapters in the reader's language, kept with each book; the admin's choice of whether readers may, and by which service.
+const translation = { settings: createTranslationSettings(dataDir), translator: createChapterTranslator() };
 
 /** Profiles mode: reads profiles.json (making the admin's profile, moving books from before profiles), or stops with why. */
 async function openAccounts(): Promise<Accounts> {
@@ -103,6 +106,7 @@ const app = createApp({
   llm,
   openrouter,
   quickTranslate: translator.translate,
+  translation,
   webRoot: production ? resolve(import.meta.dirname, "../dist") : undefined,
   remoteKey: process.env.DEEPREAD_REMOTE_KEY || undefined,
   publicOrigin,

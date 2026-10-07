@@ -17,7 +17,7 @@ Your books stay on your computer, and AI help comes from your own Claude Code or
 
 [Install](#install-in-one-line) · [AI helpers](#ai-helpers) · [How to use it](#how-to-use-deepread) · [Read together](#read-together-profiles-and-sharing) · [Host it on a server](docs/self-hosting.md) · [Troubleshooting](#troubleshooting) · [How it works](#how-it-works)
 
-<table><tr><td><img src="docs/images/explain.webp" alt="DeepRead explaining a selected passage in the margin beside the book" width="900"></td></tr></table>
+<table><tr><td><img src="docs/images/explain.webp" alt="DeepRead explaining a selected passage in the margin: In simple words, In context and Deeper meaning, with Save to notebook and Show less on a line under the answer" width="900"></td></tr></table>
 
 </div>
 
@@ -172,9 +172,15 @@ To set it up:
 3. With profiles on, switch it on for each reader who should have it (see [Read together](#read-together-profiles-and-sharing)).
 
 One model answers for everyone, and the admin chooses it.
-The admin page lists what OpenRouter offers with what each costs, and refuses a name OpenRouter does not list.
+The admin page lists what the service offers (with what each costs, on OpenRouter), and refuses a name it does not list.
 It also keeps a reader from using up your credit: each reader may make 100 requests of the API Model a day (set `OPENROUTER_DAILY_LIMIT` or change it on the admin page; 0 means no limit), and the admin's own requests are never counted.
 When a provider behind OpenRouter is briefly busy, DeepRead tries again before the reader sees anything.
+
+The API Model does not have to be OpenRouter.
+Any service with an OpenAI-compatible API works: choose it on the admin page under **Service**, or set its address with `OPENROUTER_BASE_URL` in `.env`, for example `https://api.openai.com/v1`, `https://api.deepseek.com/v1` or `https://api.groq.com/openai/v1`.
+That includes a free model on a computer of your own through [Ollama](https://ollama.com) (`http://127.0.0.1:11434/v1`) or [LM Studio](https://lmstudio.ai) (`http://127.0.0.1:1234/v1`), which needs no key.
+The address must be reachable from the computer DeepRead runs on: `127.0.0.1` means that same computer.
+Only OpenRouter reports how much of the key's credit has gone.
 
 The key is read from `.env` or kept in `data/openrouter.json`, which only your user can read.
 It is never sent to a browser: the admin page shows only its last four characters.
@@ -225,7 +231,7 @@ The **...** button under a cover lets you pin the book to the top, edit its titl
 Pins are yours alone, even on a book someone shared with you, and they follow you to any device that opens this DeepRead.
 A book someone shared with you shows their picture in a small circle at the top corner of its cover (point at it to see their name), and only lets you take it off your shelf.
 
-<table><tr><td><img src="docs/images/library.webp" alt="The library with a Continue reading card and a shelf of book covers" width="900"></td></tr></table>
+<table><tr><td><img src="docs/images/library.webp" alt="The library: a Continue reading strip with Continue and Where I left off, and the book on the shelf with how far it is read and a Reading status menu under it" width="900"></td></tr></table>
 
 ### 3. Read
 
@@ -294,6 +300,8 @@ From there, **Open passage** returns to the exact passage without changing your 
 A source that has changed or disappeared is shown as unavailable rather than taking you to a different passage.
 Older question notes remain readable; opening one does not silently regenerate or save an answer.
 
+<table><tr><td><img src="docs/images/notebook.webp" alt="The Notebook: filters for All, Highlights, Answers and Reflections, entries grouped by chapter as short rows, and a saved explanation open in full beside the list" width="900"></td></tr></table>
+
 ### 6. Before and after a chapter
 
 Each chapter starts with a **Before you read** box: **Get a preview** gives a short preview with the words to watch.
@@ -340,7 +348,7 @@ After a jump, the browser's Back button returns you to the paragraph you were re
 ### 10. Make it yours
 
 Open **Aa** at the top right to set the page the way an e-reader does: a light, sepia or dark theme, the book's font (Literata or Atkinson), text size, line spacing, margins and justified text.
-**Reader preferences** at the bottom opens a separate panel for the language explanations come in, end-of-chapter notes and your AI helper.
+**Reader preferences** at the bottom opens a separate panel for your language (used for word meanings, explanations and translations), end-of-chapter notes and your AI helper.
 Its **Voice settings** button opens the read-aloud voice choices (see [A more natural voice](#8-a-more-natural-voice)).
 Opening one panel closes the previous one. Escape closes it, returning focus to **Aa** after settings navigation, or to the player's **Voice settings** button when opened there.
 The footer under the text tells you how many minutes of the chapter are left, then marks the end of the book when you reach its closing panel.
@@ -352,6 +360,15 @@ The top bar slides away while you read: move the pointer to the top of the windo
 The footer then counts the pages left in the chapter and shows how far through the book you are.
 Tapping a word still looks it up, and read-aloud turns the page as the voice reaches the next one.
 Explanation languages: Bangla (the default), Hindi, Urdu, Arabic, Spanish, French, Indonesian and Turkish.
+
+**Translation** in **Aa** shows the whole chapter in your language as well, each paragraph's translation right under it, like a bilingual edition.
+A free translation service makes it (Microsoft Translator, or Google Translate when Microsoft cannot answer), not your AI helper, so it costs nothing and uses no one's AI.
+Each paragraph is translated once and kept with the book, so the chapter shows translated at once the next time, on any device, and for anyone it is shared with.
+A translation service works a sentence at a time and can miss what a word means in its context, for example "table" as a chart instead of the furniture.
+When the meaning matters, select the passage and choose **Explain** or **In Bangla**.
+With profiles on, the admin decides whether readers may use it and which service makes it.
+
+<table><tr><td><img src="docs/images/translation.webp" alt="A chapter with Translation on: each English paragraph followed by its Bangla translation in a softer colour" width="900"></td></tr></table>
 
 DeepRead also fits a phone screen, here in the dark theme:
 
@@ -367,7 +384,7 @@ Open the **...** menu under its cover, choose **Share**, and turn on the switch 
 The book appears on their shelf with your picture in the corner of its cover, and they read it with their own place, notes and saved answers.
 Nothing is copied, and they cannot change it, rename it or pass it on.
 
-<table><tr><td><img src="docs/images/shared-shelf.webp" alt="Another profile's library: the shared book on the shelf with its own progress, marked From Arafat" width="900"></td></tr></table>
+<table><tr><td><img src="docs/images/shared-shelf.webp" alt="Another profile's library: the shared book on the shelf with the sharer's picture in a small circle at the top corner of its cover, and its Reading status menu" width="900"></td></tr></table>
 
 Turn the switch off, or press the cross beside their name on the **Sharing** page, and the book leaves their shelf at once.
 What they kept of it waits out of sight, so sharing it again lets them carry on where they were.
@@ -564,9 +581,9 @@ If you would rather keep them online, DeepRead can keep them in a [Cloudflare R2
 Then your library does not depend on this one computer.
 You can also set the most space your books may take, whether they are kept on your computer or in R2.
 
-What goes into the bucket: each book's PDF, its parsed text, its cover, the AI answers saved for it, and your notes.
+What goes into the bucket: each book's PDF, its parsed text, its cover, the AI answers saved for it, its translated chapters, and your notes.
 With profiles on (see [Read together](#read-together-profiles-and-sharing)), the list of profiles and the shares go there too.
-A few small things always stay on your computer: your AI helper choice, saved quick word translations, the folder DeepRead keeps for Codex, the phone key, the sign-in secret that profiles use, and a book's file while it is being added.
+A few small things always stay on your computer: your AI helper choice, the chapter translation settings, saved quick word translations, the folder DeepRead keeps for Codex, the phone key, the sign-in secret that profiles use, and a book's file while it is being added.
 
 1. In your Cloudflare account, create an R2 bucket.
 2. Still in Cloudflare, open **R2**, then **Manage API tokens**, then **Create API token**.
@@ -819,6 +836,10 @@ From there you can:
   Under the profiles, one card shows whether it works (**Ready** or what it still needs), a **Test it** button, the model, how much credit the key has used, and how many requests were made today.
   Below that are the key, the model and the daily limit, each with a button to change it, and a list of readers with a switch to give or take back the API Model, and a bar for how much of the day's limit each has used.
   A reader who asked for it shows **Approve** and **Not now** in place of the switch.
+  **Service** at the top of its settings chooses where the model is asked: OpenRouter, another OpenAI-compatible API such as OpenAI, DeepSeek or Groq, or Ollama and LM Studio on a computer of your own.
+- **Turn chapter translation on or off.**
+  The **Chapter translation** card under the API Model lets readers show chapters in their language or not, chooses the service (**Automatic**, which tries Microsoft and then Google, **Microsoft Translator** or **Google Translate**), and has a **Try it** button that translates a sample sentence.
+  The admin can always translate.
 - **See and stop shared books.**
   Under the profiles, **Shared books** lists every book one profile shares with another, with a **Stop sharing** button on each.
 - **Read as a profile.**
@@ -827,7 +848,9 @@ From there you can:
 
 <table><tr><td><img src="docs/images/admin.webp" alt="The admin page: a Waiting for you box with two requests for AI helpers and an Approve button on each, then each profile with its badge, how many books it has and its buttons, and the list of shared books below" width="900"></td></tr></table>
 
-<table><tr><td><img src="docs/images/api-model.webp" alt="The API Model card: a Ready sign and a Test it button, the model and what the key has used, the key, model and daily limit with a button to change each, and a switch for each reader" width="900"></td></tr></table>
+<table><tr><td><img src="docs/images/api-model.webp" alt="The API Model card set to Ollama on a computer of your own, with the model translategemma:4b, no key needed, and a Service row above the key, model and daily limit" width="900"></td></tr></table>
+
+<table><tr><td><img src="docs/images/translation-admin.webp" alt="The Chapter translation card: On for readers, a switch to let readers translate chapters, the service (Automatic, Microsoft Translator or Google Translate), and Try it with a sample sentence and its Bangla translation" width="900"></td></tr></table>
 
 DeepRead keeps each code only in a scrambled form, so nobody, the admin included, can read one back.
 If someone forgets theirs, give that profile a new one.
@@ -1057,7 +1080,9 @@ Each sentence is made while the one before it is read, the silence the voice lea
 - The text you ask about goes to Anthropic (Claude Code) or OpenAI (Codex) through the sign-in of whoever runs DeepRead, the same as any session they start themselves.
   With the API Model it goes to OpenRouter and the company that runs the model, on the admin's API key, under OpenRouter's terms and the settings of the admin's account there.
   Only readers the admin gave a helper to can use it, and the admin's key is never sent to a browser.
-- A fallback word translation uses an unofficial Google endpoint, and only if the AI answer fails or there is no AI helper.
+- A fallback word translation uses an unofficial Google endpoint, or Microsoft's when Google refuses, and only if the AI answer fails or there is no AI helper.
+- **Translation**, only while you have it switched on, sends the chapter's text to Microsoft Translator or Google Translate through their free public services, with no account; nothing goes while it is off.
+  Each paragraph is sent once, since the translation is kept with the book.
 
 ## For developers
 

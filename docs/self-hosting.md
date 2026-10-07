@@ -124,7 +124,7 @@ DEEPREAD_STORAGE_LIMIT=8GB
 | `DEEPREAD_STORAGE_LIMIT` | The most space all the books together may take. Uploads past it are refused. Leave it empty for no limit. |
 | `DEEPREAD_DATA_DIR` | Optional. Where the `data` folder is. `./data` inside DeepRead's folder if not set. |
 | `DEEPREAD_ENCRYPTION_KEY` | Optional. Encrypts the books and notes at rest. Read its warning in [.env.example](../.env.example) first: losing the key loses the books. |
-| `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_DAILY_LIMIT` | Optional. The AI helper for readers; see [AI helpers on a server](#8-ai-helpers-on-a-server). |
+| `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_DAILY_LIMIT`, `OPENROUTER_BASE_URL` | Optional. The AI helper for readers, on OpenRouter or any OpenAI-compatible API; see [AI helpers on a server](#8-ai-helpers-on-a-server). |
 
 [.env.example](../.env.example) explains every setting in more detail.
 
@@ -352,11 +352,17 @@ DeepRead explains words and passages with an AI helper, and on a server one choi
 - **An OpenRouter API key** (recommended on a server).
   Make a key at [openrouter.ai/keys](https://openrouter.ai/keys), pick a model, and set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` in `.env`, or on the admin page.
   `OPENROUTER_DAILY_LIMIT` caps how many requests each reader may make in a day (100 if not set), so a shared server cannot run up your bill.
+  It does not have to be OpenRouter: set `OPENROUTER_BASE_URL` (or **Service** on the admin page) to any OpenAI-compatible API, such as OpenAI, DeepSeek or Groq.
+- **A free model on a computer of your own**, through [Ollama](https://ollama.com) or [LM Studio](https://lmstudio.ai).
+  Point **Service** at it (`http://127.0.0.1:11434/v1` for Ollama on the DeepRead server itself), choose its model, and no key or bill is involved.
+  A small server will be slow with a large model; a translation model such as TranslateGemma 4B wants about 3 GB of free memory.
 - **Claude Code or Codex.**
   These run on the server under the `deepread` user's own sign-in, and every reader you give them to uses that one account.
   Install one as that user and sign in once, for example `sudo -u deepread -H claude`, and check that the account's terms allow sharing it.
 
 Reading, listening and notes work without any helper.
+So does **chapter translation** (each paragraph shown in the reader's language under it): it uses Microsoft Translator or Google Translate's free public services, needs no key, and keeps every translated paragraph with the book.
+The admin turns it on or off for readers on the admin page, under **Chapter translation**.
 
 ## 9. Backups
 

@@ -7,11 +7,13 @@ import { adminOnly, apiError, invalidBody, readJsonObject } from "./http.ts";
 import { OpenRouterError } from "./openrouter.ts";
 import type { OpenRouter } from "./openrouter.ts";
 
-const NOTHING_TO_CHANGE = 'send JSON like {"apiKey": "sk-or-...", "model": "vendor/model-name", "dailyLimit": 100}; null takes away what was saved.';
+const NOTHING_TO_CHANGE =
+  'send JSON like {"apiKey": "sk-or-...", "model": "vendor/model-name", "dailyLimit": 100, "baseUrl": "https://api.openai.com/v1"}; null takes away what was saved.';
 
 /**
- * The admin's side of OpenRouter: the key and the model that answer for every reader, and the means to try them. Only the
- * admin reaches these, also while viewing as someone else, and the key is only ever received here, never sent back.
+ * The admin's side of the API model: the key, the model and the address of the service (OpenRouter unless set otherwise)
+ * that answer for every reader, and the means to try them. Only the admin reaches these, also while viewing as someone
+ * else, and the key is only ever received here, never sent back.
  */
 export function openrouterRoutes(deps: { openrouter: OpenRouter; llm: Ai }): Hono<AppEnv> {
   const { openrouter, llm } = deps;
@@ -31,7 +33,7 @@ export function openrouterRoutes(deps: { openrouter: OpenRouter; llm: Ai }): Hon
     const body = await readJsonObject(c);
     if (!body) return invalidBody(c, NOTHING_TO_CHANGE);
     const patch: OpenRouterPatch = {};
-    for (const field of ["apiKey", "model"] as const) {
+    for (const field of ["apiKey", "model", "baseUrl"] as const) {
       if (!Object.hasOwn(body, field)) continue;
       const value = body[field];
       if (value !== null && typeof value !== "string") return invalidBody(c, `${field} is text, or null to take away what was saved.`);

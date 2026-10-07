@@ -32,6 +32,8 @@ export type Prefs = {
   highlight: HighlightColor;
   /** A short line after each main chapter about what was just read. */
   chapterNotes: boolean;
+  /** Each paragraph in the reader's own language, under the English. Off until the reader turns it on. */
+  translation: boolean;
 };
 
 export const FONT_SIZES = { min: 15, max: 26 } as const;
@@ -60,6 +62,7 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
     rate: 1,
     highlight: "yellow",
     chapterNotes: true,
+    translation: false,
   };
   const merged = { ...defaults, ...(typeof saved === "object" && saved !== null ? saved : {}) } as Prefs;
   // Own keys only: `in` would take an inherited name such as "toString" for a language.
@@ -78,6 +81,7 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
   merged.voice = oneOf(VOICES, merged.voice, defaults.voice);
   merged.highlight = oneOf(HIGHLIGHT_COLORS, merged.highlight, defaults.highlight);
   merged.chapterNotes = typeof merged.chapterNotes === "boolean" ? merged.chapterNotes : defaults.chapterNotes;
+  merged.translation = typeof merged.translation === "boolean" ? merged.translation : defaults.translation;
   return merged;
 }
 

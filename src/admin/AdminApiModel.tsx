@@ -1,48 +1,56 @@
-import { Check } from "lucide-react";
-import { Fragment, useEffect, useId, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import type { FormEvent, KeyboardEvent } from "react";
+import { OPENROUTER_BASE_URL } from "../../shared/types.ts";
 import type { AdminProfile, OpenRouterAdminView, OpenRouterModel, OpenRouterPatch, OpenRouterTest } from "../../shared/types.ts";
 import { api } from "../api.ts";
-import { Avatar } from "../profiles/Avatar.tsx";
+import { ServiceEditor } from "./AdminApiService.tsx";
+import { ApiModelReaders } from "./ApiModelReaders.tsx";
+import { ApiModelStats } from "./ApiModelStats.tsx";
+import { introText, noKeyText, serviceAt } from "./apiServices.ts";
 import { reason } from "./profileText.ts";
 
 type Props = {
   profiles: AdminProfile[];
   /** The profile as it is now, after the admin gave or took back the API Model. */
   onProfileChanged: (profile: AdminProfile) => void;
-  /** The key or model changed, so what this server can answer with may have too. */
+  /** The service, key or model changed, so what this server can answer with may have too. */
   onChanged: () => void;
 };
 
-type Editing = "key" | "model" | "limit" | null;
+/** The setting whose editor is open: one at a time, each opened only to change it. */
+type Row = "service" | "key" | "model" | "limit";
 
-/** "$0", "under $0.001", "$0.042", "$2.00": the key's cost is small, so a rounded-down zero would mislead. */
-const dollars = (amount: number): string =>
-  amount === 0 ? "$0" : amount < 0.001 ? "under $0.001" : `$${amount.toFixed(amount < 1 ? 3 : 2)}`;
+const SOURCE = { admin: "saved here", env: "from .env" } as const;
 
-/** A model id with a chance to break after each slash, so "vendor/long-name" wraps between the two and not in the middle of a word. */
-const modelName = (id: string | null): ReactNode =>
-  id === null
-    ? "None chosen"
-    : id.split("/").map((part, index) => (index === 0 ? part : <Fragment key={index}>/<wbr />{part}</Fragment>));
+/** A model in the list to choose from: its name where it has one apart from its id, and its price where the service gives one. */
+const modelLabel = (one: OpenRouterModel): string =>
+  `${one.name === one.id ? "" : one.name}${one.free ? " (free)" : one.promptPerMillion !== null ? ` ($${one.promptPerMillion}/M in)` : ""}`.trim();
 
 /**
  * The API Model the admin can give to readers, as one card: whether it works, what it costs and how much it has been used,
- * its key, model and daily limit (each opened only to change it), and the readers, who can be given it or have it taken
- * back, or have asked for it and wait for an answer here. It answers through an API call on the admin's key, so it uses
- * nobody's Claude Code or Codex sign-in.
+ * the service it is asked at, its key, model and daily limit (each opened only to change it), and the readers, who can be
+ * given it or have it taken back, or have asked for it and wait for an answer here. It answers through an API call on the
+ * admin's key, or a model on the admin's own computer, so it uses nobody's Claude Code or Codex sign-in.
  */
 export function AdminApiModel({ profiles, onProfileChanged, onChanged }: Props) {
-  const ids = { key: useId(), model: useId(), models: useId(), limit: useId() };
+  const ids = { key: useId(), model: useId(), models: useId(), modelNote: useId(), listProblem: useId(), limit: useId() };
   const [view, setView] = useState<OpenRouterAdminView | null>(null);
-  const [editing, setEditing] = useState<Editing>(null);
+  const [editing, setEditing] = useState<Row | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
   const [limit, setLimit] = useState("");
   const [models, setModels] = useState<OpenRouterModel[] | null>(null);
+  // Said in the model's editor: what to do after the service changed, and why there is no list to choose from.
+  const [modelNote, setModelNote] = useState<string | null>(null);
+  const [listProblem, setListProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tested, setTested] = useState<OpenRouterTest | null>(null);
+  // Each row's Change button, which takes the focus back when its editor closes, once nothing is being saved.
+  const toggles = useRef<Partial<Record<Row, HTMLButtonElement | null>>>({});
+  const [refocus, setRefocus] = useState<Row | null>(null);
+  // Only the newest list counts: a slower one asked of the service before would offer models it does not have.
+  const listAsked = useRef(0);
 
   useEffect(() => {
     let current = true;
@@ -55,10 +63,18 @@ export function AdminApiModel({ profiles, onProfileChanged, onChanged }: Props) 
     };
   }, []);
 
-  const ready = view?.keySet === true && view.model !== null;
-  const chip = ready ? { tone: "ready", label: "Ready" } : { tone: "warn", label: view?.keySet ? "Needs a model" : "Needs an API key" };
+  useEffect(() => {
+    if (refocus === null || busy !== null) return;
+    toggles.current[refocus]?.focus();
+    setRefocus(null);
+  }, [refocus, busy]);
+
+  const service = view ? serviceAt(view.baseUrl) : null;
+  const openRouter = (service?.id ?? "openrouter") === "openrouter";
+  const keyReady = view?.keySet === true || service?.needsKey === false;
+  const ready = keyReady && view !== null && view.model !== null;
+  const chip = ready ? { tone: "ready", label: "Ready" } : { tone: "warn", label: keyReady ? "Needs a model" : "Needs an API key" };
   const readers = profiles.filter((profile) => !profile.admin);
-  const usedToday = Object.values(view?.usedToday ?? {}).reduce((sum, count) => sum + count, 0);
   const chosen = models?.find((one) => one.id === view?.model);
 
   async function run(name: string, work: () => Promise<void>) {
@@ -73,13 +89,33 @@ export function AdminApiModel({ profiles, onProfileChanged, onChanged }: Props) 
     }
   }
 
-  const save = (name: string, patch: OpenRouterPatch) =>
+  function close(row: Row) {
+    setEditing(null);
+    setModelNote(null);
+    setRefocus(row);
+  }
+
+  const save = (row: Row, name: string, patch: OpenRouterPatch) =>
     run(name, async () => {
       setTested(null);
       setView(await api.saveApiModel(patch));
-      setEditing(null);
+      close(row);
       setApiKey("");
       onChanged();
+    });
+
+  const saveService = (baseUrl: string | null) =>
+    run("service", async () => {
+      setTested(null);
+      let next = await api.saveApiModel({ baseUrl });
+      // With nothing saved the server goes back to the address in .env, which may be another service's.
+      if (baseUrl === null && serviceAt(next.baseUrl).id !== "openrouter") next = await api.saveApiModel({ baseUrl: OPENROUTER_BASE_URL });
+      setView(next);
+      onChanged();
+      // The model chosen at the old service is seldom one the new service has, so the admin is asked for one at once,
+      // from an empty field: the list offers only what matches what is typed in it.
+      openModel(null, true);
+      setModelNote(`Choose a model ${serviceAt(next.baseUrl).who} offers.`);
     });
 
   const test = () =>
@@ -102,21 +138,39 @@ export function AdminApiModel({ profiles, onProfileChanged, onChanged }: Props) 
       onProfileChanged(await api.declineAiRequest(reader.id, "openrouter"));
     });
 
-  // The list is long (hundreds of models), so it is fetched when the admin first goes to choose from it.
-  function openModel() {
-    setModel(view?.model ?? "");
+  // The list can be long (hundreds of models on OpenRouter), so it is fetched when the admin first goes to choose from it,
+  // and again after the service changed.
+  function openModel(current: string | null = view?.model ?? null, fresh = false) {
+    setModel(current ?? "");
+    setModelNote(null);
     setEditing("model");
-    if (!models) {
-      api
-        .apiModelList()
-        .then(setModels)
-        .catch(() => setModels([]));
-    }
+    if (models && !fresh) return;
+    const asked = ++listAsked.current;
+    setModels(null);
+    setListProblem(null);
+    api
+      .apiModelList()
+      .then((found) => asked === listAsked.current && setModels(found))
+      .catch((err: unknown) => {
+        if (asked !== listAsked.current) return;
+        setModels([]);
+        setListProblem(`${reason(err, "The list of models could not be loaded.")} You can still type the model's name.`);
+      });
   }
 
+  const toggle = (row: Row, open: () => void) => (editing === row ? close(row) : open());
+  const toggleProps = (row: Row) => ({
+    ref: (button: HTMLButtonElement | null) => {
+      toggles.current[row] = button;
+    },
+    "aria-expanded": editing === row,
+  });
   const form = (event: FormEvent, work: () => void) => {
     event.preventDefault();
     work();
+  };
+  const escape = (row: Row) => (event: KeyboardEvent) => {
+    if (event.key === "Escape") close(row);
   };
   const changing = busy !== null;
 
@@ -125,10 +179,7 @@ export function AdminApiModel({ profiles, onProfileChanged, onChanged }: Props) 
       <header className="api-card-head">
         <div>
           <h2 id="api-model-heading">API Model</h2>
-          <p className="admin-hint api-card-intro">
-            An API call to an AI model on your OpenRouter key. It uses nobody&apos;s Claude Code or Codex sign-in, and a reader gets it only
-            when you give it to them.
-          </p>
+          <p className="admin-hint api-card-intro">{introText(service)}</p>
         </div>
         <div className="api-card-actions">
           {view && (
@@ -155,77 +206,94 @@ export function AdminApiModel({ profiles, onProfileChanged, onChanged }: Props) 
         </p>
       )}
 
-      <dl className="api-stats">
-        <div className="api-stat">
-          <dt>Model</dt>
-          <dd className="api-model-name">{modelName(view?.model ?? null)}</dd>
-          <dd className="api-stat-sub">
-            {chosen
-              ? chosen.free
-                ? "Free"
-                : chosen.promptPerMillion !== null
-                  ? `$${chosen.promptPerMillion} per million tokens in`
-                  : "Priced by use"
-              : view?.model
-                ? view.modelSource === "env"
-                  ? "From .env"
-                  : "Chosen here"
-                : "Choose one below"}
-          </dd>
-        </div>
-        <div className="api-stat">
-          <dt>Credit used</dt>
-          <dd>{view?.balance ? dollars(view.balance.used) : "Not shown"}</dd>
-          <dd className="api-stat-sub">
-            {view?.balance ? (view.balance.limit !== null ? `of ${dollars(view.balance.limit)} on this key` : "no limit on this key") : "OpenRouter did not say"}
-          </dd>
-          {view?.balance && view.balance.limit !== null && view.balance.limit > 0 && (
-            <dd className="api-meter" aria-hidden>
-              <span style={{ width: `${Math.min(100, (view.balance.used / view.balance.limit) * 100)}%` }} />
-            </dd>
-          )}
-        </div>
-        <div className="api-stat">
-          <dt>Requests today</dt>
-          <dd>{usedToday}</dd>
-          <dd className="api-stat-sub">{view && view.dailyLimit > 0 ? `up to ${view.dailyLimit} each reader` : "no limit per reader"}</dd>
-        </div>
-      </dl>
+      <ApiModelStats view={view} service={service} chosen={chosen} />
 
       <ul className="api-settings">
         <li className="api-setting">
           <div className="api-setting-row">
             <div>
-              <h3>API key</h3>
+              <h3>Service</h3>
               <p className="admin-hint">
-                {view === null
-                  ? "Looking..."
-                  : view.keySet
-                    ? `Set (${view.keySource === "env" ? "from .env" : "saved here"}), ending ${view.keyHint}.`
-                    : "None yet. Make one at openrouter.ai/keys, or set OPENROUTER_API_KEY in .env."}
+                {view === null || service === null ? (
+                  "Looking..."
+                ) : (
+                  <>
+                    {service.id === "custom" ? "A custom service" : service.name} at <span className="api-address">{view.baseUrl}</span> (
+                    {view.baseUrlSource ? SOURCE[view.baseUrlSource] : "default"})
+                  </>
+                )}
               </p>
             </div>
             <div className="api-setting-actions">
-              <button type="button" className="quiet-button" disabled={changing} onClick={() => setEditing(editing === "key" ? null : "key")}>
+              <button
+                type="button"
+                className="quiet-button"
+                disabled={changing || view === null}
+                {...toggleProps("service")}
+                onClick={() => toggle("service", () => setEditing("service"))}
+              >
+                Change
+              </button>
+            </div>
+          </div>
+          {editing === "service" && view && (
+            <ServiceEditor
+              baseUrl={view.baseUrl}
+              saving={busy === "service"}
+              disabled={changing}
+              onSave={(baseUrl) => void saveService(baseUrl)}
+              onCancel={() => close("service")}
+            />
+          )}
+        </li>
+
+        <li className="api-setting">
+          <div className="api-setting-row">
+            <div>
+              <h3>API key</h3>
+              <p className="admin-hint">
+                {view === null || service === null
+                  ? "Looking..."
+                  : view.keySet
+                    ? `Set (${view.keySource === "env" ? "from .env" : "saved here"}), ending ${view.keyHint}.`
+                    : noKeyText(service)}
+              </p>
+            </div>
+            <div className="api-setting-actions">
+              <button
+                type="button"
+                className="quiet-button"
+                disabled={changing}
+                {...toggleProps("key")}
+                onClick={() => toggle("key", () => setEditing("key"))}
+              >
                 {view?.keySet ? "Replace" : "Add key"}
               </button>
               {view?.keySource === "admin" && (
-                <button type="button" className="quiet-button" disabled={changing} onClick={() => void save("remove-key", { apiKey: null })}>
+                <button type="button" className="quiet-button" disabled={changing} onClick={() => void save("key", "remove-key", { apiKey: null })}>
                   Remove saved
                 </button>
               )}
             </div>
           </div>
           {editing === "key" && (
-            <form className="api-edit" onSubmit={(event) => form(event, () => void save("key", { apiKey }))}>
+            <form className="api-edit" onSubmit={(event) => form(event, () => void save("key", "key", { apiKey }))} onKeyDown={escape("key")}>
               <label htmlFor={ids.key} className="visually-hidden">
                 API key
               </label>
-              <input id={ids.key} type="password" value={apiKey} autoComplete="off" placeholder="sk-or-..." autoFocus onChange={(event) => setApiKey(event.target.value)} />
+              <input
+                id={ids.key}
+                type="password"
+                value={apiKey}
+                autoComplete="off"
+                placeholder={openRouter ? "sk-or-..." : "Paste the key"}
+                autoFocus
+                onChange={(event) => setApiKey(event.target.value)}
+              />
               <button type="submit" className="button" disabled={changing || apiKey.trim() === ""}>
                 {busy === "key" ? "Saving..." : "Save key"}
               </button>
-              <button type="button" className="quiet-button" onClick={() => setEditing(null)}>
+              <button type="button" className="quiet-button" onClick={() => close("key")}>
                 Cancel
               </button>
             </form>
@@ -236,16 +304,30 @@ export function AdminApiModel({ profiles, onProfileChanged, onChanged }: Props) 
           <div className="api-setting-row">
             <div>
               <h3>Model</h3>
-              <p className="admin-hint">One model answers for everyone. A cheaper one keeps the bill down.</p>
+              <p className="admin-hint">
+                {service?.local
+                  ? "One model answers for everyone. A smaller one answers sooner on an ordinary computer."
+                  : "One model answers for everyone. A cheaper one keeps the bill down."}
+              </p>
             </div>
             <div className="api-setting-actions">
-              <button type="button" className="quiet-button" disabled={changing} onClick={() => (editing === "model" ? setEditing(null) : openModel())}>
+              <button type="button" className="quiet-button" disabled={changing} {...toggleProps("model")} onClick={() => toggle("model", () => openModel())}>
                 Change
               </button>
             </div>
           </div>
           {editing === "model" && (
-            <form className="api-edit" onSubmit={(event) => form(event, () => void save("model", { model }))}>
+            <form className="api-edit" onSubmit={(event) => form(event, () => void save("model", "model", { model }))} onKeyDown={escape("model")}>
+              {modelNote && (
+                <p id={ids.modelNote} className="admin-hint api-edit-note">
+                  {modelNote}
+                </p>
+              )}
+              {listProblem && (
+                <p id={ids.listProblem} className="admin-hint api-edit-note">
+                  {listProblem}
+                </p>
+              )}
               <label htmlFor={ids.model} className="visually-hidden">
                 Model
               </label>
@@ -254,22 +336,23 @@ export function AdminApiModel({ profiles, onProfileChanged, onChanged }: Props) 
                 list={ids.models}
                 value={model}
                 autoComplete="off"
-                placeholder="vendor/model-name"
+                spellCheck={false}
+                placeholder={openRouter ? "vendor/model-name" : "model name"}
+                aria-describedby={[modelNote ? ids.modelNote : "", listProblem ? ids.listProblem : ""].join(" ").trim() || undefined}
                 autoFocus
                 onChange={(event) => setModel(event.target.value)}
               />
               <datalist id={ids.models}>
                 {models?.map((one) => (
                   <option key={one.id} value={one.id}>
-                    {one.name}
-                    {one.free ? " (free)" : one.promptPerMillion !== null ? ` ($${one.promptPerMillion}/M in)` : ""}
+                    {modelLabel(one)}
                   </option>
                 ))}
               </datalist>
               <button type="submit" className="button" disabled={changing || model.trim() === "" || model.trim() === view?.model}>
                 {busy === "model" ? "Saving..." : "Use this model"}
               </button>
-              <button type="button" className="quiet-button" onClick={() => setEditing(null)}>
+              <button type="button" className="quiet-button" onClick={() => close("model")}>
                 Cancel
               </button>
             </form>
@@ -289,17 +372,24 @@ export function AdminApiModel({ profiles, onProfileChanged, onChanged }: Props) 
                 type="button"
                 className="quiet-button"
                 disabled={changing}
-                onClick={() => {
-                  setLimit(String(view?.dailyLimit ?? 100));
-                  setEditing(editing === "limit" ? null : "limit");
-                }}
+                {...toggleProps("limit")}
+                onClick={() =>
+                  toggle("limit", () => {
+                    setLimit(String(view?.dailyLimit ?? 100));
+                    setEditing("limit");
+                  })
+                }
               >
                 Change
               </button>
             </div>
           </div>
           {editing === "limit" && (
-            <form className="api-edit" onSubmit={(event) => form(event, () => void save("limit", { dailyLimit: Number(limit) }))}>
+            <form
+              className="api-edit"
+              onSubmit={(event) => form(event, () => void save("limit", "limit", { dailyLimit: Number(limit) }))}
+              onKeyDown={escape("limit")}
+            >
               <label htmlFor={ids.limit} className="visually-hidden">
                 Requests a reader may make each day
               </label>
@@ -307,7 +397,7 @@ export function AdminApiModel({ profiles, onProfileChanged, onChanged }: Props) 
               <button type="submit" className="button" disabled={changing || limit.trim() === "" || Number(limit) === view?.dailyLimit}>
                 {busy === "limit" ? "Saving..." : "Save limit"}
               </button>
-              <button type="button" className="quiet-button" onClick={() => setEditing(null)}>
+              <button type="button" className="quiet-button" onClick={() => close("limit")}>
                 Cancel
               </button>
               <span className="admin-hint">0 means no limit.</span>
@@ -317,63 +407,15 @@ export function AdminApiModel({ profiles, onProfileChanged, onChanged }: Props) 
       </ul>
 
       <h3 className="api-subhead">Readers</h3>
-      {readers.length === 0 ? (
-        <p className="admin-hint">Add a profile above, then give it the API Model here.</p>
-      ) : (
-        <ul className="api-readers">
-          {readers.map((reader) => {
-            const has = reader.ai.includes("openrouter");
-            const asked = reader.aiRequested.includes("openrouter");
-            const used = view?.usedToday[reader.id] ?? 0;
-            const limitNow = view?.dailyLimit ?? 0;
-            return (
-              <li key={reader.id} className="api-reader" data-asked={asked || undefined}>
-                <Avatar profile={reader} size={36} />
-                <div className="api-reader-who">
-                  <span className="api-reader-name">{reader.name}</span>
-                  {asked ? (
-                    <span className="api-reader-note api-reader-asked">Asked for the API Model</span>
-                  ) : has ? (
-                    <span className="api-reader-meter">
-                      <span className="api-meter" aria-hidden>
-                        <span style={{ width: limitNow > 0 ? `${Math.min(100, (used / limitNow) * 100)}%` : used > 0 ? "100%" : "0%" }} />
-                      </span>
-                      <span className="api-reader-note">
-                        {used}
-                        {limitNow > 0 ? ` of ${limitNow}` : ""} today
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="api-reader-note">Cannot use it</span>
-                  )}
-                </div>
-                {asked ? (
-                  <div className="api-reader-actions">
-                    <button type="button" className="button" disabled={changing || !ready} onClick={() => void give(reader)}>
-                      <Check size={16} aria-hidden /> {busy === `give-${reader.id}` ? "Giving..." : "Approve"}
-                    </button>
-                    <button type="button" className="quiet-button" disabled={changing} onClick={() => void turnDown(reader)}>
-                      Not now
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    role="switch"
-                    className="switch"
-                    aria-checked={has}
-                    aria-label={`Let ${reader.name} use the API Model`}
-                    disabled={changing || (!has && !ready)}
-                    onClick={() => void (has ? takeBack(reader) : give(reader))}
-                  >
-                    <span className="switch-track" aria-hidden />
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <ApiModelReaders
+        readers={readers}
+        view={view}
+        ready={ready}
+        busy={busy}
+        onGive={(reader) => void give(reader)}
+        onTakeBack={(reader) => void takeBack(reader)}
+        onTurnDown={(reader) => void turnDown(reader)}
+      />
       {!ready && view && readers.length > 0 && <p className="admin-hint">{chip.label}: set it up above before giving it to readers.</p>}
     </section>
   );

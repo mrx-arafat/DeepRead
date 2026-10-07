@@ -12,6 +12,7 @@ import { adminRoutes } from "./routes-admin.ts";
 import { aiRoutes } from "./routes-ai.ts";
 import { booksRoutes } from "./routes-books.ts";
 import { openrouterRoutes } from "./routes-openrouter.ts";
+import { translationAdminRoutes, translationRoutes } from "./routes-translation.ts";
 import { sharesRoutes } from "./routes-shares.ts";
 import { sessionRoutes } from "./routes-session.ts";
 import { readerGuard } from "./sessions.ts";
@@ -31,6 +32,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   if (deps.accounts) app.route("/api/admin", adminRoutes(deps.accounts, deps.llm));
   // The admin's OpenRouter key and model: only with profiles on, where there is an admin to hold them (with one library, .env does it).
   if (deps.accounts && deps.openrouter) app.route("/api/admin/openrouter", openrouterRoutes({ openrouter: deps.openrouter, llm: deps.llm }));
+  // Whether readers may have chapters translated, and by which service: only with profiles on (with one library, the reader may).
+  if (deps.accounts && deps.translation) app.route("/api/admin/translation", translationAdminRoutes(deps.translation));
   // Not `total`: it adds up every profile's books, and one reader's business is their own.
   app.get("/api/storage", async (c) => {
     const { used, limit, where } = await c.var.library.usage();
@@ -55,6 +58,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     }
   });
 
+  if (deps.translation) app.route("/api", translationRoutes({ ...deps.translation, accounts: deps.accounts }));
   // Sharing is between profiles, so without them these addresses are unknown like any other.
   if (deps.accounts) app.route("/api", sharesRoutes(deps.accounts));
   app.route("/api/books", booksRoutes({ parsePdf: deps.parsePdf, renderCover: deps.renderCover }));

@@ -1035,6 +1035,8 @@ describe("DeepRead with profiles", () => {
         modelSource: null,
         dailyLimit: 100,
         usedToday: {},
+        baseUrl: "https://openrouter.ai/api/v1",
+        baseUrlSource: null,
         active: null,
       });
       for (const [method, path, body] of [
@@ -1055,6 +1057,8 @@ describe("DeepRead with profiles", () => {
       expect(unknown.status).toBe(400);
       expect(await json<ApiError>(unknown)).toMatchObject({ error: "unknown_model", message: expect.stringContaining("nvidia/nvfp4") });
       expect(await json<ApiError>(call("PUT", "/api/admin/openrouter", adminCookie, { dailyLimit: -1 }))).toMatchObject({ error: "invalid_limit" });
+      expect(await json<ApiError>(call("PUT", "/api/admin/openrouter", adminCookie, { baseUrl: "ftp://models.example" }))).toMatchObject({ error: "invalid_url" });
+      expect((await call("PUT", "/api/admin/openrouter", adminCookie, { baseUrl: 42 })).status).toBe(400);
       expect((await call("PUT", "/api/admin/openrouter", adminCookie, {})).status).toBe(400);
 
       const saved = await call("PUT", "/api/admin/openrouter", adminCookie, { apiKey: KEY, model: MODEL, dailyLimit: 40 });
@@ -1070,6 +1074,8 @@ describe("DeepRead with profiles", () => {
         modelSource: "admin",
         dailyLimit: 40,
         usedToday: {},
+        baseUrl: "https://openrouter.ai/api/v1",
+        baseUrlSource: null,
         active: "openrouter",
         balance: { used: 0.1, limit: 2 },
       });

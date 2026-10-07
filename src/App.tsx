@@ -1,7 +1,7 @@
+import { lazy, Suspense } from "react";
 import { Route, Switch } from "wouter";
 import { useFavicon } from "./favicon.ts";
 import { usePrefs } from "./prefs.ts";
-import { AdminPage } from "./admin/AdminPage.tsx";
 import { SharingPage } from "./library/SharingPage.tsx";
 import { LibraryPage } from "./LibraryPage.tsx";
 import { ProfilesPage } from "./profiles/ProfilesPage.tsx";
@@ -9,13 +9,20 @@ import { useSession } from "./profiles/session.tsx";
 import { Startup } from "./profiles/Startup.tsx";
 import { ReaderPage } from "./reader/ReaderPage.tsx";
 
+// Only the admin opens it, so readers never download it: it is fetched the first time /admin is opened.
+const AdminPage = lazy(() => import("./admin/AdminPage.tsx").then((module) => ({ default: module.AdminPage })));
+
 export function App() {
   const { info, error, retry, choosing } = useSession();
   useFavicon(usePrefs().theme);
   return (
     <Switch>
       {/* Always the admin page, signed in or not: it asks for the passkey itself. */}
-      <Route path="/admin" component={AdminPage} />
+      <Route path="/admin">
+        <Suspense fallback={null}>
+          <AdminPage />
+        </Suspense>
+      </Route>
       <Route>
         {info === null ? (
           <Startup error={error} onRetry={retry} />

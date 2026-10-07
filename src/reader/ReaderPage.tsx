@@ -4,7 +4,7 @@ import { Link } from "wouter";
 import type { BookDetail, ExplainMode, Note } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { readerTitle, useDocumentTitle } from "../pageTitle.ts";
-import { usePrefs } from "../prefs.ts";
+import { setPrefs, usePrefs } from "../prefs.ts";
 import { readableBlocks } from "./book.ts";
 import { BookSearch } from "./BookSearch.tsx";
 import type { BookSearchResult } from "./bookSearch.ts";
@@ -73,6 +73,28 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const noteNeedsAttention = Boolean(book && syncState.phase !== "saved" && syncState.phase !== "saving");
   const turning = prefs.layout === "pages";
   const pages = usePages(turning, Boolean(book && flow.start), Boolean(word || selection));
+  // Whether the admin lets readers show translations: asked once for the page, for the Aa menu. Null until known.
+  const [readersTranslate, setReadersTranslate] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .translationSettings()
+      .then((settings) => !cancelled && setReadersTranslate(settings.enabled))
+      .catch(() => {
+        // Unknown, the switch stays usable: the server still refuses a reader it would not translate for.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The server refused a chapter's translation: the admin has turned it off since. The switch goes off on this device
+  // and shows why, so the next chapter does not ask again.
+  const refuseTranslation = useCallback(() => {
+    setReadersTranslate(false);
+    setPrefs({ translation: false });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -359,7 +381,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
               <span className="topbar-listen-label">Listen</span>
             </button>
           )}
-          <ReadingSettings prefs={prefs} />
+          <ReadingSettings prefs={prefs} readersTranslate={readersTranslate} />
         </div>
         {book && (
           <div
@@ -439,6 +461,8 @@ export function ReaderPage({ bookId, chapterId }: Props) {
                 lang={prefs.lang}
                 actions={actions}
                 onDismissTip={chapter === flow.start && tipOpen ? closeTip : undefined}
+                translate={prefs.translation}
+                onTranslationRefused={refuseTranslation}
               />
             ))}
             {flow.nextError ? (

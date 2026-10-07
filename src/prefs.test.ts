@@ -31,6 +31,7 @@ describe("readPrefs", () => {
       rate: 1.2,
       highlight: "yellow",
       chapterNotes: true,
+      translation: false,
     });
     expect(readPrefs({ highlight: "pink" }, false).highlight).toBe("pink");
   });
@@ -67,6 +68,12 @@ describe("readPrefs", () => {
     expect(readPrefs(null, false).chapterNotes).toBe(true);
     expect(readPrefs({ chapterNotes: false }, false).chapterNotes).toBe(false);
     expect(readPrefs({ chapterNotes: "false" }, false).chapterNotes).toBe(true);
+  });
+
+  it("should show a chapter's translation only once the reader turns it on", () => {
+    expect(readPrefs(null, false).translation).toBe(false);
+    expect(readPrefs({ translation: true }, false).translation).toBe(true);
+    expect(readPrefs({ translation: "yes" }, false).translation).toBe(false);
   });
 
   it("should start a first-time reader on the system's light or dark", () => {

@@ -8,6 +8,7 @@ import { AdminApiModel } from "./AdminApiModel.tsx";
 import { AiRequestsInbox } from "./AiRequestsInbox.tsx";
 import { useAiRequests } from "./useAiRequests.ts";
 import { AdminShares } from "./AdminShares.tsx";
+import { AdminTranslation } from "./AdminTranslation.tsx";
 import { AiAccessDialog } from "./AiAccessDialog.tsx";
 import { ProfileDialog } from "./ProfileDialog.tsx";
 import type { ProfileInput } from "./ProfileForm.tsx";
@@ -291,6 +292,7 @@ export function AdminDashboard({ session }: { session: Session }) {
           )}
           {!onlyAdmin && <AdminShares changed={profiles} />}
           <AdminApiModel profiles={profiles} onProfileChanged={profileChanged} onChanged={loadHelpers} />
+          <AdminTranslation />
         </>
       )}
 

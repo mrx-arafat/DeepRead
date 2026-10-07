@@ -13,6 +13,7 @@ import type {
   Chapter,
   ChapterAid,
   ChapterAidRequest,
+  ChapterTranslation,
   LangCode,
   NewProfile,
   Note,
@@ -29,6 +30,8 @@ import type {
   SessionInfo,
   SharingOverview,
   StorageView,
+  TranslationSettings,
+  TranslationTest,
 } from "../shared/types.ts";
 import { progressFiler } from "./library/shelfCache.ts";
 
@@ -210,6 +213,15 @@ export const api = {
   saveApiModel: (patch: OpenRouterPatch) => request<OpenRouterAdminView>("/api/admin/openrouter", json("PUT", patch)),
   testApiModel: () => request<OpenRouterTest>("/api/admin/openrouter/test", { method: "POST" }),
   apiModelList: () => request<OpenRouterModel[]>("/api/admin/openrouter/models"),
+  /** A chapter in the reader's language, paragraph by paragraph. 403 translation_off when the admin turned it off for readers. */
+  chapterTranslation: (bookId: string, chapterId: string, lang: LangCode, signal?: AbortSignal) =>
+    request<ChapterTranslation>(`/api/books/${bookId}/chapters/${encodeURIComponent(chapterId)}/translation?lang=${lang}`, { signal }),
+  /** Whether this reader may show translations, and which service makes them. */
+  translationSettings: () => request<TranslationSettings>("/api/translation"),
+  adminTranslation: () => request<TranslationSettings>("/api/admin/translation"),
+  saveAdminTranslation: (patch: Partial<TranslationSettings>) => request<TranslationSettings>("/api/admin/translation", json("PUT", patch)),
+  /** Translates one sample sentence with the chosen service, so the admin sees it work. */
+  testAdminTranslation: (lang: LangCode) => request<TranslationTest>("/api/admin/translation/test", json("POST", { lang })),
 };
 
 const CUT_OFF = "The answer stopped before it was finished.";

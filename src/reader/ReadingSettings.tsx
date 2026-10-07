@@ -8,6 +8,7 @@ import { setAiStatus, useReaderKey } from "./aiStatusStore.ts";
 import { helperRows } from "./helperState.ts";
 import type { Viewer } from "./helperState.ts";
 import { NATURAL_DOWNLOAD_MB, useNaturalState } from "./natural.ts";
+import { keepingPlace } from "./useChapterTranslation.ts";
 import { keepingLine } from "./useReadingPosition.ts";
 
 const PANEL = "reading-settings";
@@ -303,14 +304,46 @@ function AiHelper({ open, viewer }: { open: boolean; viewer: Viewer }) {
 }
 
 /**
+ * Each paragraph in the reader's language under the English. The admin may turn it off for readers, and then a reader
+ * sees it greyed out, with why. Translations come and go with the paragraph the reader is on held still on screen.
+ */
+function TranslationSwitch({ prefs, blocked }: { prefs: Prefs; blocked: boolean }) {
+  return (
+    <div className="settings-group settings-switch settings-translation">
+      <label className="settings-label" htmlFor={`${PANEL}-translation`}>
+        Translation
+      </label>
+      <button
+        id={`${PANEL}-translation`}
+        type="button"
+        role="switch"
+        className="switch"
+        aria-checked={prefs.translation && !blocked}
+        aria-describedby={`${PANEL}-translation-hint`}
+        disabled={blocked}
+        onClick={() => keepingPlace(() => setPrefs({ translation: !prefs.translation }))}
+      >
+        <span className="switch-track" aria-hidden />
+      </button>
+      <p id={`${PANEL}-translation-hint`} className="settings-hint">
+        {blocked ? "The admin has turned translation off." : `Show each paragraph in ${LANGUAGES[prefs.lang]} under it.`}
+      </p>
+    </div>
+  );
+}
+
+/**
  * Appearance, reader preferences and voice setup use separate native popovers.
  * The same saved preferences and reflow path apply whichever panel holds a control.
+ * `readersTranslate` is whether the admin lets readers show translations, null until known.
  */
-export function ReadingSettings({ prefs }: { prefs: Prefs }) {
+export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; readersTranslate: boolean | null }) {
   const [open, setOpen] = useState(false);
   const { info } = useSession();
   // With profiles, the admin's own profile sees every helper as theirs; a reader sees which the admin has given them.
   const viewer: Viewer = info?.mode === "profiles" ? (info.session?.admin && !info.session.impersonatedBy ? "admin" : "reader") : "single";
+  // As the server has it: the admin may always translate, viewing as someone else too, and without profiles anyone may.
+  const translationBlocked = readersTranslate === false && info?.mode === "profiles" && !info.session?.admin;
   return (
     <>
       <button type="button" className="icon-button settings-button" popoverTarget={PANEL} aria-label="Reading settings">
@@ -399,6 +432,8 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
 
         <Choice name="layout" legend="Layout" value={prefs.layout} options={LAYOUT_OPTIONS} onChange={(layout) => reflow({ layout })} />
 
+        <TranslationSwitch prefs={prefs} blocked={translationBlocked} />
+
         <button type="button" className="quiet-button settings-next" aria-label="Reader preferences" onClick={() => switchPanel(PANEL, "reader-preferences")}>
           <Settings size={18} aria-hidden /> Reader preferences
         </button>
@@ -448,7 +483,8 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
             id={`${PANEL}-lang`}
             value={prefs.lang}
             aria-describedby={`${PANEL}-lang-hint`}
-            onChange={(event) => setPrefs({ lang: event.target.value as LangCode })}
+            // With translation on, the chapters are asked for again in the new language: the reader's place holds meanwhile.
+            onChange={(event) => keepingPlace(() => setPrefs({ lang: event.target.value as LangCode }))}
           >
             {Object.entries(LANGUAGES).map(([code, name]) => (
               <option key={code} value={code}>
@@ -458,7 +494,7 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
           </select>
           {/* Says what the choice changes, and changes with it, so the reader sees it took effect. */}
           <p id={`${PANEL}-lang-hint`} className="settings-hint">
-            Word meanings and explanations of passages come in {LANGUAGES[prefs.lang]}. The book itself stays in English.
+            Word meanings, explanations and translations come in {LANGUAGES[prefs.lang]}. The book itself stays in English.
           </p>
         </div>
 

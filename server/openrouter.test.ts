@@ -1,5 +1,5 @@
-// OpenRouter as an AI helper: the key and model the admin keeps, the streamed answers, and what goes wrong, with the
-// network replaced by a fake fetch.
+// The API model: the key, model and address the admin keeps, the streamed answers from OpenRouter or any other
+// OpenAI-compatible service, and what goes wrong, with the network replaced by a fake fetch.
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,9 @@ import { createOpenRouter } from "./openrouter.ts";
 
 const KEY = "sk-or-v1-0123456789abcdef0123456789abcdef";
 const MODEL = "nvidia/nemotron-3-super-120b-a12b";
+/** Where the model is asked when nothing says otherwise, and what describe() reports for it. */
+const OPENROUTER = "https://openrouter.ai/api/v1";
+const atOpenRouter = { baseUrl: OPENROUTER, baseUrlSource: null };
 const ask = { task: "word", system: "You are a tutor.", user: "ubiquitous" } as const;
 
 /** What OpenRouter sends back for a streamed answer: a comment to keep the line open, deltas, a usage chunk, then [DONE]. */
@@ -57,11 +60,11 @@ describe("createOpenRouter", () => {
 
   it("should take the key and model from the environment, and let what the admin saves win, kept in a file only its owner reads", async () => {
     const env = { OPENROUTER_API_KEY: KEY, OPENROUTER_MODEL: MODEL };
-    expect(await make(env).describe()).toEqual({ keySet: true, keySource: "env", keyHint: "cdef", model: MODEL, modelSource: "env", dailyLimit: 100, usedToday: {} });
+    expect(await make(env).describe()).toEqual({ keySet: true, keySource: "env", keyHint: "cdef", model: MODEL, modelSource: "env", dailyLimit: 100, usedToday: {}, ...atOpenRouter });
 
     const adminKey = "sk-or-v1-fedcba9876543210fedcba9876543210";
     const saved = await make(env).save({ apiKey: adminKey, model: "vendor/other-model" });
-    expect(saved).toEqual({ keySet: true, keySource: "admin", keyHint: "3210", model: "vendor/other-model", modelSource: "admin", dailyLimit: 100, usedToday: {} });
+    expect(saved).toEqual({ keySet: true, keySource: "admin", keyHint: "3210", model: "vendor/other-model", modelSource: "admin", dailyLimit: 100, usedToday: {}, ...atOpenRouter });
     expect(JSON.stringify(saved)).not.toContain(adminKey);
     expect(JSON.stringify(saved)).not.toContain(KEY);
 
@@ -70,8 +73,8 @@ describe("createOpenRouter", () => {
     expect((await stat(join(dataDir, "openrouter.json"))).mode & 0o777).toBe(0o600);
 
     // Clearing what was saved goes back to the environment's.
-    expect(await make(env).save({ apiKey: null, model: null })).toEqual({ keySet: true, keySource: "env", keyHint: "cdef", model: MODEL, modelSource: "env", dailyLimit: 100, usedToday: {} });
-    expect(await make().describe()).toEqual({ keySet: false, keySource: null, keyHint: null, model: null, modelSource: null, dailyLimit: 100, usedToday: {} });
+    expect(await make(env).save({ apiKey: null, model: null })).toEqual({ keySet: true, keySource: "env", keyHint: "cdef", model: MODEL, modelSource: "env", dailyLimit: 100, usedToday: {}, ...atOpenRouter });
+    expect(await make().describe()).toEqual({ keySet: false, keySource: null, keyHint: null, model: null, modelSource: null, dailyLimit: 100, usedToday: {}, ...atOpenRouter });
   });
 
   it("should be able to answer only with both a key and a model", async () => {
@@ -88,7 +91,7 @@ describe("createOpenRouter", () => {
     const [call] = calls;
     expect(call?.url).toBe("https://openrouter.ai/api/v1/chat/completions");
     expect(call?.init.method).toBe("POST");
-    expect((call?.init.headers as Record<string, string>).Authorization).toBe(`Bearer ${KEY}`);
+    expect(call?.init.headers).toMatchObject({ Authorization: `Bearer ${KEY}`, "HTTP-Referer": expect.any(String), "X-Title": "DeepRead" });
     expect(bodyOf(call!)).toMatchObject({
       model: MODEL,
       stream: true,
@@ -113,7 +116,7 @@ describe("createOpenRouter", () => {
     const llm = make({ OPENROUTER_API_KEY: KEY, OPENROUTER_MODEL: MODEL });
     const failures: Array<[Response | Error, RegExp, string]> = [
       [reply(401, `No auth credentials found for ${KEY}`), /key was refused/i, "not_logged_in"],
-      [reply(402, "Insufficient credits"), /credit/i, "failed"],
+      [reply(402, "Insufficient credits"), /credit.*openrouter\.ai/i, "failed"],
       [reply(400, `${MODEL} is not a valid model ID`), new RegExp(`does not know the model ${MODEL}`), "failed"],
       [reply(429, "Rate limit exceeded"), /busy|too many/i, "failed"],
       [reply(500, "upstream exploded"), /could not answer/i, "failed"],
@@ -193,30 +196,180 @@ describe("createOpenRouter", () => {
 
     it("should list what OpenRouter offers with what it costs, asking once an hour at most", async () => {
       respond = () => new Response(JSON.stringify(list));
-      const llm = make();
+      const llm = make({ OPENROUTER_API_KEY: KEY });
       expect(await llm.models()).toEqual([
         { id: "nvidia/nemotron-3-super-120b-a12b", name: "NVIDIA: Nemotron 3 Super", free: false, promptPerMillion: 0.08, completionPerMillion: 0.4 },
         { id: "nvidia/nemotron-3-super-120b-a12b:free", name: "NVIDIA: Nemotron 3 Super (free)", free: true, promptPerMillion: 0, completionPerMillion: 0 },
         { id: "vendor/routed", name: "Vendor: Routed", free: false, promptPerMillion: null, completionPerMillion: null },
       ]);
       await llm.models();
-      expect(calls.map((call) => call.url)).toEqual(["https://openrouter.ai/api/v1/models"]);
-      // The list is public: nothing that identifies the admin goes with the request.
+      expect(calls.map((call) => call.url)).toEqual([`${OPENROUTER}/models`]);
+      // The list is public: nothing that identifies the admin goes with the request, even with a key set.
       expect((calls[0]?.init.headers as Record<string, string> | undefined)?.Authorization).toBeUndefined();
     });
 
     it("should refuse a model OpenRouter does not list, so a mistyped one is caught when it is saved, not when a reader asks", async () => {
       respond = () => new Response(JSON.stringify(list));
       const llm = make({ OPENROUTER_API_KEY: KEY });
-      await expect(llm.save({ model: "nvidia/nvfp4" })).rejects.toMatchObject({ code: "unknown_model", message: expect.stringContaining("nvidia/nvfp4") });
+      await expect(llm.save({ model: "nvidia/nvfp4" })).rejects.toMatchObject({ code: "unknown_model", message: expect.stringMatching(/OpenRouter.*nvidia\/nvfp4/) });
       expect(await llm.save({ model: "vendor/routed" })).toMatchObject({ model: "vendor/routed", modelSource: "admin" });
     });
 
-    it("should save the model without checking it when the list cannot be had", async () => {
+    it("should save the model without checking it when the list cannot be had, or says nothing", async () => {
       respond = () => {
         throw new TypeError("fetch failed");
       };
       expect(await make().save({ model: "anything/goes" })).toMatchObject({ model: "anything/goes" });
+
+      respond = () => new Response(JSON.stringify({ data: [] }));
+      expect(await make({ OPENROUTER_BASE_URL: "http://localhost:1234/v1" }).save({ model: "whatever-is-loaded" })).toMatchObject({ model: "whatever-is-loaded" });
+    });
+  });
+
+  describe("another OpenAI-compatible service", () => {
+    const OPENAI = "https://api.openai.com/v1";
+    const OLLAMA = "http://localhost:11434/v1";
+    const OPENAI_KEY = "sk-proj-AbC123xyz0987";
+    const headersOf = (call: Call | undefined) => call?.init.headers as Record<string, string>;
+
+    it("should ask the address it is given, and send what only OpenRouter takes to OpenRouter alone", async () => {
+      const llm = make({ OPENROUTER_API_KEY: OPENAI_KEY, OPENROUTER_MODEL: "gpt-4o-mini" });
+      await llm.save({ baseUrl: `${OPENAI}/` });
+
+      expect(await completeText(llm, ask)).toBe("ok");
+      const [call] = calls;
+      expect(call?.url).toBe(`${OPENAI}/chat/completions`);
+      expect(headersOf(call)).toEqual({ Authorization: `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json", Accept: "text/event-stream" });
+      // OpenAI answers 400 to an argument it does not know, such as OpenRouter's switch for thinking.
+      expect(bodyOf(call!)).not.toHaveProperty("reasoning");
+      expect(bodyOf(call!)).toMatchObject({ model: "gpt-4o-mini", stream: true });
+    });
+
+    it("should not need a key for a service other than OpenRouter, since a model on the admin's own computer has none", async () => {
+      const llm = make({ OPENROUTER_MODEL: "llama3.2:3b" });
+      expect(await llm.available()).toBe(false);
+      await llm.save({ baseUrl: OLLAMA });
+      expect(await llm.available()).toBe(true);
+
+      expect(await completeText(llm, ask)).toBe("ok");
+      expect(calls[0]?.url).toBe(`${OLLAMA}/chat/completions`);
+      expect(headersOf(calls[0])).not.toHaveProperty("Authorization");
+      // It still needs to know which model to ask.
+      expect(await make({ OPENROUTER_BASE_URL: OLLAMA }).available()).toBe(false);
+    });
+
+    it("should take the address from the environment, let what the admin saves win, and say which is in use", async () => {
+      const env = { OPENROUTER_BASE_URL: ` ${OLLAMA}// ` };
+      expect(await make(env).describe()).toMatchObject({ baseUrl: OLLAMA, baseUrlSource: "env" });
+      // An endpoint's address pasted in place of the API's is read as the API's.
+      expect(await make({ OPENROUTER_BASE_URL: `${OLLAMA}/chat/completions` }).describe()).toMatchObject({ baseUrl: OLLAMA });
+
+      expect(await make(env).save({ baseUrl: "https://api.deepseek.com/" })).toMatchObject({ baseUrl: "https://api.deepseek.com", baseUrlSource: "admin" });
+      // A new start reads what was saved.
+      expect(await make(env).describe()).toMatchObject({ baseUrl: "https://api.deepseek.com", baseUrlSource: "admin" });
+
+      expect(await make(env).save({ baseUrl: null })).toMatchObject({ baseUrl: OLLAMA, baseUrlSource: "env" });
+      expect(await make().describe()).toMatchObject(atOpenRouter);
+    });
+
+    it("should refuse an address that is not a plain http or https one, and keep the one it had", async () => {
+      const llm = make();
+      const refused = ["api.openai.com/v1", "localhost:11434/v1", "ftp://example.com/v1", "https://api.example.com/v1?key=1", "https://api.example.com/v1#top", "https://me:secret@api.example.com/v1", "not an address", ""];
+      for (const address of refused) {
+        await expect(llm.save({ baseUrl: address })).rejects.toMatchObject({ code: "invalid_url", message: expect.stringContaining(OPENAI) });
+      }
+      expect(await llm.describe()).toMatchObject(atOpenRouter);
+    });
+
+    it("should hold OpenRouter to its own kind of key, and take any plain key for another service", async () => {
+      const llm = make();
+      await expect(llm.save({ apiKey: OPENAI_KEY })).rejects.toMatchObject({ code: "invalid_key", message: expect.stringContaining("sk-or-") });
+
+      // The address and the key may come together: the key is judged by the address it will be used at.
+      expect(await llm.save({ baseUrl: OPENAI, apiKey: OPENAI_KEY })).toMatchObject({ keySet: true, keyHint: "0987", baseUrl: OPENAI });
+      for (const key of ["two words", "tab\tkey", "", "k".repeat(401), "clé"]) {
+        await expect(llm.save({ apiKey: key })).rejects.toMatchObject({ code: "invalid_key", message: expect.not.stringMatching(/openrouter/i) });
+      }
+    });
+
+    it("should name the service in the model, so one model name on two services is two saved answers", async () => {
+      const llm = make({ OPENROUTER_MODEL: "gpt-4o-mini" });
+      expect(llm.model("word")).toBe("openrouter:gpt-4o-mini");
+      await llm.save({ baseUrl: OPENAI });
+      expect(llm.model("word")).toBe("api.openai.com:gpt-4o-mini");
+      await llm.save({ baseUrl: OLLAMA });
+      expect(llm.model("word")).toBe("localhost:11434:gpt-4o-mini");
+    });
+
+    it("should know no balance for a service other than OpenRouter, and not ask for one", async () => {
+      respond = (call) => (call.url.endsWith("/key") ? new Response(JSON.stringify({ data: { usage: 1, limit: 2 } })) : sse(delta("ready"), "[DONE]"));
+      const llm = make({ OPENROUTER_API_KEY: OPENAI_KEY, OPENROUTER_MODEL: "gpt-4o-mini", OPENROUTER_BASE_URL: OPENAI });
+
+      expect(await llm.balance()).toBeNull();
+      expect(await llm.test()).toEqual({ ok: true, model: "gpt-4o-mini", ms: expect.any(Number) });
+      expect(calls.map((call) => call.url)).toEqual([`${OPENAI}/chat/completions`]);
+    });
+
+    it("should list the models the service says it has, and start over when the address changes", async () => {
+      respond = (call) =>
+        new Response(
+          JSON.stringify(
+            call.url.startsWith(OLLAMA)
+              ? { object: "list", data: [{ id: "qwen2.5:7b", name: "Qwen 2.5", object: "model" }, { id: "llama3.2:3b", object: "model", owned_by: "library" }] }
+              : { data: [{ id: "vendor/routed", name: "Vendor: Routed" }] },
+          ),
+        );
+      const llm = make({ OPENROUTER_API_KEY: OPENAI_KEY });
+      await llm.save({ baseUrl: OLLAMA });
+
+      // A name falls back to the id, and a service that does not say what it costs has no prices to show.
+      expect(await llm.models()).toEqual([
+        { id: "llama3.2:3b", name: "llama3.2:3b", free: false, promptPerMillion: null, completionPerMillion: null },
+        { id: "qwen2.5:7b", name: "Qwen 2.5", free: false, promptPerMillion: null, completionPerMillion: null },
+      ]);
+      expect(calls.map((call) => call.url)).toEqual([`${OLLAMA}/models`]);
+      expect(headersOf(calls[0])).toMatchObject({ Authorization: `Bearer ${OPENAI_KEY}` });
+
+      // What was kept for one address is not the answer for another.
+      await llm.save({ baseUrl: null });
+      expect((await llm.models()).map((one) => one.id)).toEqual(["vendor/routed"]);
+      expect(calls.at(-1)?.url).toBe(`${OPENROUTER}/models`);
+    });
+
+    it("should check a model against the list of the service it will be asked of, and name that service when it is not there", async () => {
+      respond = () => new Response(JSON.stringify({ data: [{ id: "gpt-4o-mini" }] }));
+      const llm = make();
+
+      await expect(llm.save({ baseUrl: OPENAI, model: "gpt-5-nano" })).rejects.toMatchObject({ code: "unknown_model", message: expect.stringContaining("api.openai.com") });
+      expect(calls.map((call) => call.url)).toEqual([`${OPENAI}/models`]);
+      expect(await llm.describe()).toMatchObject({ model: null, ...atOpenRouter });
+
+      expect(await llm.save({ baseUrl: OPENAI, model: "gpt-4o-mini" })).toMatchObject({ baseUrl: OPENAI, model: "gpt-4o-mini" });
+    });
+
+    it("should speak of the API and not of OpenRouter when another service fails, and never repeat its key", async () => {
+      const llm = make({ OPENROUTER_API_KEY: OPENAI_KEY, OPENROUTER_MODEL: "gpt-4o-mini", OPENROUTER_BASE_URL: OPENAI });
+      const failed = async (outcome: () => Response) => {
+        respond = outcome;
+        return (await completeText(llm, ask).catch((e: Error) => e)) as Error;
+      };
+
+      const quota = await failed(() => reply(402, "You exceeded your current quota"));
+      expect(quota.message).toMatch(/credit/i);
+      expect(quota.message).not.toMatch(/openrouter/i);
+      // The key is made to look like an OpenRouter one only by its shape; any other key is hidden by what it is.
+      expect((await failed(() => reply(500, `rejected ${OPENAI_KEY}`))).message).toMatch(/rejected \[key\]/);
+      expect((await failed(() => sse(delta("Half"), { error: { message: `quota for ${OPENAI_KEY}` } }))).message).not.toContain(OPENAI_KEY);
+
+      // With no key set, a refusal is not "the key was refused".
+      const keyless = make({ OPENROUTER_MODEL: "llama3.2:3b", OPENROUTER_BASE_URL: OLLAMA });
+      respond = () => reply(401, "Unauthorized");
+      await expect(completeText(keyless, ask)).rejects.toMatchObject({ kind: "not_logged_in", message: expect.stringContaining("none is set") });
+
+      respond = () => {
+        throw new TypeError("fetch failed");
+      };
+      await expect(completeText(keyless, ask)).rejects.toMatchObject({ kind: "failed", message: expect.stringMatching(/could not be reached.*address/i) });
     });
   });
 

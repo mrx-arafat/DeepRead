@@ -40,6 +40,8 @@ function fakeOpenRouter(ready: boolean): OpenRouter {
       modelSource: ready ? "env" : null,
       dailyLimit: 100,
       usedToday: {},
+      baseUrl: "https://openrouter.ai/api/v1",
+      baseUrlSource: null,
     }),
     admit() {},
     balance: async () => null,

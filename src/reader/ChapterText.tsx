@@ -1,5 +1,5 @@
 import { memo, useEffect, useEffectEvent, useMemo, useRef, type MouseEvent } from "react";
-import type { Block, QuestionNote } from "../../shared/types.ts";
+import type { Block, LangCode, QuestionNote } from "../../shared/types.ts";
 import { headingTags } from "./book.ts";
 import { NoteCard } from "./NoteCard.tsx";
 import { blockOf, termSpan, wordRangeAtPoint } from "./textRanges.ts";
@@ -22,6 +22,8 @@ type Props = {
   bookId: string;
   chapterId: string;
   actions: TextActions;
+  /** The chapter in the reader's language, by block id, while translation is on and has arrived. */
+  translation?: { lang: LangCode; blocks: Record<string, string> };
 };
 
 // How long a touch selection must rest before the bar offers explanations: the handles may still be moving.
@@ -45,8 +47,24 @@ const BlockText = memo(function BlockText({ block, tag, tabbable }: { block: Blo
   );
 });
 
+/**
+ * The book's own words in a selection, a line per block. A translation or a note card the selection ran over is left
+ * out, so what is explained, highlighted or quoted is always the book's text.
+ */
+function bookText(selection: Selection): string {
+  const lines: string[] = [];
+  for (let index = 0; index < selection.rangeCount; index++) {
+    const part = selection.getRangeAt(index).cloneContents();
+    const blocks = part.querySelectorAll("[data-block]");
+    // Within one block the copy is a piece of its text alone, with no element around it.
+    if (blocks.length === 0) lines.push(part.textContent ?? "");
+    else lines.push(...Array.from(blocks, (block) => block.textContent ?? ""));
+  }
+  return lines.join("\n");
+}
+
 /** The text of one chapter. A tap on a word looks it up; a selection offers explanations. Both work by keyboard too. */
-export function ChapterText({ blocks, notes, bookId, chapterId, actions }: Props) {
+export function ChapterText({ blocks, notes, bookId, chapterId, actions, translation }: Props) {
   const { onWord, onSelect, onDismiss, onCloseNote, onSaveAnswer } = actions;
   const container = useRef<HTMLDivElement>(null);
   const cursor = useWordCursor(blocks[0]?.id, (word) => ask(word, "keyboard"));
@@ -55,7 +73,7 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions }: Props
   /** Ask about the selected text if there is any, else about `word`; with neither, close what is open. */
   function ask(word: Range | null, via: "mouse" | "keyboard" | "touch") {
     const selection = window.getSelection();
-    const selected = selection?.toString().trim() ?? "";
+    const selected = selection ? bookText(selection).trim() : "";
     if (selection && !selection.isCollapsed && selected) {
       const range = selection.getRangeAt(0).cloneRange();
       const block = blockOf(range.startContainer);
@@ -82,7 +100,9 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions }: Props
   }
 
   function handleMouseUp(event: MouseEvent<HTMLDivElement>) {
-    if (event.button !== 0 || !blockOf(event.target as Node)) return;
+    // A selection dragged from the book text may end on a translation. One made in a translation alone asks nothing.
+    const target = event.target instanceof Element ? event.target : null;
+    if (event.button !== 0 || !target?.closest("[data-block], [data-translation-of]")) return;
     const { clientX, clientY } = event;
     // Wait a tick: a plain click only clears an old selection after mouseup.
     setTimeout(() => {
@@ -137,16 +157,26 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions }: Props
       onFocus={cursor.onFocus}
       onBlur={cursor.onBlur}
     >
-      {blocks.map((block, at) => (
-        <div className="row" key={block.id}>
-          {notes
-            .filter((note) => note.blockId === block.id)
-            .map((note) => (
-              <NoteCard key={note.id} note={note} bookId={bookId} latest={note.id === notes.at(-1)?.id} onClose={onCloseNote} onSaveAnswer={onSaveAnswer} />
-            ))}
-          <BlockText block={block} tag={tags[at] ?? null} tabbable={block.id === cursor.tabbable} />
-        </div>
-      ))}
+      {blocks.map((block, at) => {
+        const translated = translation?.blocks[block.id];
+        return (
+          <div className="row" key={block.id}>
+            {notes
+              .filter((note) => note.blockId === block.id)
+              .map((note) => (
+                <NoteCard key={note.id} note={note} bookId={bookId} latest={note.id === notes.at(-1)?.id} onClose={onCloseNote} onSaveAnswer={onSaveAnswer} />
+              ))}
+            <BlockText block={block} tag={tags[at] ?? null} tabbable={block.id === cursor.tabbable} />
+            {/* Beside the block, never inside it: words, sentences, notes, search and the voice all count characters in
+                the block's one text node. */}
+            {translation && translated ? (
+              <p className="block-translation" lang={translation.lang} dir="auto" data-translation-of={block.id}>
+                {translated}
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }

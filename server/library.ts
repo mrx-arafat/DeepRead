@@ -1,12 +1,13 @@
 // The books, kept in an ObjectStore (storage.ts): the data folder on this computer, or an R2 bucket.
 // Each book is books/<id>/{source.pdf, book.json, meta.json, notes.json, cache/<key>.json}, plus cover.webp when page 1
-// is a cover. meta.json is written last and removed first, so a book exists exactly while its meta.json does: a crash
-// in between leaves files no listing shows, and the next start clears them away. meta.json carries everything the
-// list view needs, so listing never opens book.json. Once read, the list of books and each meta.json are kept in
+// is a cover, and translations/<lang>/<chapter id>.json for each chapter translated (chapter-translation.ts).
+// meta.json is written last and removed first, so a book exists exactly while its meta.json does: a crash in between
+// leaves files no listing shows, and the next start clears them away. meta.json carries everything the list view
+// needs, so listing never opens book.json. Once read, the list of books and each meta.json are kept in
 // memory, so listing again asks the store nothing. pins.json, at the root of the store, says when the reader pinned each
 // book to the top of the library, and is kept in memory the same way.
 // Uploads are parsed from <dataDir>/tmp on this computer whatever the store, because the parser reads a file.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { formatBytes } from "../shared/bytes.ts";
@@ -18,6 +19,7 @@ import type {
   BookUpdate,
   Chapter,
   ChapterSummary,
+  LangCode,
   Note,
   ParsedBook,
   ReadingProgress,
@@ -34,6 +36,8 @@ import type { ByteRange, ObjectStore, StoredObject } from "./storage.ts";
 // Ids are a lowercase slug plus a hash. Anything else cannot be a book, so it never reaches the store.
 const BOOK_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const CACHE_KEY = /^[0-9a-f]{64}$/;
+// A chapter id the parser makes ("c12") names its translation's file; anything else goes by its hash, which stays in the folder.
+const PLAIN_NAME = /^[A-Za-z0-9_-]{1,100}$/;
 const MAX_SLUG = 48;
 const HASH_CHARS = 8;
 const LONG_HASH_CHARS = 16;
@@ -235,6 +239,10 @@ export type Library = {
   usage(): Promise<StorageUsage>;
   readCache(id: string, key: string): Promise<unknown>;
   writeCache(id: string, key: string, value: unknown): Promise<void>;
+  /** What chapter-translation.ts kept of the chapter in `lang`. Null when nothing is kept, or it cannot be read. */
+  readTranslation(id: string, lang: LangCode, chapterId: string): Promise<unknown>;
+  /** Keeps it with the book, so it goes when the book goes. Never rejects: one not kept is made again next time. */
+  writeTranslation(id: string, lang: LangCode, chapterId: string, value: unknown): Promise<void>;
   /**
    * Stops every change to the books, before a removed profile's files are cleared: resolves once the changes under way
    * (an upload being added, a place being saved) have finished, and every change after that throws LibraryClosedError
@@ -254,6 +262,8 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
     return `books/${id}/${name}`;
   };
   const folderOf = (id: string): string => keyOf(id, "");
+  const translationOf = (id: string, lang: LangCode, chapterId: string): string =>
+    keyOf(id, `translations/${lang}/${PLAIN_NAME.test(chapterId) ? chapterId : createHash("sha256").update(chapterId).digest("hex")}.json`);
 
   async function readJson(key: string): Promise<unknown> {
     const data = await store.read(key);
@@ -769,6 +779,27 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
       } catch (error) {
         // A cache that cannot be written only costs a regeneration next time.
         console.warn(`could not cache answer for ${id}:`, error);
+      }
+    },
+
+    async readTranslation(id, lang, chapterId) {
+      try {
+        return await readJson(translationOf(id, lang, chapterId));
+      } catch (error) {
+        // A damaged translation is just a miss: the chapter is translated again, and written over it.
+        console.warn(`ignoring unreadable translation of ${id}:`, error);
+        return null;
+      }
+    },
+
+    async writeTranslation(id, lang, chapterId, value) {
+      try {
+        await serialized(id, async () => {
+          // If the book was removed while its chapter was translating, the translation must not bring part of it back.
+          if (await exists(id)) await store.write(translationOf(id, lang, chapterId), JSON.stringify(value));
+        });
+      } catch (error) {
+        console.warn(`could not keep the translation of ${id}:`, error);
       }
     },
 

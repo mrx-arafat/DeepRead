@@ -56,6 +56,25 @@ describe("createQuickTranslate", () => {
     await expect(readFile(cacheFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("should ask Microsoft when Google sends its robot check, and keep that answer like any other", async () => {
+    const asked: string[] = [];
+    const translator = createQuickTranslate({
+      cacheFile,
+      fetchImpl: async (url, init) => {
+        const address = new URL(String(url));
+        asked.push(address.host);
+        // What Google sends from an address it suspects.
+        if (address.host === "clients5.google.com") return new Response(null, { status: 302, headers: { location: "https://www.google.com/sorry/index" } });
+        expect(address.searchParams.get("to")).toBe("bn");
+        expect(JSON.parse(String(init?.body))).toEqual(["ubiquitous"]);
+        return Response.json([{ translations: [{ text: "সর্বব্যাপী", to: "bn" }] }]);
+      },
+    });
+    expect(await translator.translate("ubiquitous", "bn")).toBe("সর্বব্যাপী");
+    expect(await translator.translate("ubiquitous", "bn")).toBe("সর্বব্যাপী");
+    expect(asked).toEqual(["clients5.google.com", "edge.microsoft.com"]);
+  });
+
   it("should read the other shapes the endpoint is known to return", async () => {
     const shapes: Array<[string, string]> = [
       ['["hola"]', "hola"],

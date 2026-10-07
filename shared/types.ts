@@ -173,7 +173,45 @@ export type OpenRouterView = {
   dailyLimit: number;
   /** Requests made today, by reader id. */
   usedToday: Record<string, number>;
+  /**
+   * Where the model is asked: the address of an OpenAI-compatible Chat Completions API, without /chat/completions.
+   * OpenRouter (https://openrouter.ai/api/v1) unless the admin or .env points it at another, such as OpenAI, DeepSeek,
+   * Groq, or Ollama and LM Studio on a computer of the admin's own.
+   */
+  baseUrl: string;
+  /** Where the address in use comes from: what the admin saved wins over .env; null is the OpenRouter default. */
+  baseUrlSource: "admin" | "env" | null;
 };
+
+/** The address the API model asks when nothing else is set. */
+export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+
+/**
+ * How a chapter is put into the reader's language under each paragraph, by a translation service and not an AI helper.
+ * `auto` asks Microsoft first and Google if Microsoft cannot answer.
+ */
+export const TRANSLATION_ENGINES = ["auto", "microsoft", "google"] as const;
+export type TranslationEngine = (typeof TRANSLATION_ENGINES)[number];
+
+/** The admin's choice for chapter translation, which holds for every reader. */
+export type TranslationSettings = {
+  /** Whether readers may show a chapter's translation. The admin's own profile always may. */
+  enabled: boolean;
+  engine: TranslationEngine;
+};
+
+/** A chapter's paragraphs and headings in one language, by block id. Kept with the book, so each is translated once. */
+export type ChapterTranslation = {
+  lang: LangCode;
+  blocks: Record<string, string>;
+  /** Which service made the translations sent this time. */
+  engine: "microsoft" | "google";
+};
+
+/** The admin's try of the chosen service on one sentence, to see that it works and how it reads. */
+export type TranslationTest =
+  | { ok: true; engine: "microsoft" | "google"; ms: number; sample: string; translation: string }
+  | { ok: false; message: string };
 
 /** The admin page's view, with which helper answers for everyone right now, and what the key has spent when OpenRouter says. */
 export type OpenRouterAdminView = OpenRouterView & {
@@ -186,7 +224,7 @@ export type OpenRouterAdminView = OpenRouterView & {
 export type AiRequest = { profile: PublicProfile; helper: AiProviderId; requestedAt: string };
 
 /** `null` takes away what the admin saved, which goes back to what .env says; a missing field stays as it is. */
-export type OpenRouterPatch = { apiKey?: string | null; model?: string | null; dailyLimit?: number | null };
+export type OpenRouterPatch = { apiKey?: string | null; model?: string | null; dailyLimit?: number | null; baseUrl?: string | null };
 
 export type OpenRouterModel = {
   id: string;
