@@ -16,6 +16,7 @@ const journeys = {
   "notebook-saved-answer": { fixture: true },
   "notebook-missing-source": { fixture: true },
   "notebook-shared": { passkey: "shared-notebook-test-code-2026" },
+  "library-continue": { fixture: true },
 };
 const children = new Set();
 
@@ -55,6 +56,7 @@ function start(command, args, env) {
   return { child, output: () => output };
 }
 
+/** Runs a command to its end and returns the tail of what it printed; a non-zero exit or a timeout throws. */
 async function command(commandName, args, timeoutMs = 180000) {
   const running = start(commandName, args, process.env);
   let timedOut = false;
@@ -69,6 +71,7 @@ async function command(commandName, args, timeoutMs = 180000) {
       running.child.once("exit", resolve);
     });
     if (timedOut || code !== 0) throw new Error(`${commandName} ${args[args.length - 1]} ${timedOut ? "timed out" : `exited ${code}`}: ${running.output()}`);
+    return running.output();
   } finally {
     clearTimeout(timer);
   }
@@ -122,7 +125,9 @@ async function run(name, setup) {
     web = start(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", String(webPort), "--strictPort"], env);
     await ready(`http://127.0.0.1:${webPort}/`, web, "Vite");
     await command("playwright-cli", [`-s=${session}`, "open", `http://127.0.0.1:${webPort}`], 30000);
-    await command("playwright-cli", [`-s=${session}`, "run-code", "--filename", `e2e/${name}.js`]);
+    const output = await command("playwright-cli", [`-s=${session}`, "run-code", "--filename", `e2e/${name}.js`]);
+    // run-code exits 0 even when the journey throws, and prints the error under "### Error" instead.
+    if (output.includes("### Error")) throw new Error(`journey ${name} failed: ${output}`);
     console.log(`journey: ${name}\nstatus: passed\nduration_ms: ${Date.now() - started}`);
   } finally {
     await command("playwright-cli", [`-s=${session}`, "close"], 10000).catch(() => {});

@@ -1199,6 +1199,14 @@ select {
   inset: 0;
 }
 
+/* Lighter on hover by colour, never by .button's filter: a filter makes the link the box its ::after is placed in, so the
+   card-wide box shrank to the button, the pointer left the link, the filter went, the box grew back, and the cursor
+   blinked between a hand and a text cursor, every frame, over the title. */
+.continue-card .continue-action:hover {
+  filter: none;
+  background: color-mix(in srgb, var(--pen), white 12%);
+}
+
 .continue-context {
   position: relative;
   z-index: 1;
