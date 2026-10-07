@@ -1,7 +1,8 @@
 import { memo, useMemo } from "react";
-import type { BookDetail, Chapter, LangCode, QuestionNote } from "../../shared/types.ts";
+import type { BookDetail, Chapter, HighlightNote, LangCode, QuestionNote } from "../../shared/types.ts";
 import { chapterPosition, kindOf, minutes, readableBlocks } from "./book.ts";
 import { ChapterAid } from "./ChapterAid.tsx";
+import { ChapterClosing } from "./ChapterClosing.tsx";
 import { ChapterText, type TextActions } from "./ChapterText.tsx";
 import { titleId } from "./listenBlocks.ts";
 import { LookupTip } from "./LookupTip.tsx";
@@ -10,6 +11,8 @@ type Props = {
   chapter: Chapter;
   book: BookDetail;
   notes: QuestionNote[];
+  /** The book's highlights, for the line after the chapter. The same array until one changes, so the memo holds. */
+  highlights: HighlightNote[];
   lang: LangCode;
   actions: TextActions;
   /** Shows the how-to-look-things-up tip above the text; closing it calls this. */
@@ -21,10 +24,10 @@ type Props = {
 const AID_MIN_WORDS = 500;
 
 /**
- * One chapter as the book flows past: where it sits, its title, a preview, the text and a recap.
+ * One chapter as the book flows past: where it sits, its title, a preview, the text, a recap and a closing line.
  * Memoized: scrolling and popovers re-render the reader, and a long book must not re-render every chapter with it.
  */
-export const ChapterSection = memo(function ChapterSection({ chapter, book, notes, lang, actions, onDismissTip }: Props) {
+export const ChapterSection = memo(function ChapterSection({ chapter, book, notes, highlights, lang, actions, onDismissTip }: Props) {
   const blocks = useMemo(() => readableBlocks(chapter), [chapter]);
   const summary = book.chapters.find((item) => item.id === chapter.id);
   const kind = kindOf(summary ?? chapter);
@@ -52,6 +55,17 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
       {onDismissTip && <LookupTip onDismiss={onDismissTip} />}
       <ChapterText blocks={blocks} notes={notes} bookId={book.id} chapterId={chapter.id} actions={actions} />
       {aids && <ChapterAid kind="recap" bookId={book.id} chapterId={chapter.id} lang={lang} />}
+      {aids && (
+        <ChapterClosing
+          bookId={book.id}
+          chapterId={chapter.id}
+          chapters={book.chapters}
+          blocks={blocks}
+          notes={notes}
+          highlights={highlights}
+          lang={lang}
+        />
+      )}
     </article>
   );
 });

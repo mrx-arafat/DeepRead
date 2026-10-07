@@ -12,7 +12,7 @@ import { parseStreamLine } from "./claude-stream.ts";
 import type { StreamEvent } from "./claude-stream.ts";
 import { parseCodexLine } from "./codex-stream.ts";
 
-export type LlmTask = "word" | "explain" | "preview" | "recap" | "quiz" | "ask";
+export type LlmTask = "word" | "explain" | "preview" | "recap" | "quiz" | "closing" | "ask";
 
 /**
  * The one place that decides which Claude model answers what, how hard it thinks, and how long any tool gets.
@@ -30,6 +30,8 @@ export type LlmTask = "word" | "explain" | "preview" | "recap" | "quiz" | "ask";
  *   3.9-8.5 s), and the notes, their Bangla and their "Deeper meaning" were as correct as at xhigh.
  * - quiz: it arrives whole, in 9-11 s at medium or at high (19 s at xhigh), so it keeps high's extra thought
  *   for its answer key.
+ * - closing: one or two sentences that arrive whole, after the chapter is read. It is not measured yet: it takes
+ *   medium like recap, which also reads the whole chapter and writes a few careful lines.
  */
 export const TASK_PROFILES: Record<
   LlmTask,
@@ -41,6 +43,7 @@ export const TASK_PROFILES: Record<
   preview: { model: "sonnet", effort: "medium", timeoutMs: 300_000 },
   recap: { model: "sonnet", effort: "medium", timeoutMs: 300_000 },
   quiz: { model: "sonnet", effort: "high", timeoutMs: 300_000 },
+  closing: { model: "sonnet", effort: "medium", timeoutMs: 120_000 },
 };
 
 export type LlmRequest = {

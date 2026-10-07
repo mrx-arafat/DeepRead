@@ -273,6 +273,11 @@ The word card has the same Highlight row as the selection bar, so a single word 
 
 Each chapter starts with a **Before you read** box: **Get a preview** gives a short preview with the words to watch.
 It ends with a **What you just read** box: **Get a summary** gives the key ideas in simple words.
+Under it, a short note in softer ink says one thing from the chapter you can now explain or notice, and the question the next chapter takes up.
+It never praises you, scores you or counts a streak: it only points at something true in the book.
+Your AI helper writes it as you near the end of the chapter, so it is there when you arrive, and the server keeps it for next time.
+Without an AI helper, or if one is not available, it says what the book and your own marks show instead: the passage you highlighted, that this was the longest chapter, that half the book is behind you, or that the next chapter is a short one.
+Turn it off under **Aa** with **End-of-chapter notes**.
 
 ### 7. Listen
 
@@ -951,6 +956,10 @@ Whatever the store, a few small things stay in the data folder on this computer:
 Every prompt lives in [`server/prompts.ts`](server/prompts.ts).
 The model sees the paragraph you are on plus the paragraphs before and after it, so it explains what the sentence means at that point in the book rather than in general.
 
+The note at the end of a chapter is `POST /api/ai/chapter` with `kind: "closing"`, answered whole like the quiz, in English and cached once per chapter.
+The prompt gets the chapter, the next chapter's title and opening words, and one of five sentence frames chosen by the chapter's place in the book, so two chapters in a row never open the same way.
+`checkClosing` in [`server/prompts.ts`](server/prompts.ts) refuses a reply with praise words, an exclamation mark, emoji, markdown, no "you", more than two sentences or more than 55 words; a refused reply is asked for once more, then the server answers 502 `closing_invalid` and the page shows its own note from [`src/reader/closingPresets.ts`](src/reader/closingPresets.ts).
+
 Claude Code and Codex are run headless, one process per answer, in an empty folder, with their tools switched off ([`server/llm.ts`](server/llm.ts)).
 The API Model ([`server/openrouter.ts`](server/openrouter.ts)) is one streamed chat-completion request per answer, with no tools, asked not to think first (measured: the first word in 0.6 s instead of 4 s, for the same answer at half the cost).
 It retries a briefly busy provider before any of the answer has arrived, counts each reader's requests against their day, and keeps the admin's key and model in `data/openrouter.json` (mode 0600) or `.env`.
@@ -1036,6 +1045,7 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 | `shared/types.ts` | The contract between the server and the web app |
 | `shared/notes.ts`, `src/reader/noteSync.ts`, `src/reader/useNotes.ts` | A note change and the one function that applies it, used by the server and the browser; the browser's outbox that sends changes in order; the React hook around it |
 | `src/reader/highlights.ts`, `HighlightGroup.tsx`, `useHighlightChoice.ts` | Highlights: deciding whether a selection lies inside one, the colour row shared by the selection bar and the word card, and the choice and last colour behind it |
+| `src/reader/ChapterClosing.tsx`, `closingPresets.ts` | The note after a chapter: asked for near the end, shown only once the reader gets there and never swapped after, and the note built from the book's shape and the reader's marks when no AI writes one |
 | `shared/bytes.ts` | Sizes as text, such as `1.2 GB`, the same in server messages and on the library page |
 | `server/parser/` | PDF to chapters and paragraphs |
 | `server/prompts.ts` | Every prompt sent to the model |

@@ -1477,6 +1477,31 @@ select {
   line-height: 1.45;
 }
 
+/* A setting that is on or off: its name and what it does on the left, the switch level with both on the right. */
+.settings-switch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.75rem;
+}
+
+.settings-switch .settings-label {
+  margin-bottom: 0;
+  cursor: pointer;
+}
+
+.settings-switch .settings-hint {
+  grid-column: 1;
+  margin-top: 0.125rem;
+}
+
+/* The switch is wider than its track, to touch: pulled out so the track meets the panel's edge, as the menus' rows do. */
+.settings-switch .switch {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin-right: -0.375rem;
+}
+
 /* A few choices side by side in one frame, the chosen one inked in pen blue. */
 .segmented {
   display: grid;
@@ -2615,6 +2640,47 @@ h5[data-block] {
 
 .aid-wait {
   color: var(--ink-soft);
+}
+
+/* The line after a chapter (ChapterClosing): a few words pencilled under the last page, in the book's face and a
+   softer ink, with no box and no title. Its three lines of room are held from the start and its text is there from
+   the start too, unseen, so nothing below it moves and turning pages measures it as it will be. The text only fades
+   in, once the reader gets there. */
+.closing {
+  /* Centred in its held room, so a two-line note has as much space under it as over it. */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 30em;
+  min-height: calc(var(--leading) * 3em);
+  margin: 4rem auto 0;
+  color: var(--ink-soft);
+  font-family: var(--book-face);
+  font-size: calc(var(--book-size) * 0.95);
+  line-height: var(--leading);
+  text-align: center;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+.closing-sentence {
+  display: block;
+}
+
+.closing p {
+  margin: 0;
+  opacity: 0;
+  transition: opacity 0.5s ease-out;
+}
+
+.closing[data-shown] p {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .closing p {
+    transition: none;
+  }
 }
 
 /* Things that float over the page */

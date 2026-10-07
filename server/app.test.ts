@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiProviderId, AiStatus, ApiError, BookDetail, BookSummary, HighlightColor, Note, ParsedBook, StorageView } from "../shared/types.ts";
+import type { AiProviderId, AiStatus, ApiError, BookDetail, BookSummary, Chapter, HighlightColor, Note, ParsedBook, SectionKind, StorageView } from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
 import type { AppEnv } from "./app-env.ts";
 import { createApp } from "./app.ts";
@@ -15,6 +15,7 @@ import type { Library } from "./library.ts";
 import { LlmError } from "./llm.ts";
 import type { LlmRequest } from "./llm.ts";
 import { ParseError } from "./parser/errors.ts";
+import { checkClosing } from "./prompts.ts";
 import { createLocalStore } from "./storage.ts";
 import type { ObjectStore } from "./storage.ts";
 
@@ -949,6 +950,133 @@ describe("DeepRead API", () => {
       expect(outOfRange.status).toBe(502);
     });
 
+    describe("closing line", () => {
+      const askClosing = (id: string, extra: Record<string, unknown> = {}) =>
+        send("POST", "/api/ai/chapter", { bookId: id, chapterId: "c1", kind: "closing", lang: "bn", ...extra });
+      const held = "You can now explain why it holds.";
+
+      it("should return a checked line as JSON, and serve it from the cache until a refresh is asked for", async () => {
+        const id = await addBook();
+        llm.state.script = (_request, call) => [`You can now explain why answer ${call} holds.`];
+
+        const first = await askClosing(id);
+        expect(first.status).toBe(200);
+        expect(await first.json()).toEqual({ kind: "closing", text: "You can now explain why answer 1 holds." });
+        expect(await (await askClosing(id)).json()).toEqual({ kind: "closing", text: "You can now explain why answer 1 holds." });
+        expect(llm.state.calls).toBe(1);
+
+        expect(await (await askClosing(id, { refresh: true })).json()).toEqual({ kind: "closing", text: "You can now explain why answer 2 holds." });
+        expect(await (await askClosing(id)).json()).toEqual({ kind: "closing", text: "You can now explain why answer 2 holds." });
+        expect(llm.state.calls).toBe(2);
+      });
+
+      it("should ask again once, with a hint added, when the first line breaks the rules", async () => {
+        const id = await addBook();
+        const users: string[] = [];
+        llm.state.script = (request, call) => {
+          users.push(request.user);
+          return call === 1 ? ["Well done, you finished the chapter!"] : [held];
+        };
+
+        const reply = await askClosing(id);
+        expect(reply.status).toBe(200);
+        expect(await reply.json()).toEqual({ kind: "closing", text: held });
+        expect(users).toHaveLength(2);
+        expect(users[1]!.startsWith(users[0]!)).toBe(true);
+        expect(users[1]!.length).toBeGreaterThan(users[0]!.length);
+      });
+
+      it("should answer closing_invalid after two broken lines and cache nothing, and pass a model failure on", async () => {
+        const id = await addBook();
+        llm.state.script = () => ["Great job, you did it!"];
+        const bad = await askClosing(id);
+        expect(bad.status).toBe(502);
+        expect(((await bad.json()) as { error: string }).error).toBe("closing_invalid");
+        expect(llm.state.calls).toBe(2);
+
+        // The third call reaching the model shows the broken lines were not kept.
+        llm.state.script = () => [held];
+        expect(await (await askClosing(id)).json()).toEqual({ kind: "closing", text: held });
+        expect(llm.state.calls).toBe(3);
+
+        llm.state.script = () => {
+          throw new LlmError("timeout", "The AI took too long to answer. Please try again.");
+        };
+        const slow = await askClosing(id, { refresh: true });
+        expect(slow.status).toBe(504);
+        expect(((await slow.json()) as { error: string }).error).toBe("ai_timeout");
+      });
+
+      it("should tell the model where the chapter falls among the main chapters, and how the next one opens", async () => {
+        const part = (id: string, title: string, text: string, kind?: SectionKind): Chapter => ({
+          id,
+          title,
+          ...(kind ? { kind } : {}),
+          startPage: 1,
+          endPage: 1,
+          blocks: [
+            { id: `${id}-b0`, type: "heading", level: 1, text: title, page: 1 },
+            { id: `${id}-b1`, type: "paragraph", text, page: 1 },
+          ],
+        });
+        const opening = Array.from({ length: 130 }, (_, n) => `w${n + 1}`).join(" ");
+        const id = await addBook({
+          title: "Frame Book",
+          author: "Bertrand Russell",
+          pageCount: 6,
+          warnings: [],
+          chapters: [
+            part("f1", "Copyright", "All rights reserved.", "front"),
+            part("m1", "One", "First body.", "body"),
+            part("m2", "Two", "Second body."),
+            part("m3", "Three", "Third body."),
+            part("m4", "Four", opening),
+            part("b1", "Notes", "Footnotes.", "back"),
+          ],
+        });
+        const seen: LlmRequest[] = [];
+        llm.state.script = (request) => {
+          seen.push(request);
+          return [held];
+        };
+        const userFor = async (chapterId: string) => {
+          const before = seen.length;
+          expect((await askClosing(id, { chapterId })).status).toBe(200);
+          expect(seen).toHaveLength(before + 1);
+          expect(seen.at(-1)?.task).toBe("closing");
+          return seen.at(-1)!.user;
+        };
+
+        // The third main chapter (position 2): its own frames, the next chapter's title and its first 120 words only.
+        const third = await userFor("m3");
+        expect(third).toContain("You can now tell <A> from <B>: ...");
+        expect(third).toContain("Still open: ..., which the next chapter takes up.");
+        expect(third).toContain("Four");
+        expect(third).toContain("w120");
+        expect(third).not.toContain("w121");
+        expect(third).not.toContain("You can now explain why ...");
+        expect(third).not.toContain("Notes");
+
+        // Front matter is not counted, so the first main chapter is position 0, and the author's name is offered to the model.
+        const first = await userFor("m1");
+        expect(first).toContain("You can now explain why ...");
+        expect(first).toContain("Next, <surname of Bertrand Russell> asks ...");
+        expect(first).not.toContain("Copyright");
+
+        // The last main chapter has nothing after it (the back matter is not a chapter), so there is no second sentence.
+        const last = await userFor("m4");
+        expect(last).toContain("You followed the argument from <starting point> to <conclusion>.");
+        expect(last).toContain("no next chapter");
+        expect(last).not.toContain("Still open");
+
+        // A closing line belongs to a main chapter: matter before or after the book is turned down without asking the model.
+        const turnedDown = await askClosing(id, { chapterId: "f1" });
+        expect(turnedDown.status).toBe(400);
+        expect(((await turnedDown.json()) as { error: string }).error).toBe("invalid_request");
+        expect(seen).toHaveLength(3);
+      });
+    });
+
     it("should answer questions with the conversation so far and never cache them", async () => {
       const id = await addBook();
       llm.state.script = (request, call) => [`#${call} ${request.user}`];
@@ -1147,5 +1275,63 @@ describe("DeepRead API", () => {
       expect((await app.request(`/api/unlock?key=${KEY}`, { headers: viaTunnel })).status).toBe(403);
       expect((await app.request(`/api/unlock?key=${KEY}`)).status).toBe(404);
     });
+  });
+});
+
+describe("checkClosing", () => {
+  const single = "You can now explain why a ship floats.";
+  const pair = "You can now explain why a ship floats. Next, the book asks what holds the sea up.";
+  const accept = (text: string, hasNext = false) => checkClosing(text, { hasNext });
+
+  it("should hand back the line cleaned: trimmed, on one line, and without one pair of wrapping quotes", () => {
+    expect(accept(single)).toBe(single);
+    expect(accept(pair, true)).toBe(pair);
+    expect(accept(`  "${single}"\n`)).toBe(single);
+    expect(accept(`“${single}”`)).toBe(single);
+    expect(accept("Next time you cross a bridge,\nyour feet will notice the sway.")).toBe("Next time you cross a bridge, your feet will notice the sway.");
+  });
+
+  it("should reject praise and stock phrases, in any case and ending, but not words that only start alike", () => {
+    const banned = [
+      "well done", "great job", "great work", "good job", "nice work", "amazing", "awesome", "fantastic", "impressive",
+      "incredible", "congratulations", "proud", "kudos", "keep it up", "keep going", "way to go", "you did it", "journey",
+      "dive", "delve", "unlock", "superpower",
+    ];
+    for (const word of banned) {
+      expect(accept(`You can now explain why it floats, which is ${word}.`), word).toBeNull();
+      expect(accept(`YOU CAN NOW EXPLAIN WHY IT FLOATS, WHICH IS ${word.toUpperCase()}.`), word.toUpperCase()).toBeNull();
+    }
+    expect(accept("You can now explain why it floats, so unlocking the idea comes next.")).toBeNull();
+    expect(accept("You can now tell a diverse crowd from a uniform one.")).not.toBeNull();
+  });
+
+  it("should reject exclamation marks, emoji, markdown, no 'you', no text, and more than 55 words", () => {
+    const words = (count: number) => `${["You", ...Array<string>(count - 1).fill("slowly")].join(" ")}.`;
+    const bad = [
+      "You can now explain why it floats!",
+      "You can now explain why it floats \u{1F389}.",
+      "You can now explain **why** it floats.",
+      "# You can now explain why it floats.",
+      "You can now explain `floats`.",
+      "- You can now explain why it floats.",
+      "The ship floats because it pushes water aside.",
+      "The young sailor floats the ship.",
+      "",
+      "   ",
+      words(56),
+    ];
+    for (const text of bad) expect(accept(text), text).toBeNull();
+    expect(accept(words(55))).toBe(words(55));
+  });
+
+  it("should allow one sentence without a next chapter and at most two with one", () => {
+    const three = `${pair} Still open: where the shore ends.`;
+    expect(accept(pair, true)).toBe(pair);
+    expect(accept(three, true)).toBeNull();
+    expect(accept(pair, false)).toBeNull();
+    expect(accept(single, false)).toBe(single);
+    // A question mark ends a sentence like a full stop does; the dots inside "e.g." do not.
+    expect(accept("You can now explain why it floats? Next, the book asks what holds the sea up.")).toBeNull();
+    expect(accept("You can now tell a fact from a guess, e.g. a count from a hunch.")).not.toBeNull();
   });
 });

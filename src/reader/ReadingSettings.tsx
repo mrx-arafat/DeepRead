@@ -402,6 +402,27 @@ export function ReadingSettings({ prefs }: { prefs: Prefs }) {
 
         <Choice name="layout" legend="Layout" value={prefs.layout} options={LAYOUT_OPTIONS} onChange={(layout) => reflow({ layout })} />
 
+        {/* The label is tied to the switch, so a tap on the words turns it too. */}
+        <div className="settings-group settings-switch">
+          <label className="settings-label" htmlFor={`${PANEL}-chapter-notes`}>
+            End-of-chapter notes
+          </label>
+          <button
+            id={`${PANEL}-chapter-notes`}
+            type="button"
+            role="switch"
+            className="switch"
+            aria-checked={prefs.chapterNotes}
+            aria-describedby={`${PANEL}-chapter-notes-hint`}
+            onClick={() => reflow({ chapterNotes: !prefs.chapterNotes })}
+          >
+            <span className="switch-track" aria-hidden />
+          </button>
+          <p id={`${PANEL}-chapter-notes-hint`} className="settings-hint">
+            A short line after each chapter about what you just read.
+          </p>
+        </div>
+
         <hr className="settings-divider" />
 
         <VoiceChoice voice={prefs.voice} />

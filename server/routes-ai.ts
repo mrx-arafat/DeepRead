@@ -37,7 +37,7 @@ import type { Accounts } from "./deps.ts";
 import type { StoredProfile } from "./profiles.ts";
 import { completeText, LlmError } from "./llm.ts";
 import type { Llm } from "./llm.ts";
-import { askPrompt, chapterAidPrompt, explainPrompt } from "./prompts.ts";
+import { askPrompt, chapterAidPrompt, checkClosing, closingPrompt, explainPrompt } from "./prompts.ts";
 import type { Prompt } from "./prompts.ts";
 import { parseQuiz, validateQuiz } from "./quiz.ts";
 
@@ -49,9 +49,12 @@ const MAX_HISTORY_TURNS = 20;
 const MAX_BODY_BYTES = 1024 * 1024;
 const QUIZ_RETRY_HINT =
   "\n\nYour last reply could not be read. Reply with only the JSON array: no code fences, no other text.";
+const CLOSING_RETRY_HINT =
+  "\n\nYour last reply broke a rule. Reply with only the one or two plain sentences asked for: no praise, no exclamation marks, no markdown, at most 45 words, and the word \"you\" in it.";
+const OPENING_WORDS = 120;
 
 // A Record type makes this list exhaustive: adding a kind to the contract fails to compile until handled here.
-const AID_KINDS: Record<ChapterAidKind, true> = { preview: true, recap: true, quiz: true };
+const AID_KINDS: Record<ChapterAidKind, true> = { preview: true, recap: true, quiz: true, closing: true };
 
 const isAidKind = (value: unknown): value is ChapterAidKind =>
   typeof value === "string" && Object.hasOwn(AID_KINDS, value);
@@ -139,7 +142,33 @@ async function generateQuiz(llm: Llm, prompt: Prompt, signal: AbortSignal): Prom
   return null;
 }
 
+/** Asks for the closing line, and once more if the reply breaks a rule; null means both replies were unusable. */
+async function generateClosing(llm: Llm, prompt: Prompt, hasNext: boolean, signal: AbortSignal): Promise<string | null> {
+  for (const hint of ["", CLOSING_RETRY_HINT]) {
+    const reply = await completeText(llm, { task: "closing", system: prompt.system, user: prompt.user + hint, signal });
+    const text = checkClosing(reply, { hasNext });
+    if (text) return text;
+    // Kept in the log, so a rule that refuses good lines can be seen and loosened.
+    console.warn("closing line refused:", JSON.stringify(reply.slice(0, 400)));
+  }
+  return null;
+}
+
 type Located = { book: ParsedBook; chapter: Chapter };
+
+/** The book's own chapters, as opposed to the front and back matter around them; books parsed before sections had kinds are all body. */
+const isMainChapter = (chapter: Chapter): boolean => (chapter.kind ?? "body") === "body";
+
+/** The first words of a chapter's text, enough to tell the model what it opens on. */
+function openingOf(chapter: Chapter): string {
+  const words: string[] = [];
+  for (const block of chapter.blocks) {
+    if (block.type === "paragraph") words.push(...block.text.split(/\s+/, OPENING_WORDS + 1 - words.length).filter(Boolean));
+    if (words.length > OPENING_WORDS) break;
+  }
+  const opening = words.slice(0, OPENING_WORDS).join(" ");
+  return words.length > OPENING_WORDS ? `${opening} ...` : opening;
+}
 
 /** Finds the book and chapter named in a request body, or the 4xx response to send instead. */
 async function locate(c: Context, library: Library, bookId: string, chapterId: string): Promise<Located | Response> {
@@ -158,6 +187,43 @@ export function accessOf(profile: StoredProfile): AiAccess {
     requested: Object.keys(profile.aiRequests ?? {}).filter(isAiProviderId),
     reader: profile.id,
   };
+}
+
+/**
+ * The closing line at the end of a main chapter. It arrives whole like the quiz: a line that breaks a rule is asked for once more,
+ * and only a line that passes is cached or sent.
+ */
+async function closingAid(c: Context, library: Library, helper: Llm, bookId: string, { book, chapter }: Located, refresh: boolean): Promise<Response> {
+  const main = book.chapters.filter(isMainChapter);
+  const at = main.findIndex((candidate) => candidate.id === chapter.id);
+  if (at < 0) return invalidBody(c, "a closing line is only written for a main chapter, not for the matter before or after the book.");
+  const next = main[at + 1];
+  const prompt = closingPrompt({
+    bookTitle: book.title,
+    chapterTitle: chapter.title,
+    chapterText: buildChapterText(chapter.blocks),
+    author: book.author,
+    next: next ? { title: next.title, opening: openingOf(next) } : null,
+    shapeIndex: at,
+  });
+  const hasNext = next !== undefined;
+  // The line is always English, so every reader language shares one cached answer.
+  const key = cacheKey({ task: "closing", lang: "en", chapterId: chapter.id, model: helper.model("closing"), prompt });
+
+  if (!refresh) {
+    const hit = await library.readCache(bookId, key);
+    const cached = isRecord(hit) && typeof hit.text === "string" ? checkClosing(hit.text, { hasNext }) : null;
+    if (cached) return c.json({ kind: "closing", text: cached } satisfies ChapterAid);
+  }
+  try {
+    const text = await generateClosing(helper, prompt, hasNext, c.req.raw.signal);
+    if (!text) return apiError(c, 502, "closing_invalid", "The AI did not produce a usable closing line. Please try again.");
+    await library.writeCache(bookId, key, { text });
+    return c.json({ kind: "closing", text } satisfies ChapterAid);
+  } catch (error) {
+    if (error instanceof LlmError) return modelFailure(c, error);
+    throw error;
+  }
 }
 
 /**
@@ -256,6 +322,7 @@ export function aiRoutes(deps: { llm: Ai; accounts?: Accounts }): Hono<AppEnv> {
     const found = await locate(c, library, bookId, chapterId);
     if (found instanceof Response) return found;
     const { book, chapter } = found;
+    if (kind === "closing") return closingAid(c, library, helper, bookId, found, refresh);
 
     const prompt = chapterAidPrompt(kind, {
       bookTitle: book.title,

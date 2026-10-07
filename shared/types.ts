@@ -366,7 +366,7 @@ export type ExplainRequest = {
   lang: LangCode;
 };
 
-export type ChapterAidKind = "preview" | "recap" | "quiz";
+export type ChapterAidKind = "preview" | "recap" | "quiz" | "closing";
 
 export type QuizQuestion = {
   question: string;
@@ -380,7 +380,9 @@ export type QuizQuestion = {
 export type ChapterAid =
   | { kind: "preview"; text: string }
   | { kind: "recap"; text: string }
-  | { kind: "quiz"; questions: QuizQuestion[] };
+  | { kind: "quiz"; questions: QuizQuestion[] }
+  /** The quiet line at the end of a main chapter: plain text, one or two sentences, always English. */
+  | { kind: "closing"; text: string };
 
 export type AskRequest = {
   bookId: string;

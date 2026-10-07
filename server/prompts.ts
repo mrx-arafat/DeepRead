@@ -94,7 +94,7 @@ export function explainPrompt(mode: ExplainMode, ctx: PassageContext): Prompt {
   };
 }
 
-function chapterBlock(ctx: ChapterContext): string {
+function chapterBlock(ctx: Pick<ChapterContext, "bookTitle" | "chapterTitle" | "chapterText">): string {
   return [
     `Book: ${ctx.bookTitle}`,
     `Chapter: ${ctx.chapterTitle}`,
@@ -106,7 +106,10 @@ function chapterBlock(ctx: ChapterContext): string {
   ].join("\n");
 }
 
-const CHAPTER_TASKS: Record<ChapterAidKind, (ctx: ChapterContext) => string> = {
+// The closing line is not here: it is written and checked whole, by closingPrompt below.
+type StudyAidKind = Exclude<ChapterAidKind, "closing">;
+
+const CHAPTER_TASKS: Record<StudyAidKind, (ctx: ChapterContext) => string> = {
   preview: (ctx) =>
     [
       "The reader is about to start this chapter. Prepare them so it feels easy, without spoiling every detail.",
@@ -135,11 +138,96 @@ const CHAPTER_TASKS: Record<ChapterAidKind, (ctx: ChapterContext) => string> = {
     ].join("\n"),
 };
 
-export function chapterAidPrompt(kind: ChapterAidKind, ctx: ChapterContext): Prompt {
+export function chapterAidPrompt(kind: StudyAidKind, ctx: ChapterContext): Prompt {
   return {
     system: tutor(ctx.language),
     user: `${chapterBlock(ctx)}\n\n${CHAPTER_TASKS[kind](ctx)}`,
   };
+}
+
+export type ClosingContext = {
+  bookTitle: string;
+  chapterTitle: string;
+  chapterText: string;
+  author: string | null;
+  /** The next main chapter, if there is one. Its opening is only there so the model can name the question it takes up. */
+  next: { title: string; opening: string } | null;
+  /** Where this chapter falls among the main chapters, counting from 0. It picks the frames, so neighbouring chapters do not end alike. */
+  shapeIndex: number;
+};
+
+const IDEA_FRAMES = [
+  "You can now explain why ...",
+  "Next time you <everyday situation>, you will notice ...",
+  "You can now tell <A> from <B>: ...",
+  "You followed the argument from <starting point> to <conclusion>.",
+  "You can now answer someone who says <a common view the chapter challenges>: ...",
+];
+
+const nextFrames = (author: string | null) => [
+  `Next, ${author ? `<surname of ${author}>` : "the book"} asks ...`,
+  "The next chapter takes up ...",
+  "Still open: ..., which the next chapter takes up.",
+];
+
+/** The frame for a chapter's place in the book. The remainder is always in range, so the lookup cannot miss. */
+const frameAt = (frames: string[], shapeIndex: number): string => frames[shapeIndex % frames.length]!;
+
+const CLOSING_SYSTEM = [
+  "You write the one quiet line a reader sees at the end of a chapter of a book.",
+  'Write in English, in simple words, and speak to the reader as "you".',
+  "You never praise, cheer, reward or encourage. You only point at one real idea from the chapter and at the question that is still open.",
+].join("\n");
+
+export function closingPrompt(ctx: ClosingContext): Prompt {
+  const { next } = ctx;
+  const where = next
+    ? [
+        `The next chapter is called: ${next.title}`,
+        ...(next.opening ? ["Its opening words:", '"""', next.opening, '"""'] : []),
+      ]
+    : ["This is the last main chapter of the book."];
+  const task = [
+    "The reader has just finished this chapter. Write the short closing line they will see at its end.",
+    "Sentence 1: name ONE concrete idea, example or distinction from THIS chapter that the reader can now explain or notice. It must be specific to this chapter: if it could be said about any chapter of any book, it is wrong. Use exactly this frame, filling in the dots and the parts in <angle brackets>:",
+    frameAt(IDEA_FRAMES, ctx.shapeIndex),
+    ...(next
+      ? [
+          "Sentence 2: name the open question the next chapter takes up, in plain words, without giving away its answer. Take it from the next chapter's title and opening. Use exactly this frame, filling it in the same way:",
+          frameAt(nextFrames(ctx.author), ctx.shapeIndex),
+        ]
+      : ["There is no next chapter, so write only sentence 1."]),
+    "",
+    "Rules:",
+    "- At most 45 words in total.",
+    "- No praise or encouragement, no exclamation marks, no emoji, no markdown, and no quotation marks around the whole reply.",
+    '- No filler such as "great", "journey", "dive into" or "keep going".',
+    "- Use only what the chapter text and the next chapter's title and opening say.",
+    "- Reply with only the sentence or sentences.",
+  ];
+  return { system: CLOSING_SYSTEM, user: [chapterBlock(ctx), "", ...where, "", ...task].join("\n") };
+}
+
+// Praise and stock phrases, matched in any case. A stem also matches its endings ("unlocks", "proudly"); dive and delve are
+// whole words so that "diverse" passes.
+const CLOSING_BANNED =
+  /\b(?:well done|great (?:job|work)|good job|nice work|amazing|awesome|fantastic|impressive|incredible|congrat|proud|kudos|keep it up|keep going|way to go|you did it|journey|unlock|superpower|dive[sd]?\b|delve[sd]?\b|delving\b)/i;
+const QUOTE_PAIRS = [['"', '"'], ["\u201C", "\u201D"], ["'", "'"], ["\u2018", "\u2019"]] as const;
+// The prompt asks for 45. Good replies on a real book ran 46 to 51 words with the longer frames, and a few words more is not worth a second model call.
+const MAX_CLOSING_WORDS = 55;
+
+/** The closing line cleaned up (trimmed, on one line, one pair of wrapping quotes gone), or null when it breaks a rule. */
+export function checkClosing(reply: string, { hasNext }: { hasNext: boolean }): string | null {
+  let text = reply.trim();
+  const quotes = QUOTE_PAIRS.find(([open, close]) => text.length > 1 && text.startsWith(open) && text.endsWith(close));
+  if (quotes) text = text.slice(1, -1).trim();
+  if (text === "" || /^- /m.test(text)) return null;
+  text = text.replace(/\s+/g, " ");
+  if (/[*#`!]/.test(text) || /\p{Extended_Pictographic}/u.test(text) || CLOSING_BANNED.test(text)) return null;
+  if (!/\b(?:you|your)\b/i.test(text) || text.split(" ").length > MAX_CLOSING_WORDS) return null;
+  // SHORTCUT: a sentence ends at "." or "?" before a capital letter, so "Dr. Smith" counts as two. The line is then asked for again and refused; add an abbreviation list if that ever shows up.
+  const sentences = text.split(/(?<=[.?]["')]*)\s+(?=\p{Lu})/u).length;
+  return sentences <= (hasNext ? 2 : 1) ? text : null;
 }
 
 export function askPrompt(

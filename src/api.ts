@@ -11,6 +11,8 @@ import type {
   BookSummary,
   BookUpdate,
   Chapter,
+  ChapterAid,
+  ChapterAidRequest,
   LangCode,
   NewProfile,
   Note,
@@ -174,6 +176,18 @@ export const api = {
       `/api/translate?q=${encodeURIComponent(text)}&lang=${lang}`,
       { signal },
     ),
+  /**
+   * The quiet line after a chapter, sent whole rather than streamed. Anything but a line of text (a failure, a limit
+   * reached, an answer of another shape) rejects, so the caller can show its own line instead.
+   */
+  chapterClosing: async (bookId: string, chapterId: string, lang: LangCode, signal?: AbortSignal): Promise<string> => {
+    const body: ChapterAidRequest = { bookId, chapterId, kind: "closing", lang };
+    const aid = await request<ChapterAid | undefined>("/api/ai/chapter", { ...json("POST", body), signal });
+    if (aid?.kind !== "closing" || typeof aid.text !== "string" || !aid.text.trim()) {
+      throw new ApiFailure("closing_invalid", "The closing line did not come back as text.", 502);
+    }
+    return aid.text.trim();
+  },
   aiStatus: () => request<AiStatus>("/api/ai/providers"),
   chooseAi: (id: AiProviderId) => request<AiStatus>("/api/ai/provider", json("PUT", { id })),
   /** Asks the admin for a helper the reader was not given. */

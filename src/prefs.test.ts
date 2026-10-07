@@ -30,6 +30,7 @@ describe("readPrefs", () => {
       voice: "device",
       rate: 1.2,
       highlight: "yellow",
+      chapterNotes: true,
     });
     expect(readPrefs({ highlight: "pink" }, false).highlight).toBe("pink");
   });
@@ -60,6 +61,12 @@ describe("readPrefs", () => {
   it("should read the book as one scroll unless pages were chosen", () => {
     expect(readPrefs(null, false).layout).toBe("scroll");
     expect(readPrefs({ layout: "columns" }, false).layout).toBe("scroll");
+  });
+
+  it("should show end-of-chapter notes unless the reader turned them off", () => {
+    expect(readPrefs(null, false).chapterNotes).toBe(true);
+    expect(readPrefs({ chapterNotes: false }, false).chapterNotes).toBe(false);
+    expect(readPrefs({ chapterNotes: "false" }, false).chapterNotes).toBe(true);
   });
 
   it("should start a first-time reader on the system's light or dark", () => {

@@ -339,6 +339,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
                 chapter={chapter}
                 book={book}
                 notes={notes}
+                highlights={highlights}
                 lang={prefs.lang}
                 actions={actions}
                 onDismissTip={chapter === flow.start && tipOpen ? closeTip : undefined}
