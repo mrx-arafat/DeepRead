@@ -36,7 +36,7 @@ async (page) => {
       element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
       return range.toString();
     });
-    await tab.getByRole('toolbar', { name: 'Explain or highlight selected text' }).waitFor();
+    await tab.getByRole('toolbar', { name: 'Explain, highlight, or reflect on selected text' }).waitFor();
     return quote;
   };
 

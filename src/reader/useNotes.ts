@@ -1,20 +1,25 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { isHighlight, isQuestion, sameQuestion } from "../../shared/notes.ts";
+import { isHighlight, isQuestion, isReflection, sameQuestion } from "../../shared/notes.ts";
 import type { NoteChange } from "../../shared/notes.ts";
-import type { HighlightNote, LangCode, Note, QuestionNote } from "../../shared/types.ts";
+import type { HighlightNote, LangCode, Note, QuestionNote, ReflectionNote } from "../../shared/types.ts";
 import { useSession } from "../profiles/session.tsx";
 import { createNoteSync, noteOwner } from "./noteSync.ts";
 import type { NoteSync, NoteSyncState } from "./noteSync.ts";
 
 export type Notes = {
+  /** Current reader's complete notes, including entries shown in the notebook. */
+  allNotes: Note[];
   /** The questions, each shown as a card beside its passage. */
   notes: QuestionNote[];
   /** The passages the reader highlighted, each painted in its colour. Never a card, never sent to the AI. */
   highlights: HighlightNote[];
+  reflections: ReflectionNote[];
   /** Adds a note in the current language; asking the same thing about the same text again replaces the old one. */
   addNote: (note: Omit<QuestionNote, "id" | "lang">) => void;
   /** Highlights a passage; highlighting the same words again replaces the old highlight, which is how its colour changes. */
   addHighlight: (highlight: Omit<HighlightNote, "id" | "lang" | "mode">) => void;
+  saveReflection: (draft: Pick<ReflectionNote, "chapterId" | "blockId" | "quote" | "offset">, text: string, id?: string) => void;
+  saveAnswer: (note: QuestionNote, answer: string) => void;
   /** Removes a note or a highlight. It can be put back with `restoreNote` until another is removed or `forgetRemoved` is called. */
   removeNote: (id: string) => void;
   /** The note or highlight removed last, while it can still be put back. */
@@ -76,6 +81,7 @@ export function useNotes(bookId: string, lang: LangCode): Notes {
   // version does not know (kept by a newer DeepRead on another device) is neither, and is left as it is.
   const notes = useMemo(() => all.filter(isQuestion), [all]);
   const highlights = useMemo(() => all.filter(isHighlight), [all]);
+  const reflections = useMemo(() => all.filter(isReflection), [all]);
 
   const change = useCallback((next: NoteChange) => void activeSync()?.change(next), [activeSync]);
   const retryNotes = useCallback(() => void activeSync()?.retry(), [activeSync]);
@@ -90,6 +96,19 @@ export function useNotes(bookId: string, lang: LangCode): Notes {
     (highlight: Omit<HighlightNote, "id" | "lang" | "mode">) =>
       change({ kind: "put", note: { ...highlight, mode: "highlight", lang, id: crypto.randomUUID() }, before: null }),
     [change, lang],
+  );
+
+  const saveReflection = useCallback(
+    (draft: Pick<ReflectionNote, "chapterId" | "blockId" | "quote" | "offset">, text: string, id?: string) => {
+      const existing = id ? activeSync()?.current().find((note) => note.id === id && isReflection(note)) : null;
+      change({ kind: "put", note: { ...draft, mode: "reflection", text, lang: existing?.lang ?? lang, id: id ?? crypto.randomUUID() }, before: null });
+    },
+    [activeSync, change, lang],
+  );
+
+  const saveAnswer = useCallback(
+    (note: QuestionNote, savedAnswer: string) => change({ kind: "put", note: { ...note, savedAnswer }, before: null }),
+    [change],
   );
 
   const [lastRemoved, setRemoved] = useState<{ key: string; note: Note; index: number } | null>(null);
@@ -116,5 +135,5 @@ export function useNotes(bookId: string, lang: LangCode): Notes {
 
   const forgetRemoved = useCallback(() => setRemoved(null), []);
 
-  return { notes, highlights, addNote, addHighlight, removeNote, removed: removed?.note ?? null, restoreNote, forgetRemoved, syncState, retryNotes, discardRejectedNotes };
+  return { allNotes: all, notes, highlights, reflections, addNote, addHighlight, saveReflection, saveAnswer, removeNote, removed: removed?.note ?? null, restoreNote, forgetRemoved, syncState, retryNotes, discardRejectedNotes };
 }

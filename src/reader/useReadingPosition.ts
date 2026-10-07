@@ -110,8 +110,10 @@ export function keepingLine(change: () => void): void {
   if (!block) return change();
   const offset = again?.offset ?? offsetAtLine(block, eyeLine());
   const top = lineTop(block, offset);
+  const beforeEye = eyeLine();
   change();
-  window.scrollBy(0, lineTop(block, offset) - top);
+  const afterEye = eyeLine();
+  window.scrollBy(0, lineTop(block, offset) - (beforeEye === afterEye ? top : afterEye));
   kept = { block, offset, scrollY: window.scrollY };
 }
 

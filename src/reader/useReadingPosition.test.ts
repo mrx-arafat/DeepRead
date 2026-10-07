@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BookDetail, Chapter } from "../../shared/types.ts";
 import { api } from "../api.ts";
-import { detourIn, placeIn, useReadingPosition } from "./useReadingPosition.ts";
+import { detourIn, keepingLine, placeIn, useReadingPosition } from "./useReadingPosition.ts";
 
 const hooks = vi.hoisted(() => ({
   refs: [] as Array<{ current: unknown }>, states: [] as unknown[], effects: [] as Array<{ dependencies?: unknown[]; effect: () => void | (() => void); cleanup?: () => void; changed: boolean; layout: boolean }>,
@@ -152,6 +152,14 @@ describe("useReadingPosition detours", () => {
     vi.mocked(api.saveProgress).mockClear();
   });
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it("should keep the same reading line when switching from Scroll to Pages", () => {
+    const page = reader({ place: source });
+    page.scroll(2000 + 4 * 20 - 96);
+    expect(page.currentOffset()).toBe(80);
+    keepingLine(() => { hooks.pages = true; });
+    expect(page.currentOffset()).toBe(80);
+  });
 
   it("should suppress debounced, hidden, pagehide, cleanup and reload progress saves during a detour", () => {
     const page = reader();

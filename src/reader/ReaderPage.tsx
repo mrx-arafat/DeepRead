@@ -1,18 +1,21 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Headphones, List, Search } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Headphones, List, NotebookPen, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
-import type { BookDetail, ExplainMode } from "../../shared/types.ts";
+import type { BookDetail, ExplainMode, Note } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { readerTitle, useDocumentTitle } from "../pageTitle.ts";
 import { usePrefs } from "../prefs.ts";
 import { readableBlocks } from "./book.ts";
 import { BookSearch } from "./BookSearch.tsx";
 import type { BookSearchResult } from "./bookSearch.ts";
+import { quoteStart } from "./highlights.ts";
 import { ChapterList } from "./ChapterList.tsx";
 import { ChapterSection } from "./ChapterSection.tsx";
 import type { TextActions } from "./ChapterText.tsx";
 import { ListenBar } from "./ListenBar.tsx";
 import { NoteSyncStatus } from "./NoteSyncStatus.tsx";
+import { Notebook, type NotebookDraft } from "./Notebook.tsx";
+import { notebookSource, type NotebookSource } from "./notebookSource.ts";
 import { listenBlocks } from "./listenBlocks.ts";
 import { lookupTipDone, markLookupTipDone } from "./lookupTip.ts";
 import { ReadingSettings } from "./ReadingSettings.tsx";
@@ -51,12 +54,14 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [tocOpen, setTocOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [searchTarget, setSearchTarget] = useState<BookSearchResult | null>(null);
+  const [notebookOpen, setNotebookOpen] = useState(false);
+  const [notebookDraft, setNotebookDraft] = useState<NotebookDraft | null>(null);
+  const [sourceTarget, setSourceTarget] = useState<NotebookSource | null>(null);
   const [word, setWord] = useState<Lookup | null>(null);
   const [selection, setSelection] = useState<Lookup | null>(null);
   // Until the reader has looked something up, a tip beside the first chapter shows how.
   const [tipOpen, setTipOpen] = useState(() => !lookupTipDone());
-  const { notes, highlights, addNote, addHighlight, removeNote, removed, restoreNote, forgetRemoved, syncState, retryNotes, discardRejectedNotes } = useNotes(bookId, prefs.lang);
+  const { allNotes, notes, highlights, addNote, addHighlight, saveReflection, saveAnswer, removeNote, removed, restoreNote, forgetRemoved, syncState, retryNotes, discardRejectedNotes } = useNotes(bookId, prefs.lang);
   const [undoFocus, setUndoFocus] = useState(false);
   // What takes focus back after Undo, when focus was on it.
   const focusAfterUndo = useRef<string | null>(null);
@@ -90,6 +95,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const listen = useListen(blocks, prefs.rate, nextChapter);
   const { active: listenActive, stop: stopListen } = listen;
   const listenButton = useRef<HTMLButtonElement>(null);
+  const notebookButton = useRef<HTMLButtonElement>(null);
   const playButton = useRef<HTMLButtonElement>(null);
   const focusPlayer = useRef(false);
 
@@ -107,12 +113,12 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   }, [word]);
 
   useEffect(() => {
-    const range = searchTarget && position.detour
-      ? rangeInBlock(searchTarget.blockId, { start: searchTarget.offset, end: searchTarget.offset + searchTarget.matchLength })
+    const range = sourceTarget && position.detour
+      ? rangeInBlock(sourceTarget.blockId, { start: sourceTarget.offset, end: sourceTarget.offset + sourceTarget.matchLength })
       : null;
     setHighlight("dr-search", range);
     return () => setHighlight("dr-search", null);
-  }, [searchTarget, flow.chapters, position.detour]);
+  }, [sourceTarget, flow.chapters, position.detour]);
 
   const dismiss = useCallback(() => {
     setWord(null);
@@ -210,14 +216,24 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   });
 
   const actions = useMemo<TextActions>(
-    () => ({ onWord: handleWord, onSelect: handleSelect, onDismiss: dismiss, onCloseNote: closeNote }),
-    [handleWord, handleSelect, dismiss, closeNote],
+    () => ({ onWord: handleWord, onSelect: handleSelect, onDismiss: dismiss, onCloseNote: closeNote, onSaveAnswer: saveAnswer }),
+    [handleWord, handleSelect, dismiss, closeNote, saveAnswer],
   );
+
+  const selectionDraft = useMemo<NotebookDraft | null>(() => {
+    if (!selection) return null;
+    const chapter = flow.chapters.find((item) => item.id === selection.chapterId);
+    if (!chapter) return null;
+    const from = selection.range.startContainer instanceof Text ? selection.range.startOffset : 0;
+    const source = quoteStart(readableBlocks(chapter), selection.blockId, selection.text, from);
+    return source ? { chapterId: chapter.id, blockId: source.blockId, quote: selection.text, offset: source.offset } : null;
+  }, [selection, flow.chapters]);
 
   function explain(mode: ExplainMode) {
     if (!selection) return;
     markLookupTipDone();
-    addNote({ chapterId: selection.chapterId, blockId: selection.blockId, quote: selection.text, mode });
+    addNote({ chapterId: selection.chapterId, blockId: selection.blockId, quote: selection.text, mode,
+      ...(selectionDraft ? { offset: selectionDraft.offset } : {}) });
     window.getSelection()?.removeAllRanges();
     setSelection(null);
   }
@@ -230,6 +246,15 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const highlighting = { highlights, addHighlight, removeNote };
   const selectionHighlight = useHighlightChoice(selection, flow.chapters, highlighting, closeLookup);
   const wordHighlight = useHighlightChoice(word, flow.chapters, highlighting, closeLookup);
+
+  function reflect() {
+    if (!selectionDraft) return;
+    markLookupTipDone();
+    setNotebookDraft(selectionDraft);
+    setNotebookOpen(true);
+    window.getSelection()?.removeAllRanges();
+    setSelection(null);
+  }
 
   /** Whoever starts listening from the keyboard should find the player under their fingers. */
   function rememberKeyboardStart() {
@@ -253,8 +278,17 @@ export function ReaderPage({ bookId, chapterId }: Props) {
 
   function openSearchResult(result: BookSearchResult): boolean {
     const opened = position.visitPlace({ chapterId: result.chapterId, blockId: result.blockId, offset: result.offset });
-    if (opened) setSearchTarget(result);
+    if (opened) setSourceTarget(result);
     return opened;
+  }
+
+  async function openNotebookSource(note: Note): Promise<boolean> {
+    const chapter = await api.getChapter(bookId, note.chapterId);
+    const source = notebookSource(note, chapter);
+    if (!source) return false;
+    if (!position.visitPlace(source)) throw new Error("Could not save the current reading place.");
+    setSourceTarget(source);
+    return true;
   }
 
   const pageError = error ?? flow.error;
@@ -303,6 +337,11 @@ export function ReaderPage({ bookId, chapterId }: Props) {
         )}
         <div className="topbar-tools">
           {book && (syncState.phase === "saved" || syncState.phase === "saving") && <NoteSyncStatus state={syncState} onRetry={retryNotes} onDiscard={discardRejectedNotes} />}
+          {book && (
+            <button ref={notebookButton} type="button" className="icon-button" aria-label="Notebook" title="Notebook" onClick={() => { setNotebookDraft(null); setNotebookOpen(true); }}>
+              <NotebookPen size={20} aria-hidden />
+            </button>
+          )}
           {book && (
             <button type="button" className="icon-button" aria-label="Find in this book" onClick={() => setSearchOpen(true)}>
               <Search size={20} aria-hidden />
@@ -359,6 +398,15 @@ export function ReaderPage({ bookId, chapterId }: Props) {
 
       {tocOpen && book && <ChapterList book={book} currentId={position.chapterId ?? chapterId} onClose={() => setTocOpen(false)} />}
       {searchOpen && book && <BookSearch book={book} onClose={() => setSearchOpen(false)} onPick={openSearchResult} />}
+      {notebookOpen && book && <Notebook
+        book={book}
+        entries={allNotes}
+        initialDraft={notebookDraft}
+        removed={removed}
+        syncState={syncState}
+        actions={{ saveReflection, remove: removeNote, restore: restoreNote, openSource: openNotebookSource, retry: retryNotes, discard: discardRejectedNotes }}
+        onClose={() => { setNotebookOpen(false); setNotebookDraft(null); notebookButton.current?.focus(); }}
+      />}
 
       <main className="page" style={{ paddingBottom: listen.active ? "9rem" : undefined }}>
         {!book || !flow.start ? (
@@ -491,6 +539,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
           touch={selection.via === "touch"}
           onExplain={explain}
           onListen={() => listenFrom(selection)}
+          onReflect={selectionDraft ? reflect : undefined}
           highlight={selectionHighlight}
         />
       )}

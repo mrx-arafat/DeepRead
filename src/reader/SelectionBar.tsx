@@ -1,5 +1,5 @@
 import { autoUpdate, flip, inline, offset, shift, useFloating } from "@floating-ui/react";
-import { HandHeart, Headphones } from "lucide-react";
+import { HandHeart, Headphones, PencilLine } from "lucide-react";
 import { useLayoutEffect, type KeyboardEvent } from "react";
 import { LANGUAGES, type ExplainMode, type LangCode } from "../../shared/types.ts";
 import { useHelperCredit } from "./aiStatusStore.ts";
@@ -16,6 +16,7 @@ type Props = {
   touch?: boolean;
   onExplain: (mode: ExplainMode) => void;
   onListen: () => void;
+  onReflect?: () => void;
   /** Highlighting the selection; absent when its words could not be found in the book's text to paint. */
   highlight?: HighlightChoice;
 };
@@ -34,7 +35,7 @@ function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
 }
 
 /** The small bar that appears over selected text: how do you want this explained, or highlighted? */
-export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListen, highlight }: Props) {
+export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListen, onReflect, highlight }: Props) {
   // For a reader the admin shared an AI with: whose it is, where they choose to use it. Sharing is caring.
   const credit = useHelperCredit();
   const { refs, floatingStyles } = useFloating({
@@ -67,7 +68,7 @@ export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListe
       style={floatingStyles}
       className="popover selection-bar"
       role="toolbar"
-      aria-label={highlight ? "Explain or highlight selected text" : "Explain selected text"}
+      aria-label={onReflect ? "Explain, highlight, or reflect on selected text" : highlight ? "Explain or highlight selected text" : "Explain selected text"}
       // Keep the text selected while a button is pressed.
       onMouseDown={(event) => event.preventDefault()}
       onKeyDown={moveFocus}
@@ -86,6 +87,7 @@ export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListe
           <Headphones size={16} aria-hidden /> Listen
         </button>
       )}
+      {onReflect && <button type="button" onClick={onReflect}><PencilLine size={16} aria-hidden /> Reflect</button>}
       {highlight && <HighlightGroup {...highlight} />}
       {credit && (
         <p className="selection-credit">

@@ -1,6 +1,6 @@
-import { X } from "lucide-react";
+import { BookmarkPlus, X } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { LANGUAGES, type ExplainMode, type ExplainRequest, type LangCode, type QuestionNote } from "../../shared/types.ts";
+import { LANGUAGES, MAX_SAVED_ANSWER_CHARS, type ExplainMode, type ExplainRequest, type LangCode, type QuestionNote } from "../../shared/types.ts";
 import { parseSections, RichText } from "./RichText.tsx";
 import { useAiStream } from "./useAiStream.ts";
 
@@ -12,6 +12,7 @@ type Props = {
   latest: boolean;
   /** `byKeyboard`: pressed with Enter or Space, so focus was on the button that is about to go. */
   onClose: (id: string, byKeyboard: boolean) => void;
+  onSaveAnswer: (note: QuestionNote, answer: string) => void;
 };
 
 function label(mode: ExplainMode, lang: LangCode): string {
@@ -21,7 +22,7 @@ function label(mode: ExplainMode, lang: LangCode): string {
 }
 
 /** One explanation, shown in the margin beside the paragraph it belongs to. */
-export function NoteCard({ note, bookId, latest, onClose }: Props) {
+export function NoteCard({ note, bookId, latest, onClose, onSaveAnswer }: Props) {
   const { lang } = note;
   // Folded unless it is the newest card, until the reader opens or folds it themselves.
   const [unfolded, setUnfolded] = useState<boolean | null>(null);
@@ -34,9 +35,10 @@ export function NoteCard({ note, bookId, latest, onClose }: Props) {
     mode: note.mode,
     lang,
   };
-  const answer = useAiStream("/api/ai/explain", request);
+  const answer = useAiStream("/api/ai/explain", request, !note.savedAnswer);
+  const text = note.savedAnswer ?? answer.text;
   // Folding only hides something when the answer has more than one part.
-  const more = parseSections(answer.text).length > 1;
+  const more = parseSections(text).length > 1;
   const panelRef = useRef<HTMLElement>(null);
 
   useLayoutEffect(() => {
@@ -75,14 +77,14 @@ export function NoteCard({ note, bookId, latest, onClose }: Props) {
       <blockquote className="note-quote">{note.quote}</blockquote>
       <div
         aria-live="polite"
-        aria-busy={answer.status === "loading"}
+        aria-busy={!note.savedAnswer && answer.status === "loading"}
         className={note.mode === "native" ? "note-body note-native" : "note-body"}
         lang={note.mode === "native" ? lang : undefined}
       >
-        {answer.text ? (
-          <RichText text={answer.text} writing={answer.status === "loading"} />
+        {text ? (
+          <RichText text={text} writing={!note.savedAnswer && answer.status === "loading"} />
         ) : (
-          answer.status === "loading" && (
+          !note.savedAnswer && answer.status === "loading" && (
             <p className="note-wait" lang="en">
               Reading the passage...
               <span className="skeleton" />
@@ -91,12 +93,19 @@ export function NoteCard({ note, bookId, latest, onClose }: Props) {
           )
         )}
       </div>
+      {note.savedAnswer ? (
+        <p className="note-saved">Saved to notebook</p>
+      ) : answer.status === "done" && answer.text.trim() && answer.text.length <= MAX_SAVED_ANSWER_CHARS ? (
+        <button type="button" className="quiet-button" onClick={() => onSaveAnswer(note, answer.text)}>
+          <BookmarkPlus size={16} aria-hidden /> Save to notebook
+        </button>
+      ) : null}
       {more && (
         <button type="button" className="link-button note-more" aria-expanded={open} onClick={() => setUnfolded(!open)}>
           {open ? "Show less" : "Show more"}
         </button>
       )}
-      {answer.status === "error" && (
+      {!note.savedAnswer && answer.status === "error" && (
         <p className="inline-error">
           {answer.error}{" "}
           <button type="button" className="link-button" onClick={answer.retry}>

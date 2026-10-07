@@ -12,6 +12,7 @@ export type TextActions = {
   onSelect: (lookup: Lookup) => void;
   onDismiss: () => void;
   onCloseNote: (id: string, byKeyboard: boolean) => void;
+  onSaveAnswer: (note: QuestionNote, answer: string) => void;
 };
 
 type Props = {
@@ -46,7 +47,7 @@ const BlockText = memo(function BlockText({ block, tag, tabbable }: { block: Blo
 
 /** The text of one chapter. A tap on a word looks it up; a selection offers explanations. Both work by keyboard too. */
 export function ChapterText({ blocks, notes, bookId, chapterId, actions }: Props) {
-  const { onWord, onSelect, onDismiss, onCloseNote } = actions;
+  const { onWord, onSelect, onDismiss, onCloseNote, onSaveAnswer } = actions;
   const container = useRef<HTMLDivElement>(null);
   const cursor = useWordCursor(blocks[0]?.id, (word) => ask(word, "keyboard"));
   const tags = useMemo(() => headingTags(blocks), [blocks]);
@@ -141,7 +142,7 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions }: Props
           {notes
             .filter((note) => note.blockId === block.id)
             .map((note) => (
-              <NoteCard key={note.id} note={note} bookId={bookId} latest={note.id === notes.at(-1)?.id} onClose={onCloseNote} />
+              <NoteCard key={note.id} note={note} bookId={bookId} latest={note.id === notes.at(-1)?.id} onClose={onCloseNote} onSaveAnswer={onSaveAnswer} />
             ))}
           <BlockText block={block} tag={tags[at] ?? null} tabbable={block.id === cursor.tabbable} />
         </div>

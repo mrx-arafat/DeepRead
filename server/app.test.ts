@@ -559,6 +559,64 @@ describe("DeepRead API", () => {
       expect(await notesOf(id)).toEqual([question, highlight("again", "green")]);
     });
 
+    it("should keep distinct reflections at an exact passage offset and edit one by id", async () => {
+      const id = await addBook();
+      const passage = { chapterId: "c1", blockId: "c1-b2", quote: "the one", lang: "bn" } as const;
+      const question: Note = { ...passage, id: "asked", mode: "simple" };
+      const highlight: Note = { ...passage, id: "marked", mode: "highlight", color: "yellow", offset: 18 };
+      const reflection = (noteId: string, text: string) => ({ ...passage, id: noteId, mode: "reflection", offset: 18, text });
+      const put = (note: unknown, noteId: string) => send("PUT", `/api/books/${id}/notes/${noteId}`, { note, before: null });
+
+      expect((await put(question, question.id)).status).toBe(204);
+      expect((await put(highlight, highlight.id)).status).toBe(204);
+      expect((await put(reflection("first", "A thought"), "first")).status).toBe(204);
+      expect((await put(reflection("second", "Another thought"), "second")).status).toBe(204);
+      expect(await notesOf(id)).toEqual([question, highlight, reflection("first", "A thought"), reflection("second", "Another thought")]);
+
+      expect((await put(reflection("first", "An edited thought"), "first")).status).toBe(204);
+      expect(await notesOf(id)).toEqual([question, highlight, reflection("second", "Another thought"), reflection("first", "An edited thought")]);
+
+      for (const bad of [
+        { ...reflection("bad", "  ") },
+        { ...reflection("bad", "x"), offset: -1 },
+        { ...reflection("bad", "x"), offset: 1.5 },
+        { ...reflection("bad", "x"), offset: undefined },
+        { ...reflection("bad", "x"), text: "x".repeat(5_001) },
+        { ...reflection("bad", "x"), color: "yellow" },
+      ]) expect((await put(bad, "bad")).status).toBe(400);
+      expect((await notesOf(id)).length).toBe(4);
+    });
+
+    it("should retain a saved AI answer against a stale same-question write", async () => {
+      const id = await addBook();
+      const question = { id: "original", chapterId: "c1", blockId: "c1-b2", quote: "reader", mode: "word", lang: "bn" } as const;
+      const put = (note: unknown, noteId: string) => send("PUT", `/api/books/${id}/notes/${noteId}`, { note, before: null });
+
+      expect((await put(question, question.id)).status).toBe(204);
+      expect((await put({ ...question, offset: -1 }, question.id)).status).toBe(400);
+      expect((await put({ ...question, offset: 1.5 }, question.id)).status).toBe(400);
+      expect((await put({ ...question, savedAnswer: "The answer as read." }, question.id)).status).toBe(204);
+      expect(await notesOf(id)).toEqual([{ ...question, savedAnswer: "The answer as read." }]);
+      expect((await put({ ...question, id: "stale" }, "stale")).status).toBe(204);
+      expect(await notesOf(id)).toEqual([{ ...question, savedAnswer: "The answer as read." }]);
+
+      expect((await put({ ...question, savedAnswer: "  " }, question.id)).status).toBe(400);
+      expect((await put({ ...question, savedAnswer: "x".repeat(20_001) }, question.id)).status).toBe(400);
+      expect(await notesOf(id)).toEqual([{ ...question, savedAnswer: "The answer as read." }]);
+      // An explicit same-id re-ask can clear the snapshot before replacing it with the new answer.
+      expect((await put(question, question.id)).status).toBe(204);
+      expect(await notesOf(id)).toEqual([question]);
+
+      const anchored = { ...question, id: "anchored", offset: 7 };
+      expect((await put(anchored, anchored.id)).status).toBe(204);
+      expect(await notesOf(id)).toEqual([anchored]);
+      expect((await put(question, question.id)).status).toBe(204);
+      expect(await notesOf(id)).toEqual([anchored]);
+      const secondOccurrence = { ...question, id: "second-occurrence", offset: 19 };
+      expect((await put(secondOccurrence, secondOccurrence.id)).status).toBe(204);
+      expect(await notesOf(id)).toEqual([anchored, secondOccurrence]);
+    });
+
     it("should not give a book added again what an earlier copy of it left behind", async () => {
       // A store that, once, cannot clear away a folder.
       const local = createLocalStore(dataDir);

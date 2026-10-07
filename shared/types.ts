@@ -245,8 +245,19 @@ type NotePassage = {
   lang: LangCode;
 };
 
-/** A question the reader asked about a passage, shown as a card in the margin. The server caches the answer. */
-export type QuestionNote = NotePassage & { mode: ExplainMode };
+export const MAX_REFLECTION_CHARS = 5_000;
+export const MAX_SAVED_ANSWER_CHARS = 20_000;
+
+/** A question the reader asked about a passage, shown as a card in the margin. */
+export type QuestionNote = NotePassage & {
+  mode: ExplainMode;
+  /** Absent on legacy questions saved before passage offsets were recorded. */
+  offset?: number;
+  savedAnswer?: string;
+};
+
+/** The reader's own words at an exact character offset in a paragraph. */
+export type ReflectionNote = NotePassage & { mode: "reflection"; offset: number; text: string };
 
 /** A passage the reader marked in a highlighter colour. Theirs alone: it never goes to the AI. */
 export type HighlightNote = NotePassage & {
@@ -256,8 +267,8 @@ export type HighlightNote = NotePassage & {
   offset: number;
 };
 
-/** What the reader keeps with a book, one change at a time (shared/notes.ts): their questions and their highlights. */
-export type Note = QuestionNote | HighlightNote;
+/** What the reader keeps with a book, one change at a time (shared/notes.ts). */
+export type Note = QuestionNote | HighlightNote | ReflectionNote;
 
 /** How much room the books take, where they are kept, and the most they may take (null: no limit). */
 export type StorageUsage = {

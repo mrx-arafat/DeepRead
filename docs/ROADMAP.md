@@ -225,8 +225,8 @@ Findings that motivate this scope:
 - A one-book library repeats the book in Continue reading and the shelf. Its supporting message emphasizes total time remaining rather than context for resuming.
 - Highlights and question notes already have source anchors, and progress includes a text offset. These are foundations for contextual resume and a notebook.
 - `server/routes-ai.ts` supports chapter quizzes and `/ask`, but `src/reader/ChapterAid.tsx` exposes preview and recap only. Backend capability is not a finished reader experience.
-- `shared/types.ts` currently defines notes as questions or highlights, not reader-authored reflections. Question notes retain requests while generated answers are cached separately.
-- `src/reader/noteSync.ts` queues writes, but its public contract does not expose saving, saved, offline, or failed states to the UI.
+- At the original review, notes were questions or highlights only, and generated answers were cached separately. UX-05 now adds reflections and explicitly saved answer snapshots.
+- At the original review, note synchronization had no visible saving, saved, offline, or failed state. UX-02 now exposes these states.
 
 This review did not validate AI answer quality, audible playback, authenticated profile/admin journeys, physical-device gestures, large-library performance, or offline recovery.
 Those remain verification work, not assumed successes. The observations are a baseline, not a full accessibility or regression certification.
@@ -249,10 +249,10 @@ The first release should combine reading comfort with returning to a book; the n
 | UX-09 | Connections between ideas | Exploratory, last | To assess | A useful notebook across multiple books |
 
 - [ ] UX-01: Reading comfort and contextual controls.
-- [ ] UX-02: Save confidence and recovery.
+- [x] UX-02: Save confidence and recovery.
 - [x] UX-03: Where I left off.
 - [x] UX-04: Library organization and finding passages.
-- [ ] UX-05: My edition notebook and personal reflections.
+- [x] UX-05: My edition notebook and personal reflections.
 - [ ] UX-06: Passage-grounded questions.
 - [ ] UX-07: Seamless reading and listening.
 - [ ] UX-08: Optional reflection and saved vocabulary.
@@ -264,22 +264,27 @@ Implemented in the repository and checked in local previews; not yet production-
 
 | Track | Available now | Remaining before closing the track |
 | --- | --- | --- |
-| UX-01 | Aa contains appearance only; Reader preferences contains language, chapter-note visibility and helper configuration; Voice settings is reachable from the player; shorter phone chapter openings; Escape preserves playback and returns useful focus | Full contextual-help/selection/physical mobile-keyboard checks and logical-position matrix across typography changes |
-| UX-02 | Quiet save status; browser-only recovery messaging; explicit retry and discard-refused actions; profile-scoped immutable pending records; separate short append and network locks; malformed recovery records retained without blocking valid work. A native-Web-Locks two-tab browser journey preserved both pending notes through tab close and reload, then retried each exactly once | Broader authenticated live session-expiry, profile-switch, and browser-support matrix; cross-tab network ordering requires native Web Locks, though immutable records prevent shared-outbox overwrite without them |
+| UX-01 | Aa contains appearance only; Reader preferences contains language, chapter-note visibility and helper configuration; Voice settings is reachable from the player; shorter phone chapter openings; Escape preserves playback and returns useful focus. New headless matrices cover settings, help, selection, listening, three themes, 390/1440 widths, and logical position across font, size, measure, layout, resize, and reload; Scroll-to-Pages now retains the changed eye line | Physical phone keyboard and touch-selection-handle checks remain; do not close UX-01 from desktop emulation alone |
+| UX-02 | Quiet save status; browser-only recovery messaging; explicit retry and discard-refused actions; profile-scoped immutable pending records; separate short append and network locks. Native-Web-Locks two-tab recovery, authenticated profile switching, expired-session recovery, and blocked browser storage passed headless journeys. Retry preserved the original note ID and submitted once | First-release acceptance covered in Chromium; other supported browsers and production session behavior remain release validation, not a claim of cross-browser certification |
 | UX-03 | Optional library dialog with bounded real preceding text and a resolved preceding highlight; exact highlight source link; one-action Return or deliberate Keep reading here; direct Continue retained. Progress stays at the saved place throughout a source visit, including reload and tab exit. A shared-profile browser journey passed reader-private context, revoked access, and state restoration after reshare | None for the UX-03 acceptance scope; physical-device and production validation remain separate release checks |
 | UX-04 | Compact single-book Continue controls without a duplicate cover; title/author and status filtering; manual Reading, Saved for later, and Finished states persisted per reader, including shared copies; bounded literal in-book search with chapter/excerpt results, exact repeated-match marking, and a progress-safe return path. Empty, one-book, three-book, pinned, shared, and keyboard shelf journeys passed in isolated headless browsers | None for the UX-04 acceptance scope; physical-device and production validation remain separate release checks |
+| UX-05 | A per-book Notebook holds highlights, reflections, and explicitly saved AI explanations. Reflections use exact offsets and the existing profile-scoped note queue; chapter/search filters, source visits, remove/undo, and selected Markdown export passed headless journeys. A saved answer remained readable and exportable with the provider failing; unshare/reshare respected recipient privacy | Production and physical-device validation remain separate release checks; do not treat this as UX-06 question-conversation delivery |
 
 Fresh verification: 525 tests across 56 files, typecheck, and production build passed during the status slice. Headless Playwright CLI previously checked appearance/preferences/player interactions, three themes, 390/768/1440 widths, Scroll/Pages navigation, context open/dismiss/retry/Continue, shelf filtering, and a failed highlight save followed by explicit retry and server acknowledgement. Source visits additionally passed exact Return after resize in Scroll and Pages, no progress writes during a visit, reload/exit preservation, Keep reading here adoption, and recovery from a mocked failed cross-chapter return. In-book search passed repeated-result selection and exact text marking, cross-chapter Return with unchanged server progress in Scroll and Pages, no-results, a mocked failed chapter fetch, retry, and Escape dismissal. The status slice passed a two-book browser journey for manual status changes, filter transitions, reload persistence, rollback after a mocked failed write, unchanged progress, and More actions. A separate shared-profile browser journey passed recipient persistence through reload and unshare/reshare while preserving the owner's status; its follow-up also checked recipient actions and pin/unpin. The shelf matrix passed empty upload, one-book Continue/actions, two-book filters, three-book actions, pin/unpin, and reload. A separate keyboard browser journey passed Tab, Enter, Escape, status changes, and focus recovery. Independent checks also covered short 390x600 panels. Retry/error tests deliberately mock failed requests. These are not production deployment or physical-device claims. Repeatable scripts and fixture requirements are in `e2e/README.md`; the updated Momentic journeys were not executed in this pass.
+
+Current local checkpoint: 538 tests across 60 files, typecheck, and production build pass. New isolated Playwright CLI journeys cover UX-01's control and position matrices, UX-02's authenticated profile switch and expired-session recovery, and UX-05's create/edit/retry/remove/undo, repeated and missing source anchors, selected export, saved-answer survival without the AI provider, and shared-reader privacy through unshare/reshare. Each journey clicked the affected controls and checked the resulting state. The source-unavailable test confirmed no progress change or unrelated passage jump. These are Chromium headless results, not physical-device or production-deployment results.
 
 Follow-up isolated browsers also passed a shared-profile UX-03 context/privacy and access-revocation journey and a native-Web-Locks UX-02 two-tab pending-note recovery journey. The latter did not exercise profile switching or session expiry. The save-recovery browser regression first failed because a fixed recovery panel inside the transformed Pages toolbar moved off-screen. Recovery now renders outside that toolbar, while successful save feedback remains quiet inside it. The design detector ran on rendered reader HTML; its advisory book-prose punctuation finding does not justify editing the source text. Existing text/control tokens used by the new UI exceeded 4.5:1 on paper and raised surfaces in all three themes.
 
 An additional headless regression preserved the existing More actions/Edit/Cancel behavior (metadata unchanged and focus restored), chapter navigation back through the shelf and Continue, and theme/font/text-size persistence after reload. Automatic chapter-line generation was blocked for that final navigation rerun; live AI-provider behavior was not re-certified.
 
-Next developer: close the remaining UX-01 and UX-02 acceptance gaps above before starting UX-05. Keep the unchecked workstream boxes until the entire track, not just this slice, meets its acceptance list. Do not add a notebook schema or generated resume recap as part of that verification work.
+Next developer: finish UX-01 on a physical phone, including keyboard and selection handles, before closing its box. UX-02 and UX-05 are implemented and headless-browser verified for their acceptance scope. Keep UX-06 through UX-09 separate; a saved explanation snapshot is not a passage-grounded question conversation. Do not treat this local checkpoint as a production deployment.
 
 Independent browser review also reproduced an existing Pages-mode mouse edge case in `usePages.ts`: entering the top margin reveals the toolbar on pointer move, then clicking that same margin can immediately toggle it away. Moving the pointer to the top again recovers it. Investigate with a reproducing pointer sequence before changing the shared page-turn handlers; this pass does not alter them.
 
 ### Developer handoff: implementation sequence
+
+The steps below record the original delivery sequence. For new work, use the implementation checkpoint above: UX-02 and UX-05 are now covered, while UX-01 still needs physical-phone verification.
 
 **Start with UX-01, then UX-02 and UX-03. Do not implement this entire roadmap in one change.**
 The immediate deliverable is a more comfortable reader with reorganized controls, preserving current behavior and saved preferences.
@@ -403,10 +408,10 @@ Implementation starting points: `src/reader/ReaderPage.tsx`, `ChapterSection.tsx
 Acceptance:
 
 - [ ] At the inspected phone size, the fixture chapter exposes more opening text than the baseline, without truncating its title or reducing touch-target accessibility.
-- [ ] Settings can be reached, changed, and dismissed on phone and desktop in all three themes.
-- [ ] Changing font, size, measure, or layout preserves the logical text position in both Scroll and Pages modes.
+- [x] Settings can be reached, changed, and dismissed at phone and desktop viewport sizes in all three themes.
+- [x] Changing font, size, measure, or layout preserves the logical text position in both Scroll and Pages modes in the headless matrix.
 - [ ] Help, selection, audio controls, and the mobile keyboard do not obscure the action or passage needed to complete a task.
-- [ ] Existing stored preferences still load correctly, and keyboard focus returns to a useful target after dismissal.
+- [x] Existing stored preferences still load correctly, and keyboard focus returns to a useful target after dismissal.
 
 ### UX-02: Save confidence and recovery
 
@@ -425,11 +430,11 @@ Define the state contract before adding status presentation; avoid a separate co
 
 Acceptance:
 
-- [ ] A note survives refresh after saving and reconnect after a temporarily failed write.
-- [ ] Offline edits, session expiry, permanent rejection, and unavailable browser storage produce truthful states and preserve recoverable work.
+- [x] A note survives refresh after saving and reconnect after a temporarily failed write.
+- [x] Offline edits, session expiry, permanent rejection, and unavailable browser storage produce truthful states and preserve recoverable work in the covered browser journeys.
 - [x] Two tabs cannot silently overwrite each other's pending additions in the covered workflow.
-- [ ] Switching profiles never renders or submits another reader's pending data.
-- [ ] Retry does not duplicate notes or restore a deliberately removed note.
+- [x] Switching profiles never renders or submits another reader's pending data.
+- [x] Retry does not duplicate notes or restore a deliberately removed note.
 
 ### UX-03: Where I left off
 
@@ -501,12 +506,12 @@ New persistence fields and validation must be designed together; verify how olde
 
 Acceptance:
 
-- [ ] A reader can highlight, write a reflection, reopen the book, find both in the notebook, and jump to the correct passage.
-- [ ] Repeated quotations retain distinct anchors; missing anchors show an honest unavailable state rather than opening an unrelated passage.
-- [ ] Saved explanations remain readable when the provider is unavailable or its cache changes.
-- [ ] Editing and retry preserve reader text, with UX-02 recovery behavior covered end to end.
-- [ ] Export contains the selected entries and attribution, correctly escapes content, and excludes other readers' data.
-- [ ] Shared-book ownership changes and access revocation have an explicit retention/access policy consistent with existing privacy boundaries.
+- [x] A reader can highlight, write a reflection, reopen the book, find both in the notebook, and jump to the correct passage.
+- [x] Repeated quotations retain distinct anchors; missing anchors show an honest unavailable state rather than opening an unrelated passage.
+- [x] Saved explanations remain readable when the provider is unavailable or its cache changes.
+- [x] Editing and retry preserve reader text, with UX-02 recovery behavior covered end to end.
+- [x] Export contains the selected entries and attribution, correctly escapes content, and excludes other readers' data.
+- [x] Shared-book ownership changes and access revocation have an explicit retention/access policy consistent with existing privacy boundaries. Unshare hides recipient entries and revokes access; reshare restores that reader's entries; removing the owner's book or profile removes the recipient copy.
 
 ### UX-06: Passage-grounded questions
 

@@ -262,10 +262,11 @@ Select a sentence or a paragraph, then choose what you want:
 | **In Bangla** (named after your language) | A faithful translation into your language, then a short explanation |
 | **Listen** | Reading aloud from that passage |
 | **Highlight** and its colours | The passage marked in yellow, green, blue or pink; **Highlight** uses the colour you picked last |
+| **Reflect** | Your own note attached to the selected passage |
 
 <table><tr><td><img src="docs/images/select-passage.webp" alt="A selected passage with the Explain, Example, In Bangla and Listen buttons, and the Highlight button with its four colours" width="900"></td></tr></table>
 
-The answer is pinned beside the paragraph like a teacher's note, and it stays there when you come back to the book.
+The answer is pinned beside the paragraph like a teacher's note. Choose **Save to notebook** on a completed explanation to keep its exact text for later, even if the AI helper is unavailable.
 Once DeepRead confirms **Notes saved**, these notes are kept with the book, so clearing your browser does not lose them and they show on your phone too.
 A book you already have open picks up notes made on another device when you come back to it, and every 30 seconds while it is on screen, so you never need to reload.
 Notes that were saved in a browser before are moved up automatically the next time you open that book.
@@ -283,6 +284,8 @@ To change a highlight's colour, select any part of it and pick another colour.
 Highlights are kept with the book like your notes, so they show on your other devices, work offline, and stay yours alone on a shared book.
 They never become cards in the margin and never ask the AI anything.
 The word card has the same Highlight row as the selection bar, so a single word or a short term can be highlighted too.
+
+Open **Notebook** in the reader toolbar to find your highlights, saved explanations, and reflections together. Search or filter by chapter, then use **Open source** to return to the exact passage without changing your saved reading place. You can edit or remove a reflection and undo a removal. Choose entries and **Export Markdown** to download only those entries, with the book, chapter, quotation, and source identified. A source that has changed or disappeared is shown as unavailable rather than taking you to a different passage. Older question notes remain readable; opening one does not silently regenerate or save an answer.
 
 ### 6. Before and after a chapter
 
@@ -361,6 +364,7 @@ Nothing is copied, and they cannot change it, rename it or pass it on.
 
 Turn the switch off, or press the cross beside their name on the **Sharing** page, and the book leaves their shelf at once.
 What they kept of it waits out of sight, so sharing it again lets them carry on where they were.
+Their notebook is private too: unsharing hides it and revokes access immediately, while sharing the same book again restores their own entries. Removing the owner's book or deleting a profile ends the share and removes the recipient's retained copy, including notebook entries.
 The **Sharing** page, in the profile menu, lists the books you share and with whom, and the books shared with you.
 
 <table><tr><td><img src="docs/images/sharing.webp" alt="The Sharing page: a book shared with Nadia, with a cross to stop sharing and a button to share with more people" width="900"></td></tr></table>
@@ -964,7 +968,7 @@ Removing a book, or a profile, ends the shares that go with it and clears what o
 Notes are kept one change at a time.
 [`shared/notes.ts`](shared/notes.ts) defines a `NoteChange` (`put` or `remove`) and `applyNoteChange`, and the server and the browser both apply each change with that one function, so what the reader sees is what is kept.
 A highlight is a note too: `mode: "highlight"` with a `color` (`yellow`, `green`, `blue` or `pink`) and the `offset` of its words in the paragraph, so a word that appears twice is marked in the right place.
-The server refuses an unknown colour, a colour on a question, and a highlight without one.
+A reflection is `mode: "reflection"` with its own text and an exact source offset. A question may carry an exact offset and an explicitly saved answer snapshot. The server bounds personal writing and saved answers, and refuses unknown colours, a colour on a question, and a highlight without one.
 [`src/reader/useNoteMarks.ts`](src/reader/useNoteMarks.ts) paints each colour with the browser's CSS Custom Highlight API, so the text itself is never changed.
 The API takes them as `GET /api/books/:id/notes`, `PUT /api/books/:id/notes/:noteId` with `{ note, before }`, and `DELETE /api/books/:id/notes/:noteId`.
 The server applies each change inside the book's queue, so two devices never overwrite each other.

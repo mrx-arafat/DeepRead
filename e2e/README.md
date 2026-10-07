@@ -121,6 +121,29 @@ playwright-cli -s=deepread-cross-tab-check open http://127.0.0.1:5184
 playwright-cli -s=deepread-cross-tab-check run-code --filename e2e/note-cross-tab.js
 ```
 
+`ux01-controls-matrix.js` checks phone and desktop settings, help, selection, listening, three themes, and focus. `ux01-position-matrix.js` checks logical position through font, size, measure, layout, resize, and reload. Both need the isolated Gutenberg fixture; they change its reading place and browser preferences. Browser viewport emulation does not certify a physical phone keyboard or touch handles:
+
+```bash
+playwright-cli -s=deepread-ux01-check open http://127.0.0.1:5184
+playwright-cli -s=deepread-ux01-check run-code --filename e2e/ux01-controls-matrix.js
+playwright-cli -s=deepread-ux01-position-check open http://127.0.0.1:5184
+playwright-cli -s=deepread-ux01-position-check run-code --filename e2e/ux01-position-matrix.js
+```
+
+`ux02-profile-recovery.js` needs a fresh profile-enabled local instance with `ADMIN_NAME=Owner`, `ADMIN_PASSKEY=ux02-profile-test-code-2026`, and the Gutenberg fixture. It creates a second reader and checks profile isolation, session expiry, retry without duplication, and unavailable browser storage. Use a separate named browser session and scratch data directory.
+
+`notebook.js` needs a fresh, profile-free fixture instance. It creates a reflection at a repeated quotation, reloads, filters, edits through an interrupted save and retry, exports selected entries, opens the exact source, then removes and undoes. `notebook-saved-answer.js` also needs a fresh profile-free fixture instance; it mocks an AI stream, saves the completed answer, then verifies reload and export while all later AI requests fail. Run these on separate scratch instances so each sees one clean book:
+
+```bash
+playwright-cli -s=deepread-notebook-check open http://127.0.0.1:5184
+playwright-cli -s=deepread-notebook-check run-code --filename e2e/notebook.js
+playwright-cli -s=deepread-answer-check open http://127.0.0.1:5184
+playwright-cli -s=deepread-answer-check run-code --filename e2e/notebook-saved-answer.js
+```
+
+`notebook-shared.js` needs a fresh profile-enabled local instance with `ADMIN_NAME=Owner`, `ADMIN_PASSKEY=shared-notebook-test-code-2026`, and the Gutenberg fixture. It verifies private notebook content and export, revoked access after unshare, and restoration after reshare. Use a separate scratch instance and browser session.
+`notebook-missing-source.js` needs a fresh profile-free fixture instance. It changes a test reflection's source offset to a stale value, then confirms **Open passage** reports the missing source without jumping or changing progress.
+
 `library-shelf-matrix.js` needs a fresh empty local shelf and distinct PDFs at `/tmp/deepread-shelf-matrix-second.pdf` and `/tmp/deepread-shelf-matrix-third.pdf`. Make them with `pdfunite` using two and three copies of `e2e/fixtures/problems-of-philosophy.pdf`, respectively. It verifies empty upload, one-book Continue and actions, two-book search and status filtering, pin/unpin focus, reload, and actions on all three rows:
 
 ```bash
