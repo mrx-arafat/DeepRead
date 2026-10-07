@@ -49,10 +49,13 @@ async (page) => {
   assert(quote.startsWith('the table') && quote.length === 60, 'Selected the wrong repeated passage');
   await page.getByRole('toolbar', { name: 'Explain, highlight, or reflect on selected text' }).getByRole('button', { name: 'Reflect' }).click();
   const notebook = page.getByRole('dialog', { name: 'Notebook' });
+  // One entry open in full; the list beside it shows each entry's words again as a preview.
+  const noteView = notebook.getByRole('region', { name: 'Selected note' });
+  const openEntry = async (text) => notebook.getByRole('region', { name: 'Notebook entries' }).getByRole('button', { name: new RegExp(text) }).click();
   await notebook.waitFor();
   await notebook.getByRole('textbox', { name: 'Your reflection' }).fill('First thought about this precise table.');
   await notebook.getByRole('button', { name: 'Save reflection' }).click();
-  await notebook.getByText('First thought about this precise table.').waitFor();
+  await noteView.getByText('First thought about this precise table.').waitFor();
   await notebook.getByRole('status', { name: 'Notes saved', exact: true }).waitFor();
   let reflections = (await notes()).filter(note => note.mode === 'reflection');
   assert(reflections.length === 1 && reflections[0].quote === quote && reflections[0].blockId === 'c3-b4', 'Reflection must persist on the selected block');
@@ -72,7 +75,8 @@ async (page) => {
   await notebook.getByText('No entries match these filters.').waitFor();
   await notebook.getByRole('combobox', { name: 'Filter by chapter' }).selectOption('c3');
   await notebook.getByText('1 entry').waitFor();
-  await notebook.getByRole('button', { name: 'Edit' }).click();
+  await openEntry('First thought about this precise table');
+  await noteView.getByRole('button', { name: 'Edit' }).click();
   await notebook.getByRole('textbox', { name: 'Your reflection' }).fill('Revised thought about the same occurrence.');
   const noteRoute = `**/api/books/${book.id}/notes/*`;
   await page.route(noteRoute, route => route.request().method() === 'PUT' ? route.abort() : route.continue());
@@ -80,7 +84,7 @@ async (page) => {
   await notebook.getByRole('status', { name: 'Waiting for connection' }).waitFor();
   assert((await notes()).find(note => note.id === reflectionId)?.text === 'First thought about this precise table.', 'Failed edit must not change the server copy');
   await notebook.getByRole('searchbox', { name: 'Search notebook' }).fill('');
-  await notebook.getByText('Revised thought about the same occurrence.').waitFor();
+  await noteView.getByText('Revised thought about the same occurrence.').waitFor();
   await page.unroute(noteRoute);
   await notebook.getByRole('status', { name: 'Waiting for connection' }).getByRole('button', { name: 'Retry save' }).click();
   await notebook.getByRole('status', { name: 'Notes saved', exact: true }).waitFor();
@@ -89,13 +93,13 @@ async (page) => {
 
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    notebook.getByRole('button', { name: 'Export selected' }).click(),
+    notebook.getByRole('button', { name: /^Export / }).click(),
   ]);
   assert(download.suggestedFilename().endsWith('-notebook.md'), 'Export should download Markdown');
   await download.saveAs('.playwright-cli/notebook-export.md');
 
   const beforeVisit = await progress();
-  await notebook.getByRole('button', { name: 'Open passage' }).click();
+  await noteView.getByRole('button', { name: 'Open passage' }).click();
   await page.getByRole('region', { name: 'Source visit' }).waitFor();
   assert(await notebook.isHidden(), 'Open passage should dismiss the notebook');
   assert((await progress()).blockId === beforeVisit.blockId && (await progress()).offset === beforeVisit.offset, 'Visiting the source must not overwrite reading progress');
@@ -118,7 +122,8 @@ async (page) => {
   assert(JSON.stringify(await progress()) === JSON.stringify(beforeVisit), 'Return must preserve the reading progress from before the source visit');
 
   await page.getByRole('button', { name: 'Notebook' }).click();
-  await notebook.getByRole('button', { name: 'Remove reflection' }).click();
+  await openEntry('Revised thought about the same occurrence');
+  await noteView.getByRole('button', { name: 'Remove reflection' }).click();
   await notebook.getByText('Entry removed.').waitFor();
   await notebook.getByRole('button', { name: 'Undo' }).click();
   await notebook.getByText('Revised thought about the same occurrence.').waitFor();

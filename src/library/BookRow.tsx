@@ -76,6 +76,13 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
       {/* The tooltip carries the whole title: a long one is cut short on the cover. */}
       <Link ref={link} href={`/book/${book.id}`} className="shelf-link" title={book.title}>
         <Cover book={book} />
+        {/* Who shared it, as a small picture in the cover's corner: a line of words under it would push the book's
+            status menu out of line with its neighbours'. The sentence for a screen reader is with the book's words. */}
+        {sharedBy && (
+          <span className="shelf-shared" title={`Shared by ${sharedBy.name}`}>
+            <Avatar profile={sharedBy} size={26} />
+          </span>
+        )}
       </Link>
       {/* Always there, so books that have not been started line up with the ones that have. */}
       <span className="read-bar" aria-hidden data-empty={book.progress === null || undefined}>
@@ -104,15 +111,7 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
             {note.detail && <span>{note.detail}</span>}
             {/* The chapter is on the Continue card for the book read last; every book tells a screen reader where it stopped. */}
             {book.progress && <span className="visually-hidden">Stopped in {book.progress.chapterTitle}</span>}
-            {sharedBy && (
-              <span className="shelf-from">
-                <Avatar profile={sharedBy} size={18} />
-                <span>
-                  <span className="visually-hidden">{sharedBy.name} shared this book with you. </span>
-                  <span aria-hidden>From {sharedBy.name}</span>
-                </span>
-              </span>
-            )}
+            {sharedBy && <span className="visually-hidden">{sharedBy.name} shared this book with you.</span>}
           </p>
           <BookMenu
             title={book.title}

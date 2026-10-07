@@ -48,7 +48,7 @@ export function useAiStatus(): AiStatus | null {
   return belongsTo === reader ? known : null;
 }
 
-/** "Arafat's Claude Code" for a reader the admin gave a helper; null otherwise. */
+/** The selection bar's thank-you line for a reader the admin gave a helper; null otherwise. */
 export function useHelperCredit(): string | null {
   const { info } = useSession();
   const isReader = info?.mode === "profiles" && info.session !== null && !(info.session.admin && !info.session.impersonatedBy);

@@ -61,10 +61,14 @@ async (page) => {
   await page.getByRole('button', { name: 'Notebook' }).click();
   const notebook = page.getByRole('dialog', { name: 'Notebook' });
   await notebook.getByText(answerText).waitFor();
-  await notebook.getByText('Saved answer').waitFor();
+  await notebook.getByText('Explanation', { exact: true }).waitFor();
+  await notebook.getByRole('region', { name: 'Notebook entries' }).getByRole('button', { name: /Explanation/ }).click();
+  const noteView = notebook.getByRole('region', { name: 'Selected note' });
+  await noteView.getByText(answerText).waitFor();
+  assert(!(await noteView.textContent()).includes('**'), 'The open answer must be formatted, not show Markdown marks');
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    notebook.getByRole('button', { name: 'Export selected' }).click(),
+    notebook.getByRole('button', { name: /^Export / }).click(),
   ]);
   assert(download.suggestedFilename().endsWith('-notebook.md'), 'Notebook export must be Markdown');
   await download.saveAs('.playwright-cli/notebook-saved-answer-export.md');

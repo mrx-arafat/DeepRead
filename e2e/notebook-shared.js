@@ -46,7 +46,7 @@ async (page) => {
     const notebook = page.getByRole('dialog', { name: 'Notebook' });
     await notebook.getByRole('textbox', { name: 'Your reflection' }).fill(text);
     await notebook.getByRole('button', { name: 'Save reflection' }).click();
-    await notebook.getByText(text).waitFor();
+    await notebook.getByRole('region', { name: 'Selected note' }).getByText(text).waitFor();
     await notebook.getByRole('status', { name: 'Notes saved', exact: true }).waitFor();
     return { notebook, quote };
   };
@@ -61,7 +61,7 @@ async (page) => {
     });
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      notebook.getByRole('button', { name: 'Export selected' }).click(),
+      notebook.getByRole('button', { name: /^Export / }).click(),
     ]);
     assert(download.suggestedFilename().endsWith('-notebook.md'), 'Notebook export should download Markdown');
     await page.waitForFunction(() => window.__notebookExports.length === 1);

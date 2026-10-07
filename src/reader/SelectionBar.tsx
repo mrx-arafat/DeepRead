@@ -1,5 +1,5 @@
 import { autoUpdate, flip, inline, offset, shift, useFloating } from "@floating-ui/react";
-import { HandHeart, Headphones, PencilLine } from "lucide-react";
+import { Gift, Headphones, PencilLine } from "lucide-react";
 import { useLayoutEffect, type KeyboardEvent } from "react";
 import { LANGUAGES, type ExplainMode, type LangCode } from "../../shared/types.ts";
 import { useHelperCredit } from "./aiStatusStore.ts";
@@ -91,7 +91,7 @@ export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListe
       {highlight && <HighlightGroup {...highlight} />}
       {credit && (
         <p className="selection-credit">
-          <HandHeart size={13} aria-hidden /> With {credit}, shared with you
+          <Gift size={13} aria-hidden /> {credit}
         </p>
       )}
     </div>

@@ -1,4 +1,4 @@
-import { BookmarkPlus, X } from "lucide-react";
+import { BookmarkCheck, BookmarkPlus, X } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { LANGUAGES, MAX_SAVED_ANSWER_CHARS, type ExplainMode, type ExplainRequest, type LangCode, type QuestionNote } from "../../shared/types.ts";
 import { parseSections, RichText } from "./RichText.tsx";
@@ -39,6 +39,8 @@ export function NoteCard({ note, bookId, latest, onClose, onSaveAnswer }: Props)
   const text = note.savedAnswer ?? answer.text;
   // Folding only hides something when the answer has more than one part.
   const more = parseSections(text).length > 1;
+  const saved = Boolean(note.savedAnswer);
+  const canSave = !saved && answer.status === "done" && Boolean(answer.text.trim()) && answer.text.length <= MAX_SAVED_ANSWER_CHARS;
   const panelRef = useRef<HTMLElement>(null);
 
   useLayoutEffect(() => {
@@ -93,18 +95,6 @@ export function NoteCard({ note, bookId, latest, onClose, onSaveAnswer }: Props)
           )
         )}
       </div>
-      {note.savedAnswer ? (
-        <p className="note-saved">Saved to notebook</p>
-      ) : answer.status === "done" && answer.text.trim() && answer.text.length <= MAX_SAVED_ANSWER_CHARS ? (
-        <button type="button" className="quiet-button" onClick={() => onSaveAnswer(note, answer.text)}>
-          <BookmarkPlus size={16} aria-hidden /> Save to notebook
-        </button>
-      ) : null}
-      {more && (
-        <button type="button" className="link-button note-more" aria-expanded={open} onClick={() => setUnfolded(!open)}>
-          {open ? "Show less" : "Show more"}
-        </button>
-      )}
       {!note.savedAnswer && answer.status === "error" && (
         <p className="inline-error">
           {answer.error}{" "}
@@ -112,6 +102,25 @@ export function NoteCard({ note, bookId, latest, onClose, onSaveAnswer }: Props)
             Try again
           </button>
         </p>
+      )}
+      {(saved || canSave || more) && (
+        // Below the answer, never over it: the answer scrolls on its own and fades out above this line.
+        <footer className="note-foot">
+          {saved ? (
+            <p className="note-saved">
+              <BookmarkCheck size={16} aria-hidden /> Saved to notebook
+            </p>
+          ) : canSave ? (
+            <button type="button" className="quiet-button note-save" onClick={() => onSaveAnswer(note, answer.text)}>
+              <BookmarkPlus size={16} aria-hidden /> Save to notebook
+            </button>
+          ) : null}
+          {more && (
+            <button type="button" className="link-button note-more" aria-expanded={open} onClick={() => setUnfolded(!open)}>
+              {open ? "Show less" : "Show more"}
+            </button>
+          )}
+        </footer>
       )}
     </aside>
   );

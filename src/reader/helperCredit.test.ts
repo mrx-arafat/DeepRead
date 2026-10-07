@@ -5,10 +5,10 @@ import { helperCredit } from "./helperCredit.ts";
 const status = (active: AiStatus["active"], owner?: string): AiStatus => ({ owner, active, providers: [] });
 
 describe("helperCredit", () => {
-  it("should name whose helper answers a reader, so a gift is seen as one", () => {
-    expect(helperCredit(status("claude", "Arafat"), true)).toBe("Arafat's Claude Code");
-    expect(helperCredit(status("codex", "Arafat"), true)).toBe("Arafat's Codex");
-    expect(helperCredit(status("openrouter", "Arafat"), true)).toBe("Arafat's API model");
+  it("should tell a reader their AI help is a gift from the admin, without naming anyone or anything", () => {
+    for (const active of ["claude", "codex", "openrouter"] as const) {
+      expect(helperCredit(status(active, "Arafat"), true)).toBe("AI help is on the house, from your admin");
+    }
   });
 
   it("should say nothing to the admin, in a library without profiles, or while nothing answers", () => {

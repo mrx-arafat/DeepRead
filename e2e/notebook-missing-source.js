@@ -54,6 +54,7 @@ async (page) => {
     await page.reload();
     await page.getByRole('button', { name: 'Notebook' }).click();
     await notebook.getByText('A thought attached to this passage.').waitFor();
+    await notebook.getByRole('region', { name: 'Notebook entries' }).getByRole('button', { name: /A thought attached to this passage/ }).click();
     const before = { url: page.url(), progress: await progress(), scrollY: await page.evaluate(() => window.scrollY) };
     await notebook.getByRole('button', { name: 'Open passage' }).click();
     await notebook.getByRole('alert').getByText('This passage is no longer available in the book.').waitFor();

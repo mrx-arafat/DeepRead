@@ -223,7 +223,7 @@ Jumping ahead from the chapter list moves your place, and the percentage with it
 The **...** button under a cover lets you pin the book to the top, edit its title and author, share it with other profiles (see [Share a book](#11-share-a-book)), or remove it.
 **Pin to top** moves a book into a **Pinned** row above **Your books**, the one you pinned last first, and **Unpin** puts it back.
 Pins are yours alone, even on a book someone shared with you, and they follow you to any device that opens this DeepRead.
-A book someone shared with you has "From" and their name under it, and only lets you take it off your shelf.
+A book someone shared with you shows their picture in a small circle at the top corner of its cover (point at it to see their name), and only lets you take it off your shelf.
 
 <table><tr><td><img src="docs/images/library.webp" alt="The library with a Continue reading card and a shelf of book covers" width="900"></td></tr></table>
 
@@ -285,7 +285,14 @@ Highlights are kept with the book like your notes, so they show on your other de
 They never become cards in the margin and never ask the AI anything.
 The word card has the same Highlight row as the selection bar, so a single word or a short term can be highlighted too.
 
-Open **Notebook** in the reader toolbar to find your highlights, saved explanations, and reflections together. Search or filter by chapter, then use **Open source** to return to the exact passage without changing your saved reading place. You can edit or remove a reflection and undo a removal. Choose entries and **Export Markdown** to download only those entries, with the book, chapter, quotation, and source identified. A source that has changed or disappeared is shown as unavailable rather than taking you to a different passage. Older question notes remain readable; opening one does not silently regenerate or save an answer.
+Open **Notebook** in the reader toolbar to find your highlights, saved explanations, and reflections together.
+They are listed by chapter, in the order they come in the book, each as one short row: what it is, the passage, and the first line of what you kept.
+Show only **Highlights**, **Answers** or **Reflections**, search, or pick a chapter to narrow the list.
+Choose a row to read that entry in full: a saved answer is laid out as it was in the margin, beside the list on a wide screen and in its place on a phone.
+From there, **Open passage** returns to the exact passage without changing your saved reading place, and you can edit or remove a reflection and undo a removal.
+**Export all** downloads the notebook as Markdown, with the book, chapter, quotation, and source identified; choose **Select** first to export only some entries.
+A source that has changed or disappeared is shown as unavailable rather than taking you to a different passage.
+Older question notes remain readable; opening one does not silently regenerate or save an answer.
 
 ### 6. Before and after a chapter
 
@@ -357,7 +364,7 @@ Open the **...** menu under its cover, choose **Share**, and turn on the switch 
 
 <table><tr><td><img src="docs/images/share-dialog.webp" alt="The Share dialog for a book, with a switch for each other profile: one is on and says Can read it, the other is off" width="900"></td></tr></table>
 
-The book appears on their shelf marked "From" your name, and they read it with their own place, notes and saved answers.
+The book appears on their shelf with your picture in the corner of its cover, and they read it with their own place, notes and saved answers.
 Nothing is copied, and they cannot change it, rename it or pass it on.
 
 <table><tr><td><img src="docs/images/shared-shelf.webp" alt="Another profile's library: the shared book on the shelf with its own progress, marked From Arafat" width="900"></td></tr></table>
@@ -781,7 +788,7 @@ A helper that this server does not have cannot be switched on.
 Taking one back takes effect at once, and a reader who was using it moves to another they have, if they have one.
 The admin's own profile can use everything that works.
 
-When a reader selects a passage to explain, the bar over it says whose AI it is: "With Arafat's API model, shared with you".
+When a reader selects a passage to explain, the bar over it says the help is a gift: "AI help is on the house, from your admin".
 Without profiles there is no admin to ask: whoever reads uses what is on the computer.
 
 ### The admin dashboard

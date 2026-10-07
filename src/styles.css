@@ -895,6 +895,7 @@ select {
 
 /* The whole cover is the link. Its rounded corners are the cover's, so the focus ring follows the book. */
 .shelf-link {
+  position: relative;
   display: block;
   border-radius: 2px 5px 5px 2px;
   color: inherit;
@@ -973,21 +974,25 @@ select {
   color: var(--pen);
 }
 
+/* At the foot of the book, so every book's menu in a row lines up, whether or not a "From" line sits above it. */
 .shelf-status {
-  margin-top: 0.25rem;
+  margin-top: auto;
+  padding-top: 0.25rem;
 }
 
+/* Only the colour changes from the plain select: the shorthand would drop the chevron that says it is a menu. */
 .shelf-status select {
   width: 100%;
   min-width: 0;
   min-height: 2.75rem;
-  padding: 0.375rem 0.5rem;
+  padding: 0.375rem 2rem 0.375rem 0.625rem;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: var(--raised);
+  background-color: var(--raised);
   color: var(--ink);
   font: inherit;
   font-size: 0.875rem;
+  cursor: pointer;
 }
 
 .shelf-status select:disabled {
@@ -1220,7 +1225,8 @@ select {
   margin-top: 1.75rem;
 }
 
-.library-status-filters button {
+.library-status-filters button,
+.notebook__kinds button {
   min-height: 2.75rem;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--rule);
@@ -1231,13 +1237,15 @@ select {
   cursor: pointer;
 }
 
-.library-status-filters button[aria-pressed="true"] {
+.library-status-filters button[aria-pressed="true"],
+.notebook__kinds button[aria-pressed="true"] {
   border-color: var(--pen);
   background: var(--pen-wash);
   color: var(--pen);
 }
 
-.library-status-filters button span {
+.library-status-filters button span,
+.notebook__kinds button span {
   margin-left: 0.25rem;
   font-variant-numeric: tabular-nums;
 }
@@ -2213,7 +2221,7 @@ li:not(.toc-matter) + .toc-matter {
 
 .notebook[open] { display: flex; flex-direction: column; }
 .notebook::backdrop { background: rgb(0 0 0 / 0.35); }
-.notebook__head, .notebook__tools, .notebook__list-head, .notebook__editor-head, .notebook__editor-actions, .notebook__actions { display: flex; align-items: center; gap: 0.5rem; }
+.notebook__head, .notebook__tools, .notebook__list-head, .notebook__editor-head, .notebook__editor-actions { display: flex; align-items: center; gap: 0.5rem; }
 .notebook__head { justify-content: space-between; min-height: var(--topbar); padding: 0.5rem 0.75rem 0.5rem 1.25rem; border-bottom: 1px solid var(--rule); }
 .notebook__head h2 { font-size: 1rem; font-weight: 600; }
 .notebook__head p { color: var(--ink-soft); font-size: 0.8125rem; overflow-wrap: anywhere; }
@@ -2233,34 +2241,77 @@ li:not(.toc-matter) + .toc-matter {
 .notebook__editor { display: grid; gap: 0.5rem; padding: 0.75rem 1.25rem; border-bottom: 1px solid var(--rule); }
 .notebook__editor-head { justify-content: space-between; }
 .notebook__editor h3 { font-size: 0.9375rem; }
-.notebook__editor blockquote, .notebook__entry blockquote { margin: 0; overflow-wrap: anywhere; font-family: var(--font-book); line-height: 1.5; }
+.notebook__editor blockquote { margin: 0; overflow-wrap: anywhere; font-family: var(--font-book); line-height: 1.5; }
 .notebook__editor blockquote { max-height: 4.5rem; overflow: auto; color: var(--ink-soft); }
 .notebook__editor label { font-size: 0.875rem; font-weight: 600; }
 .notebook__editor textarea { width: 100%; min-height: 5rem; resize: vertical; padding: 0.65rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--raised); color: var(--ink); font: inherit; }
 .notebook__editor-actions { justify-content: space-between; color: var(--ink-soft); font-size: 0.8125rem; }
-.notebook__body { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; }
-.notebook__list-head { justify-content: space-between; padding: 0.5rem 1.25rem; color: var(--ink-soft); font-size: 0.875rem; }
+/* The list and the open entry: one at a time on a phone, side by side once there is room for both. */
+.notebook__panes { display: grid; flex: 1; min-height: 0; }
+.notebook__list, .notebook__note { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.notebook__list:focus, .notebook__note:focus { outline: none; }
+.notebook[data-view="note"] :is(.notebook__list, .notebook__filters, .notebook__tools), .notebook[data-view="list"] .notebook__note { display: none; }
+/* What to show, how many that is, and choosing entries to export: one bar over the list and the open entry. */
+.notebook__filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; padding: 0.625rem 1.25rem; border-bottom: 1px solid var(--rule); }
+.notebook__kinds { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+.notebook__kinds button { min-height: 2.25rem; padding: 0.25rem 0.625rem; font-size: 0.875rem; white-space: nowrap; }
+.notebook__list-head { gap: 1rem; color: var(--ink-soft); font-size: 0.875rem; }
 .notebook__list-head .link-button { min-height: 2.75rem; }
 .notebook__empty { padding: 1.5rem 1.25rem; color: var(--ink-soft); }
-.notebook__entries { list-style: none; padding: 0; margin: 0; }
-.notebook__entry { display: flex; gap: 0.75rem; padding: 0.9rem 1.25rem; border-top: 1px solid var(--rule); }
-.notebook__select { display: grid; place-items: start center; width: 2.75rem; min-height: 2.75rem; flex: none; padding-top: 0.75rem; }
+/* Each chapter's title stays in sight while its entries scroll under it. */
+.notebook__group-title { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 1.25rem; border-top: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); font-size: 0.8125rem; font-weight: 700; line-height: 1.4; }
+.notebook__group-title span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notebook__group-title span:last-child { flex: none; font-variant-numeric: tabular-nums; font-weight: 400; }
+.notebook__entries { display: grid; gap: 0.125rem; list-style: none; margin: 0; padding: 0.25rem 0.5rem 0.75rem 0.25rem; }
+.notebook__entry { display: flex; align-items: flex-start; }
+.notebook__select { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; flex: none; margin-top: 0.125rem; }
 .notebook__select input { width: 1.125rem; height: 1.125rem; accent-color: var(--pen); }
-.notebook__content { display: grid; gap: 0.5rem; min-width: 0; flex: 1; }
-.notebook__meta { display: flex; flex-wrap: wrap; gap: 0.3rem 0.75rem; color: var(--ink-soft); font-size: 0.8125rem; }
-.notebook__meta span:first-child { color: var(--pen); font-weight: 600; }
-.notebook__words { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
-.notebook__actions { flex-wrap: wrap; }
-.notebook__actions .quiet-button, .notebook__actions .icon-button { min-height: 2.75rem; }
-.notebook__actions .icon-button { width: 2.75rem; margin-left: auto; }
+/* A row says what the entry is and which words it is about; the entry itself opens beside the list, or instead of it. */
+.notebook__row { display: grid; gap: 0.25rem; flex: 1; min-width: 0; padding: 0.625rem 0.75rem; border: 0; border-radius: var(--radius); background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.notebook__row:hover { background: var(--wash); }
+.notebook__row[aria-current="true"] { background: var(--pen-wash); }
+.notebook__row:focus-visible { outline: 2px solid var(--pen); outline-offset: -2px; }
+.notebook__quote, .notebook__preview { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; }
+.notebook__quote { font-family: var(--font-book); line-height: 1.45; -webkit-line-clamp: 2; line-clamp: 2; }
+.notebook__preview { color: var(--ink-soft); font-size: 0.875rem; line-height: 1.45; -webkit-line-clamp: 1; line-clamp: 1; }
+.notebook-tag { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--pen); font-size: 0.75rem; font-weight: 700; line-height: 1.3; }
+.notebook-swatch { width: 0.75rem; height: 0.75rem; flex: none; border-radius: 50%; background: var(--hl-yellow); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 30%, transparent); }
+.notebook-swatch[data-color="green"], .notebook-note__quote[data-color="green"] { background: var(--hl-green); }
+.notebook-swatch[data-color="blue"], .notebook-note__quote[data-color="blue"] { background: var(--hl-blue); }
+.notebook-swatch[data-color="pink"], .notebook-note__quote[data-color="pink"] { background: var(--hl-pink); }
+/* The open entry, read like a page: the passage, then the words kept with it, formatted as they were in the margin. */
+.notebook__note { padding: 1rem 1.25rem 2rem; }
+.notebook-note { --part-rule: var(--rule); display: grid; gap: 1rem; max-width: 42rem; }
+.notebook-note__back { display: inline-flex; align-items: center; gap: 0.375rem; justify-self: start; min-height: 2.75rem; }
+.notebook-note__head .notebook-tag { font-size: 0.875rem; }
+.notebook-note__head p { margin-top: 0.25rem; color: var(--ink-soft); font-size: 0.875rem; overflow-wrap: anywhere; }
+.notebook-note__quote { margin: 0; padding: 0.125rem 0 0.125rem 0.875rem; border-left: 1px solid var(--pen); color: var(--ink-soft); font-family: var(--font-book); font-size: 1.0625rem; font-style: italic; line-height: 1.6; overflow-wrap: anywhere; }
+.notebook-note__quote[data-color] { padding: 0.625rem 0.875rem; border-left: 0; border-radius: var(--radius); background: var(--hl-yellow); color: var(--ink); font-style: normal; }
+.notebook-note__words { font-size: 0.9375rem; line-height: 1.65; overflow-wrap: anywhere; }
+.notebook-note__reflection { display: grid; gap: 0.75rem; white-space: pre-wrap; }
+.notebook-note__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--rule); }
+.notebook-note__actions .quiet-button, .notebook-note__actions .icon-button { min-height: 2.75rem; }
+.notebook-note__actions .icon-button { width: 2.75rem; margin-left: auto; }
+.notebook__placeholder { display: grid; place-items: center; align-content: center; gap: 0.75rem; height: 100%; min-height: 12rem; padding: 2rem; color: var(--ink-soft); text-align: center; }
+@media (min-width: 52rem) {
+  .notebook { width: min(64rem, calc(100vw - 3rem)); }
+  .notebook__panes { grid-template-columns: minmax(19rem, 23rem) minmax(0, 1fr); }
+  .notebook[data-view] .notebook__list, .notebook[data-view] .notebook__note { display: block; }
+  .notebook[data-view] :is(.notebook__filters, .notebook__tools) { display: flex; }
+  .notebook__list { border-right: 1px solid var(--rule); }
+  .notebook__note { padding: 1.5rem 2rem 2.5rem; }
+  .notebook-note__back { display: none; }
+}
 @media (max-width: 30rem) {
   .notebook { width: 100vw; height: 100dvh; border-radius: 0; }
   .notebook__tools { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .notebook__search { grid-column: 1 / -1; }
   .notebook__chapter, .notebook__export { min-width: 0; width: 100%; }
   .notebook__export { justify-content: center; padding: 0 0.4rem; font-size: 0.875rem; }
-  .notebook__entry { padding-inline: 0.75rem; gap: 0.25rem; }
-  .notebook__list-head, .notebook__sync, .notebook__editor, .notebook__undo { padding-inline: 0.75rem; }
+  .notebook__filters, .notebook__group-title, .notebook__sync, .notebook__editor, .notebook__undo, .notebook__note { padding-inline: 0.75rem; }
+  .notebook__entries { padding-inline: 0 0.25rem; }
+  .notebook__kinds { gap: 0.25rem; }
+  .notebook__kinds button { min-height: 2.75rem; padding-inline: 0.5rem; }
 }
 
 @media (max-width: 30rem) {
@@ -2833,6 +2884,40 @@ h5[data-block] {
   color: var(--ink-soft);
 }
 
+/* What to do with the answer, on its own line under it: keep it on the left, fold it on the right. */
+.note-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--part-rule);
+}
+
+.note-save {
+  background: var(--paper);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.note-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 2.25rem;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+.note-foot .note-more {
+  margin-left: auto;
+}
+
+/* Under its paragraph a card never folds (see .note-more), so a footer holding only that button would be an empty rule. */
+.note-foot:has(> .note-more:only-child) {
+  display: none;
+}
+
 /* The reader's own language is set a little larger: Bangla letterforms need more room than Latin ones. */
 .note-native .rich p {
   font-size: 1rem;
@@ -2916,8 +3001,11 @@ h5[data-block] {
 
   .note-more {
     display: block;
-    margin-top: 0.75rem;
     font-size: 0.875rem;
+  }
+
+  .note-foot:has(> .note-more:only-child) {
+    display: flex;
   }
 
   /* In the margin, level with the first paragraph (which starts 2.5rem below what comes before it). */
@@ -3128,8 +3216,7 @@ h5[data-block] {
   background-clip: content-box;
 }
 
-.aid:not([data-closed])::after,
-.note::after {
+.aid:not([data-closed])::after {
   content: "";
   position: absolute;
   right: 1rem;
@@ -3142,13 +3229,15 @@ h5[data-block] {
   pointer-events: none;
 }
 
-.note::after {
-  background: linear-gradient(to bottom, transparent, var(--pen-wash) 78%);
-}
-
 .aid:not([data-closed]) .aid-body,
 .note .note-body {
   padding-bottom: 1.25rem;
+}
+
+/* A card's answer fades out at its own bottom edge as well as its top, so a long answer that scrolls never looks cut
+   off by the footer under it. The fade is as tall as the padding, so the last line, scrolled to, is never faded. */
+.note .note-body {
+  mask-image: linear-gradient(to bottom, transparent, #000 0.75rem, #000 calc(100% - 1.25rem), transparent);
 }
 
 /* Not asked for yet: one slim line, the title and a quiet way to ask, so the text below starts near the top.
@@ -4646,19 +4735,35 @@ h5[data-block] {
 
 /* Sharing: a book one profile shares with another. */
 
-/* Under a shared book on the reader's shelf: who it is from, as small as the words above it. */
-.shelf-from {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  margin-top: 0.5rem;
-  min-width: 0;
+/* A book shared with the reader: who it is from, as a small round picture in the top corner of its cover. It rides up
+   with the cover on hover, and its ring of page colour keeps it apart from any cover under it. */
+.shelf-shared {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  transition: transform 0.15s ease-out;
 }
 
-.shelf-from > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.shelf-shared .avatar {
+  border-radius: 50%;
+}
+
+.shelf-link:hover .shelf-shared {
+  transform: translateY(-3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shelf-shared {
+    transition: none;
+  }
+
+  .shelf-link:hover .shelf-shared {
+    transform: none;
+  }
 }
 
 .share-intro {
