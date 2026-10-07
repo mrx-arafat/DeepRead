@@ -161,6 +161,10 @@ It was checked end to end against the real R2 bucket over the API (admin sign-in
 
 ## Next up
 
+The existing operational follow-ups below remain separate from the product work in
+[Reader experience roadmap](#reader-experience-roadmap).
+That roadmap records the October 2026 UX review and the desired direction; its unchecked items are not shipped features.
+
 Two small follow-ups from the profiles review, each about ten lines:
 
 1. **Lock IPv6 guessers by network, not by address.**
@@ -190,3 +194,419 @@ Before deploying: change `ADMIN_PASSKEY` to a long passphrase, rotate the R2 acc
 - Profiles: the wrong-code lock lives in the running server, so a restart clears it.
 - Profiles: codes set before the minimum rose to 6 characters still sign in until the admin changes them.
 - Profiles: the picker, the admin dashboard and photo upload have not been checked in a browser yet.
+
+## Reader experience roadmap
+
+Added 2026-10-07. Status: planned, not implemented.
+
+### Product goal
+
+Readers should feel that DeepRead is an amazing thing to have and the perfect place to read.
+The practical promise is: **a personal reading home that remembers your place, helps you understand, and keeps your thoughts.**
+The experience should make a reader feel "I can settle in here", "I can understand this book", and "My thoughts belong here".
+
+Build on the existing product rather than replacing its identity.
+Keep Literata and Atkinson, the quiet paper-and-ink surface, blue margin help, personal shelves, highlights, and listening.
+Creativity should come from thoughtful interactions and continuity between reading sessions.
+The book remains the primary experience; help appears when wanted and leaves the reader's place intact.
+
+### Evidence and starting point
+
+The review inspected the library, reader, settings, chapter aids, note model and synchronization, AI routes, styles, and this roadmap.
+Playwright was used with an isolated temporary local library and `e2e/fixtures/problems-of-philosophy.pdf`.
+Observed flows: PDF upload, reader opening, opening and closing settings, mobile chapter navigation, and returning to the library.
+Desktop screenshots used 1440 x 1000; mobile screenshots used 390 x 844.
+
+Findings that motivate this scope:
+
+- The reading surface is already calm and legible. Preserve this foundation.
+- In the inspected mobile chapter opening, the first paragraph began around 400 pixels down the screen, after chapter spacing, title, and preview. More text should be immediately available without hiding the title.
+- The Aa panel combines appearance, chapter notes, voice, language, and AI helper configuration. Separate these by reader intent.
+- A one-book library repeats the book in Continue reading and the shelf. Its supporting message emphasizes total time remaining rather than context for resuming.
+- Highlights and question notes already have source anchors, and progress includes a text offset. These are foundations for contextual resume and a notebook.
+- `server/routes-ai.ts` supports chapter quizzes and `/ask`, but `src/reader/ChapterAid.tsx` exposes preview and recap only. Backend capability is not a finished reader experience.
+- `shared/types.ts` currently defines notes as questions or highlights, not reader-authored reflections. Question notes retain requests while generated answers are cached separately.
+- `src/reader/noteSync.ts` queues writes, but its public contract does not expose saving, saved, offline, or failed states to the UI.
+
+This review did not validate AI answer quality, audible playback, authenticated profile/admin journeys, physical-device gestures, large-library performance, or offline recovery.
+Those remain verification work, not assumed successes. The observations are a baseline, not a full accessibility or regression certification.
+
+### Delivery sequence and tracking
+
+Relative effort describes scope, not a delivery-date commitment. Reassess after implementation planning.
+The first release should combine reading comfort with returning to a book; the notebook is the next defining product feature.
+
+| ID | Workstream | Order | Relative effort | Depends on |
+| --- | --- | --- | --- | --- |
+| UX-01 | Reading comfort and contextual controls | First release | Medium | Existing reader and settings |
+| UX-02 | Save confidence and recovery | First release foundation | Medium | Note sync and profile isolation |
+| UX-03 | Where I left off | First release | Medium | Stable position handling; UX-01 |
+| UX-04 | Library organization and finding passages | Shelf improvements first; book search next | Medium | UX-03 return navigation for search detours |
+| UX-05 | My edition: notebook and personal reflections | Second release | Medium to large | UX-02; reliable source navigation |
+| UX-06 | Passage-grounded questions | After notebook foundation | Medium to large | UX-05 persistence; validated source references |
+| UX-07 | Seamless reading and listening | After first release | Medium | UX-01 controls; position regression coverage |
+| UX-08 | Optional reflection and saved vocabulary | Later | Medium | UX-05; existing chapter aid and word lookup |
+| UX-09 | Connections between ideas | Exploratory, last | To assess | A useful notebook across multiple books |
+
+- [ ] UX-01: Reading comfort and contextual controls.
+- [ ] UX-02: Save confidence and recovery.
+- [ ] UX-03: Where I left off.
+- [ ] UX-04: Library organization and finding passages.
+- [ ] UX-05: My edition notebook and personal reflections.
+- [ ] UX-06: Passage-grounded questions.
+- [ ] UX-07: Seamless reading and listening.
+- [ ] UX-08: Optional reflection and saved vocabulary.
+- [ ] UX-09: Connections between ideas, subject to reader evidence.
+
+### Developer handoff: implement next
+
+**Start with UX-01, then UX-02 and UX-03. Do not implement this entire roadmap in one change.**
+The immediate deliverable is a more comfortable reader with reorganized controls, preserving current behavior and saved preferences.
+Ship that bounded improvement before adding notebook schemas, new AI interactions, quizzes, vocabulary, or connections.
+The full first-release experience is UX-01 through UX-03 plus the small shelf improvements in UX-04; book search and explicit reading statuses can follow separately.
+
+#### Step 1: establish the current baseline
+
+1. Read this section, applicable repository instructions, `package.json`, `e2e/README.md`, and the current git diff. Work on the active branch; obtain explicit authorization before git writes.
+2. Read `src/reader/ReaderPage.tsx`, `ReadingSettings.tsx`, `ChapterSection.tsx`, `ListenBar.tsx`, `src/prefs.ts`, and the relevant settings/chapter rules in `src/styles.css`.
+3. Read `src/reader/useReadingPosition.ts`, `usePages.ts`, and the existing reading journeys before touching layout. Page boundaries, lazy chapter loading, and saved positions depend on the rendered geometry.
+4. Start an isolated local instance following `e2e/README.md`, with unused ports and a scratch data directory. Explicitly prevent configured R2 storage or profiles from redirecting the test to real user data. Inspect inherited configuration without printing secrets.
+5. Upload the public-domain fixture through the UI. Capture current desktop and phone states for the shelf, chapter opening, Aa panel, contextual help, and player. Include Scroll and Pages and all themes in the verification matrix.
+6. Run `pnpm typecheck` and `pnpm test` and record the baseline. Do not treat the historical passing-test statement at the top of this document as current evidence.
+
+Before modifying a shared non-trivial function, inspect its callers and impact using the configured structural tooling.
+Do not broadly refactor the reader or split the whole stylesheet as preparation for this work.
+
+#### Step 2: implement UX-01 in reviewable slices
+
+**Slice A: chapter opening and mobile layout.**
+Adjust the relevant chapter heading, spacing, and preview presentation rules using the existing tokens and breakpoints.
+Keep the chapter title, preview action, reading footer, and page-turn controls available.
+Avoid hardcoding a height that only fits the fixture; verify long titles and larger text settings.
+Use before/after browser screenshots to establish the visual improvement, plus a journey assertion that the opening text and controls are usable.
+
+**Slice B: appearance versus reader preferences.**
+Keep Aa focused on appearance. Move language, AI helper configuration, and chapter-note preference to a discoverable reader-preferences surface.
+Move voice setup beside the listening controls, with a discoverable setup path even when playback is stopped or unavailable.
+Choose the smallest component split that expresses these responsibilities; do not introduce a new global settings framework.
+Preserve the existing preference storage key and values, helper access checks, request states, labels, and native focus/dismissal behavior.
+When an existing journey selector changes, update its journey in the same slice.
+
+**Slice C: contextual help and focus.**
+Exercise the existing word card, passage toolbar, margin explanation, and player together before changing their placement.
+Fix only demonstrated collisions or inconsistent dismissal in this slice.
+Keep passage anchoring, touch-selection clearance, Escape handling, and return focus intact.
+Do not introduce a second chat interface as part of help-panel cleanup.
+
+For behavior changes, extend existing behavioral tests or journeys and demonstrate the missing behavior before implementing it.
+For purely visual CSS changes, use browser evidence rather than tests that assert exact stylesheet text.
+After each slice, run focused checks, inspect the diff, and exercise the primary action in the real browser.
+
+Important existing mechanisms to preserve:
+
+- `ReadingSettings.tsx` routes reflowing changes through the existing `reflow`/`keepingLine` path. Moving controls must not bypass position preservation.
+- `useReadingPosition.ts` coordinates DOM measurement, `history.state`, URL chapter changes, debounced saving, page hiding, and unmount. A new UI overlay must not accidentally become reading progress.
+- `usePages.ts` depends on measured text geometry. A smaller chapter opening must remain coherent in Pages as well as Scroll.
+- The settings panel is currently a native popover. Retain native behavior where it fits instead of recreating dismissal and focus management unnecessarily.
+
+#### Step 3: make persistence trustworthy before expanding notes
+
+Implement UX-02 as its own change after the UX-01 baseline is stable.
+Start with existing `noteSync.test.ts` and the note API tests, then define observable sync states and demonstrate failure/retry behavior.
+Trace state through `noteSync.ts` and `useNotes.ts` to the UI; avoid optimistic "Saved" text before server acknowledgement.
+Reproduce the documented two-tab outbox risk before choosing a fix, and verify expired-session recovery and profile switching.
+Keep this change about saving and recovery; do not add personal-note fields yet.
+
+#### Step 4: implement a deterministic Where I left off
+
+Implement UX-03 without introducing new AI generation.
+Keep Continue as the direct path; add an optional context action that can be opened and dismissed without committing a new position.
+Use the saved chapter/block/offset to obtain preceding text through the existing authorized book/chapter access paths.
+Clamp and validate offsets, bound the excerpt, and never include text beyond the saved boundary.
+If a saved anchor cannot be resolved, show the known chapter and offer a clear fallback rather than pretending the exact passage was restored.
+
+Capture the return position before any source detour.
+Explicitly coordinate temporary navigation with the existing debounced save, `pagehide`, visibility-change, and cleanup saves in `useReadingPosition.ts`.
+A suppression of scroll events alone will not cover those save paths.
+Test closing the context, leaving during a detour, Back/Forward, and reopening the book so the original position is not overwritten unintentionally.
+
+Do not label a highlight "last" unless its recency is actually known.
+For the first version, choose a relevant mark near or before the saved position and label it by its chapter/source; chronological history can be added through a deliberate data change later.
+Keep context generation and expensive text processing outside scroll/render hot paths.
+
+#### Step 5: finish the first-release shelf and verify the full journey
+
+Apply the small UX-04 shelf changes: avoid redundant one-book presentation while retaining all book actions, improve the Continue context, and add title/author filtering if included in the implementation scope.
+Leave within-book search, explicit status persistence, and notebook work for their own follow-up changes.
+Do not remove the existing estimate entirely without considering readers who use it; make it secondary to the next reading action.
+
+Run the complete first-release journey in the browser:
+
+1. Add a book and begin reading on a phone-sized viewport.
+2. Change text size and layout, then confirm the logical reading place is preserved.
+3. Open and dismiss contextual help, use the player, and return to uninterrupted reading.
+4. Save a highlight, verify its persistence state, and recover from a simulated interrupted write.
+5. Return to the shelf, open resume context, dismiss it, and continue at the saved passage.
+6. Follow a context detour and return; reload and confirm that the intended position remains saved.
+7. Repeat affected interactions with keyboard navigation, both layouts, and the other themes. Verify actual touch/audio behavior on supported physical devices before claiming it.
+
+Use the existing journey areas under `e2e/momentic/reading`, `reading-pages`, `understanding`, `understanding-pages`, `listening`, `listening-pages`, and `library` as appropriate.
+Follow their documented runner prerequisites. If a runner or physical device is unavailable, report the precise verification gap and use available browser automation for the flows it can actually prove; do not mark an untested acceptance criterion complete.
+Finish with fresh `pnpm typecheck`, `pnpm test`, and `pnpm build`, plus the browser evidence required above.
+
+#### Definition of the developer's handover
+
+- Update only the completed roadmap items and their acceptance checkboxes. A partially delivered workstream stays open with the finished slice described.
+- Record changed files, user-visible behavior, data/contract changes, tests run, browser/device coverage, and known limitations.
+- Update affected README guidance and journeys alongside the implementation; do not publish planned features as available features.
+- Preserve existing data and explain any migration or recovery procedure introduced by the change.
+- Report implementation, verification, commit/PR, and deployment separately. Do not imply that local completion means deployed.
+- End the first delivery with a coherent usable reader improvement. The next developer should be able to see exactly which of UX-01, UX-02, and UX-03 remains before starting UX-05.
+
+### UX-01: Reading comfort and contextual controls
+
+**Reader outcome:** "I can settle in here."
+
+Scope:
+
+- Reduce the mobile chapter opening's vertical overhead while keeping the complete chapter title accessible and the start of the text clear.
+- Keep appearance controls in Aa: theme, typography, size, spacing, measure, alignment, and layout.
+- Put voice selection and download state with Listen; move language and AI helper configuration into reader preferences with a discoverable entry point.
+- Preserve existing preferences when reorganizing controls. Do not reset a reader's chosen theme, language, layout, or voice.
+- Make contextual help consistent: use the available desktop margin, and a bounded small-screen presentation that respects selection handles, the keyboard, and the listening bar.
+- Preserve predictable Escape, dismissal, and keyboard focus return. Opening help must not lose the selected passage or reading position.
+- Consider a small set of reversible comfort presets only after refining defaults; keep the existing detailed controls.
+
+Implementation starting points: `src/reader/ReaderPage.tsx`, `ChapterSection.tsx`, `ReadingSettings.tsx`, `WordPopover.tsx`, `SelectionBar.tsx`, `ListenBar.tsx`, `src/prefs.ts`, and `src/styles.css`.
+
+Acceptance:
+
+- [ ] At the inspected phone size, the fixture chapter exposes more opening text than the baseline, without truncating its title or reducing touch-target accessibility.
+- [ ] Settings can be reached, changed, and dismissed on phone and desktop in all three themes.
+- [ ] Changing font, size, measure, or layout preserves the logical text position in both Scroll and Pages modes.
+- [ ] Help, selection, audio controls, and the mobile keyboard do not obscure the action or passage needed to complete a task.
+- [ ] Existing stored preferences still load correctly, and keyboard focus returns to a useful target after dismissal.
+
+### UX-02: Save confidence and recovery
+
+**Reader outcome:** "My thoughts are safe here."
+
+Scope:
+
+- Expose meaningful note synchronization states to the UI: saving, saved, waiting for connection, and actionable failure.
+- Keep feedback quiet when successful; make unsaved work and recovery actions visible when needed.
+- Preserve drafts during retry and session expiry. A refused write must not disappear without an explanation or a way to retain the reader's text.
+- Investigate and address the documented shared-outbox risk for two offline tabs before expanding the system to longer personal reflections.
+- Distinguish server persistence from a browser-only pending write. Do not imply that an unsent note is available on another device.
+
+Implementation starting points: `src/reader/noteSync.ts`, `useNotes.ts`, `shared/notes.ts`, and existing note routes/tests.
+Define the state contract before adding status presentation; avoid a separate competing save mechanism for each new feature.
+
+Acceptance:
+
+- [ ] A note survives refresh after saving and reconnect after a temporarily failed write.
+- [ ] Offline edits, session expiry, permanent rejection, and unavailable browser storage produce truthful states and preserve recoverable work.
+- [ ] Two tabs cannot silently overwrite each other's pending additions in the covered workflow.
+- [ ] Switching profiles never renders or submits another reader's pending data.
+- [ ] Retry does not duplicate notes or restore a deliberately removed note.
+
+### UX-03: Where I left off
+
+**Reader outcome:** "I am back inside the book immediately."
+
+Scope:
+
+- Preserve the direct Continue action to the saved text position.
+- Offer an optional context view containing a bounded preceding excerpt, chapter identity, and a relevant saved highlight when available.
+- Use actual book text and saved marks for the first version. Do not require AI or a network-generated recap to resume.
+- Opening or dismissing context must not itself advance reading progress.
+- Support a one-action return to the original position after a deliberate context or source detour.
+- Handle a first visit, absent highlights, missing anchors, and changed viewport dimensions explicitly.
+- If generated recaps are introduced later, request them explicitly and limit their input to text before the saved position. A chapter boundary alone is not a sufficient spoiler boundary.
+
+Implementation starting points: `src/library/ContinueCard.tsx`, `src/reader/useReadingPosition.ts`, `ReaderPage.tsx`, `useChapterFlow.ts`, and the progress/note contracts in `shared/types.ts`.
+Decide whether a last-highlight timestamp is required: current stored notes do not provide a general creation-time field, so do not infer recency from source order.
+
+Acceptance:
+
+- [ ] A returning reader can resume without passing through a mandatory recap.
+- [ ] Context contains no passage after the saved reading boundary and does not silently change progress.
+- [ ] Source navigation and return restore the logical block/offset in both reading layouts, including a resized viewport.
+- [ ] Books without highlights still provide useful, truthful context.
+- [ ] Shared-book context remains private to the current reader and respects current access.
+
+### UX-04: Library organization and finding passages
+
+**Reader outcome:** "I know where to find things."
+
+Scope:
+
+- Improve the single-book library without removing access to its edit, share, pin, or remove actions.
+- Keep Continue visually primary while making the next chapter/context more useful than emphasizing only hours remaining.
+- Add title/author search and clear no-results/reset states on the shelf.
+- Add explicit reading, finished, and saved-for-later organization, with manual correction. A scroll percentage is not proof that a reader finished or understood a book.
+- Add within-book text search with a bounded excerpt and chapter label for each result.
+- Open results at their source, mark the match, and offer return to the position before the search.
+- Keep scope bounded to metadata and book text first; do not introduce semantic search or a new indexing service without evidence that it is needed.
+
+Implementation starting points: `src/LibraryPage.tsx`, `src/library/bookText.ts`, `BookRow.tsx`, `ContinueCard.tsx`, book chapter/block data, and existing library/storage contracts.
+Explicit reading status and book search require new contracts; pinning alone does not implement them.
+
+Acceptance:
+
+- [ ] Empty, one-book, many-book, shared, and pinned libraries retain all necessary actions.
+- [ ] Title/author filtering is responsive and has an accessible clear action and empty state.
+- [ ] Repeated search terms navigate to the selected occurrence, not merely the first match in the chapter.
+- [ ] Search detours can return to the previous reading location without leaving misleading saved progress.
+- [ ] Status changes persist per reader, including for shared books, and can be undone or corrected.
+
+### UX-05: My edition notebook and personal reflections
+
+**Reader outcome:** "This book is becoming mine."
+
+Scope:
+
+- Add a notebook for each book containing highlights, saved explanations, and reader-written reflections.
+- Organize entries by chapter with filtering/search and a direct return to the exact source passage.
+- Add an explicit reader-authored note type rather than overloading a question request with unrelated text.
+- Support create, edit, remove, undo where appropriate, and visible persistence state for personal writing.
+- Distinguish the author's quotation, the reader's own words, and an AI-generated explanation visually and in exported output.
+- Persist a selected explanation as a durable snapshot when the reader saves it. Current AI cache entries are not a durable notebook contract.
+- Export selected entries with book title, author when known, chapter, quotation, and source information. Start with Markdown; preserve attribution and do not export the whole book by default.
+- Keep existing highlights and question notes readable without requiring regeneration. Decide how legacy question notes become saved answer snapshots without silently invoking AI.
+
+Implementation starting points: `shared/types.ts`, `shared/notes.ts`, `src/reader/useNotes.ts`, `noteSync.ts`, `NoteCard.tsx`, `useNoteMarks.ts`, and the existing note storage/API.
+New persistence fields and validation must be designed together; verify how older entries, unknown kinds, repeated quotations, and deleted sources behave.
+
+Acceptance:
+
+- [ ] A reader can highlight, write a reflection, reopen the book, find both in the notebook, and jump to the correct passage.
+- [ ] Repeated quotations retain distinct anchors; missing anchors show an honest unavailable state rather than opening an unrelated passage.
+- [ ] Saved explanations remain readable when the provider is unavailable or its cache changes.
+- [ ] Editing and retry preserve reader text, with UX-02 recovery behavior covered end to end.
+- [ ] Export contains the selected entries and attribution, correctly escapes content, and excludes other readers' data.
+- [ ] Shared-book ownership changes and access revocation have an explicit retention/access policy consistent with existing privacy boundaries.
+
+### UX-06: Passage-grounded questions
+
+**Reader outcome:** "I can ask the question I actually have."
+
+Scope:
+
+- Let a reader ask about a selected passage or the current chapter, with scope visible before submission.
+- Keep follow-up discussion attached to that context; use the existing `/ask` backend and history contract where suitable.
+- Add supporting passage references that open in the book and allow return to the discussion.
+- Validate references against the authorized source and allowed reading boundary. Do not treat plausible model-produced identifiers as valid citations.
+- Explain when the answer lacks sufficient support; do not present an unsupported interpretation as a quotation or fact from the book.
+- Save conversations or selected answers only through an explicit persistence contract, with reader control over retention/removal.
+- Handle unavailable helpers, access requests, limits, interrupted streaming, cancellation, and retry without blocking the book.
+
+Implementation starting points: `server/routes-ai.ts`, `server/prompts.ts`, `shared/types.ts`, `src/reader/useAiStream.ts`, and the existing helper-access UI.
+Citation structure, source validation, spoiler boundaries, and persistence are additional work; exposing the endpoint alone does not complete this feature.
+
+Acceptance:
+
+- [ ] A reader can ask, follow up, open supporting text, and return without losing either the conversation or reading position.
+- [ ] References point to real authorized passages; invalid references are rejected or shown as unavailable.
+- [ ] Default context does not include unread text beyond the chosen boundary; any broader scope is an explicit reader choice.
+- [ ] Partial or failed answers are distinguishable from completed answers and can be retried locally.
+- [ ] AI failure or lack of access does not disable ordinary reading, highlights, or personal notes.
+
+### UX-07: Seamless reading and listening
+
+**Reader outcome:** "Reading and listening are one experience."
+
+Scope:
+
+- Refine switching between visual reading and audio at the current sentence, building on the existing sentence-aware implementation.
+- Keep pause, resume, speed, voice choice, download state, and failure recovery close to the player.
+- Offer stopping at the end of the current chapter.
+- Respect manual navigation while audio is active; make returning to the spoken passage deliberate and predictable.
+- Test interruptions and unavailable voices before adding more voice options.
+- State offline capabilities precisely: a downloaded natural voice does not by itself make books or the application available offline.
+
+Implementation starting points: `src/reader/ListenBar.tsx`, `useListen.ts`, `useNaturalVoice.ts`, `natural.ts`, `speech.ts`, `sentenceView.ts`, and `ReaderPage.tsx`.
+
+Acceptance:
+
+- [ ] Switching modes resumes at the intended sentence without unexpected backward jumps or skipped passages.
+- [ ] Manual reading ahead is not repeatedly overridden by the voice.
+- [ ] Chapter-end stop works with lazy chapter loading and both reading layouts.
+- [ ] Missing voice support, download failure, and interrupted playback have clear recovery states.
+- [ ] Audible playback and interruptions are checked on real supported devices, not inferred from DOM state alone.
+
+### UX-08: Optional reflection and saved vocabulary
+
+**Reader outcome:** "I carry something away."
+
+Scope:
+
+- Offer a quiet, optional chapter pause: revisit a marked passage, write one thought, or answer a short recall question.
+- Keep continuing to the next chapter obvious and immediate. Do not require quizzes or turn reading into homework.
+- Reuse chapter closing and quiz infrastructure, but implement answer interaction, feedback, persistence choices, and error states explicitly.
+- Add a deliberate "Keep this word" action to word lookup, retaining the original sentence, contextual meaning, language, and source.
+- Provide a small vocabulary collection with pronunciation and optional recall. A lookup alone must not enroll a word in a study queue.
+- Avoid applying the same summary/quiz expectations to every genre or short section.
+
+Implementation starting points: `src/reader/ChapterClosing.tsx`, `ChapterAid.tsx`, `WordPopover.tsx`, `server/quiz.ts`, `server/routes-ai.ts`, and the notebook persistence introduced in UX-05.
+
+Acceptance:
+
+- [ ] All reflection and recall prompts can be skipped without penalty or extra navigation.
+- [ ] A saved reflection appears in the notebook at the correct chapter.
+- [ ] Saving a word is explicit, avoids accidental duplicates, and preserves its contextual sense rather than only a dictionary headword.
+- [ ] Quiz feedback handles unusable AI output and retry without inventing a score or losing submitted answers.
+- [ ] Readers can remove saved vocabulary and choose whether to revisit it.
+
+### UX-09: Connections between ideas
+
+**Reader outcome:** "My reading is becoming a body of thought."
+
+This is exploratory scope after the notebook proves useful, not a prerequisite for earlier releases.
+Start with a reader linking two saved passages and writing why they belong together.
+Show both quotations and their books; allow opening either source and returning.
+Only then consider optional AI suggestions, with visible evidence and explicit acceptance.
+Do not build a graph visualization or indexing service merely to display a linked pair.
+
+Acceptance before expanding:
+
+- [ ] Readers can create, revisit, edit, and remove a connection between their own saved entries.
+- [ ] Each side has clear provenance and respects access changes or missing sources.
+- [ ] Suggested connections remain distinct from reader-authored conclusions.
+- [ ] Reader observation demonstrates that connections help recall or understanding before investing in a larger discovery interface.
+
+### Shared design and engineering constraints
+
+- Keep the book as the default surface. Avoid an always-open chat sidebar, social feed, decorative dashboard, compulsory quiz, or streak pressure.
+- Preserve the existing visual language; improve typography hierarchy, spacing, transitions, and contextual controls rather than adding visual clutter.
+- Do not allow streamed content or panel expansion to displace the current reading line unexpectedly.
+- Scope all new state to the active reader. Sharing a book does not share private notes, vocabulary, questions, or reading history.
+- Reuse existing storage, note synchronization, helper authorization, and rendering paths where their contracts fit. Extend contracts explicitly where they do not.
+- Keep data changes recoverable. Document migration, deletion, revoked-share behavior, and export semantics before promising permanent personal content.
+- Preserve source anchors using chapter/block/offset information, not viewport coordinates or quotation text alone.
+- Keep expensive parsing/search work out of repeated render and scroll paths; measure realistic books and libraries before choosing more infrastructure.
+- Update affected user documentation, API contracts, and reader journeys in the same implementation change. Planned behavior must not be described as shipped.
+
+### Verification and release gates
+
+For each workstream, record its implementation change, fresh checks, browser evidence, unresolved limits, and completion date next to its tracking item.
+Do not mark a workstream complete because its backend exists or unit tests pass.
+
+Required checks for affected behavior:
+
+- Run type checks and the full automated suite; add focused behavioral coverage for changed contracts, especially position recovery, note persistence, isolation, and source validation.
+- Exercise the actual UI with snapshot, primary action, and a new snapshot confirming the resulting state.
+- Check desktop, tablet, and phone sizes, Scroll and Pages, and light/sepia/dark themes where relevant.
+- Verify keyboard navigation, visible focus, screen-reader labels, text zoom, long titles, and actual contrast against every affected surface.
+- Test real iOS/Android selection and audio behavior for touched mobile interactions; desktop emulation alone does not prove those work.
+- Cover no-AI, interrupted stream, offline/reconnect, expired session, and revoked share when the feature crosses those states.
+- Use isolated libraries for destructive or failure-path testing. Do not run journeys against the reader's real library.
+- Run the available design detector on bounded changed UI or rendered output; treat its suggestions as advisory, not a substitute for browser verification.
+
+Reader validation should observe a complete session: import, begin reading, request help, save a thought, leave, resume, and retrieve the thought.
+Record lost-place incidents, successful note retrieval, steps/time needed to resume, and whether readers feel interrupted or comfortable returning.
+Establish a baseline before setting numeric improvement targets; do not invent engagement scores or equate time spent with reading quality.
+Collect only necessary, consented research data and keep book text and private reflections out of analytics by default.
+
+The standard for release is that readers can comfortably complete the journey and trust their place and thoughts to remain available.
+Visual polish supports that outcome; it does not establish it on its own.
