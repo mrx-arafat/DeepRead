@@ -14,7 +14,9 @@
     "storage:migrate": "node scripts/storage-migrate.ts",
     "storage:encrypt": "node scripts/storage-encrypt.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e:run": "node scripts/e2e-runner.mjs",
+    "verify:code": "pnpm test -- --reporter=dot && pnpm typecheck && pnpm build"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1146.0",

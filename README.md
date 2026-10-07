@@ -1067,6 +1067,10 @@ You need [Node.js](https://nodejs.org) 24 or newer and [pnpm](https://pnpm.io).
 | `pnpm storage:encrypt` | Encrypts the books and profiles you already have with `DEEPREAD_ENCRYPTION_KEY`, with DeepRead stopped (see [Encrypt your books](#encrypt-your-books)) |
 | `pnpm test` | Unit and functional tests |
 | `pnpm typecheck` | TypeScript check |
+| `pnpm e2e:run notebook` | One headless journey with an automatic scratch library, server, browser session, and cleanup; see [E2E journeys](e2e/README.md) for supported names |
+| `pnpm verify:code` | Full tests, typecheck, and production build once before pushing |
+
+For a tight edit loop, run the affected test file with `pnpm exec vitest run <path>`; reserve `pnpm verify:code` for the final code gate. UI changes still need the affected browser journey, but the runner removes manual server and fixture setup.
 
 The server reads `.env.local` too, so once it points at your R2 bucket, `pnpm dev` and `pnpm start` use that bucket.
 To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, for example `DEEPREAD_STORAGE=local pnpm dev`: a value set in the shell wins over the file.

@@ -47,6 +47,16 @@ The test book `fixtures/problems-of-philosophy.pdf` is Bertrand Russell's *The P
 
 ## Headless Playwright checks
 
+For the supported reader journeys, use the isolated runner instead of starting servers and uploading the fixture by hand:
+
+```bash
+pnpm e2e:run
+pnpm e2e:run notebook
+pnpm e2e:run ux02-profile-recovery
+```
+
+The first command lists supported names. Each named run chooses unused local ports, forces local storage even when `.env.local` points at R2, creates a temporary data folder, uploads the Gutenberg fixture when needed, uses a unique headless `playwright-cli` session, and closes the browser and servers afterward. Profile journeys use their test-only codes and upload their own fixture through the UI. A failing journey reports the browser output and exits nonzero. `playwright-cli` and the installed project dependencies are required. Keep the manual commands below for journeys that need custom multi-book fixtures or a persistent debugging session.
+
 The scripts below run against the same isolated fixture instance, without a Momentic account or AI calls.
 Use `playwright-cli` in separate named sessions; `open` is headless unless `--headed` is added.
 Save a reading position partway through a chapter first, so **Where I left off** has preceding text to show.
