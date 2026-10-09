@@ -1,4 +1,4 @@
-import { ArrowRight, Bookmark, FileUp, LoaderCircle, Search, X } from "lucide-react";
+import { ArrowRight, Bookmark, FileUp, LoaderCircle, Moon, Sun, Sunset, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation } from "wouter";
 import { formatBytes } from "../shared/bytes.ts";
@@ -9,13 +9,14 @@ import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
 import { addFailure, filterBooks, latestRead, shortTitle, splitPinned } from "./library/bookText.ts";
 import type { StartedBook } from "./library/bookText.ts";
+import { LibrarySearch } from "./library/LibrarySearch.tsx";
 import { Cover } from "./library/Cover.tsx";
 import { ContinueCard } from "./library/ContinueCard.tsx";
 import { ResumeContext } from "./library/ResumeContext.tsx";
 import { addBook, dropBook, patchBook, readerKey, readShelf, rememberBooks, rememberStorage, watchShelves } from "./library/shelfCache.ts";
 import { useFileDrop } from "./library/useFileDrop.ts";
 import { APP_NAME, useDocumentTitle } from "./pageTitle.ts";
-import { usePrefs } from "./prefs.ts";
+import { setPrefs, usePrefs } from "./prefs.ts";
 import { ProfileMenu } from "./profiles/ProfileMenu.tsx";
 import { ReadingAs } from "./profiles/ReadingAs.tsx";
 import { useSession } from "./profiles/session.tsx";
@@ -35,7 +36,7 @@ type Active = { kind: "edit" | "share"; id: string } | { kind: "delete"; id: str
 export function LibraryPage() {
   const [, navigate] = useLocation();
   useDocumentTitle(`Your books - ${APP_NAME}`);
-  const { lang } = usePrefs();
+  const { lang, theme } = usePrefs();
   const { info } = useSession();
   // Null with no profiles (nobody to show or switch) and while nobody is signed in (App shows the profiles then).
   const session = info?.mode === "profiles" ? info.session : null;
@@ -290,6 +291,15 @@ export function LibraryPage() {
             )}
           </header>
 
+          <fieldset className="dashboard-theme">
+            <legend className="visually-hidden">Color theme</legend>
+            {([{ value: "light", label: "Light", Icon: Sun }, { value: "sepia", label: "Sepia", Icon: Sunset }, { value: "dark", label: "Dark", Icon: Moon }] as const).map(({ value, label, Icon }) => (
+              <label key={value} title={`${label} theme`}>
+                <input type="radio" name="dashboard-theme" value={value} checked={theme === value} onChange={() => setPrefs({ theme: value })} />
+                <Icon size={17} aria-hidden /><span className="visually-hidden">{label}</span>
+              </label>
+            ))}
+          </fieldset>
           <div className="drop" data-dragging={dragging || undefined}>
             <input
               ref={input}
@@ -367,6 +377,8 @@ export function LibraryPage() {
           </div>
         )}
 
+        {books && books.length > 0 && <LibrarySearch query={query} onQuery={setQuery} count={visibleBooks.length} />}
+
         {books && !empty && !query.trim() && (statusFilter === "all" || statusFilter === "reading") && (
           <section className="library-discover" aria-labelledby="library-welcome">
             <div className="library-welcome">
@@ -396,15 +408,6 @@ export function LibraryPage() {
         {books && books.length > 1 && (
           <section className="library-toolbar" aria-label="Browse your library">
             <div className="library-toolbar-heading"><h2>Your collection</h2><span>{books.length} books</span></div>
-            <div className="library-search">
-              <label className="visually-hidden" htmlFor="library-search">Find a book</label>
-              <div className="library-search-field">
-                <Search size={18} aria-hidden />
-                <input id="library-search" type="search" placeholder="Search by title or author…" value={query} onChange={(event) => setQuery(event.target.value)} />
-                {query && <button type="button" className="icon-button" aria-label="Clear book search" title="Clear book search" onClick={() => setQuery("")}><X size={18} aria-hidden /></button>}
-              </div>
-              {query.trim() && <p className="library-search-count" role="status">{visibleBooks.length} {visibleBooks.length === 1 ? "book" : "books"} found</p>}
-            </div>
             <div className="library-status-filters" role="group" aria-label="Filter by reading status">
               {STATUS_FILTERS.map(({ value, label }) => (
                 <button
