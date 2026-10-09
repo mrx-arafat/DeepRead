@@ -1,16 +1,16 @@
-/* Dashboard palette is scoped to the library route; reader themes keep their own paper and ink. */
+/* Blue accents match the profile and reader controls. Dashboard surfaces use cooler slate neutrals. */
 :root:has(.library) {
-  --paper: #f5f6f1;
+  --paper: #f4f6fa;
   --raised: #ffffff;
-  --wash: #e9ede5;
-  --ink: #202b25;
-  --ink-soft: #526057;
-  --ink-faint: #657268;
-  --rule: #d8dfd5;
-  --pen: #285747;
+  --wash: #e9edf5;
+  --ink: #202b3d;
+  --ink-soft: #526078;
+  --ink-faint: #626f86;
+  --rule: #d8dfea;
+  --pen: #1d3bb8;
   --pen-ink: #ffffff;
-  --pen-wash: #e1eadb;
-  --select: #dce9d2;
+  --pen-wash: #e5ebfb;
+  --select: #dce5fa;
 }
 :root[data-theme="sepia"]:has(.library) {
   --paper: #f3eddf;
@@ -20,21 +20,21 @@
   --ink-soft: #625b4a;
   --ink-faint: #746b58;
   --rule: #d7cdbb;
-  --pen: #4d5d32;
-  --pen-wash: #e3e6cc;
+  --pen: #23408f;
+  --pen-wash: #e5e6ef;
 }
 :root[data-theme="dark"]:has(.library) {
-  --paper: #151c19;
-  --raised: #1e2822;
-  --wash: #29352e;
-  --ink: #edf1e9;
-  --ink-soft: #b0beb3;
-  --ink-faint: #9baa9f;
-  --rule: #3c4b40;
-  --pen: #c6dfa5;
-  --pen-ink: #1c3023;
-  --pen-wash: #30452e;
-  --select: #40583c;
+  --paper: #151c28;
+  --raised: #1e2838;
+  --wash: #29354a;
+  --ink: #edf1f9;
+  --ink-soft: #b0bed4;
+  --ink-faint: #9baac2;
+  --rule: #3c4b65;
+  --pen: #9db1ff;
+  --pen-ink: #182645;
+  --pen-wash: #2b3958;
+  --select: #3b4d76;
 }
 .library { max-width: 76rem; padding: 1.75rem 2rem 5rem; }
 .library .library-top { gap: 1rem; }
@@ -103,17 +103,17 @@
 .library-spotlight[data-paired] { grid-template-columns: minmax(0, 1.9fr) minmax(15rem, 1fr); }
 
 .library .continue-feature {
-  --ink: #f2f5ec;
-  --ink-soft: #c3d4c9;
-  --ink-faint: #adc3b6;
-  --rule: #49685a;
-  --pen: #d6eab5;
-  --pen-ink: #203a2a;
-  --pen-wash: #345345;
-  --wash: #345345;
-  --raised: #234838;
+  --ink: #f2f5fc;
+  --ink-soft: #c3d1e8;
+  --ink-faint: #adbfdd;
+  --rule: #4b6285;
+  --pen: #d6e5ff;
+  --pen-ink: #203657;
+  --pen-wash: #344c70;
+  --wash: #344c70;
+  --raised: #294466;
   position: relative; min-width: 0; padding: 1.5rem 1.75rem; overflow: hidden;
-  border: 1px solid #345344; border-radius: 1rem; background: #1d4032; color: var(--ink);
+  border: 1px solid #344d72; border-radius: 1rem; background: #203653; color: var(--ink);
 }
 .library .continue-feature > .library-section { margin: 0 0 1rem; padding: 0; border: 0; color: var(--pen); font-size: 0.75rem; font-weight: 500; letter-spacing: 0.025em; }
 .library .continue-feature .continue-card { grid-template-columns: minmax(0, 1fr) 7rem; grid-template-areas: "body cover" "action cover"; align-items: center; gap: 1rem 2rem; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
@@ -125,7 +125,7 @@
 .library .continue-feature .continue-progress { margin-top: 0.75rem; }
 .library .continue-feature .continue-actions { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
 .library .continue-feature .continue-action { background: var(--pen); color: var(--pen-ink); }
-.library .continue-feature .continue-action:hover { background: #e4f2cf; filter: none; }
+.library .continue-feature .continue-action:hover { background: #e6efff; filter: none; }
 .library .continue-feature .continue-context { padding-inline: 0.5rem; border-color: transparent; background: transparent; color: var(--ink-soft); font-size: 0.75rem; }
 .library .continue-feature .continue-context:hover { background: var(--wash); color: var(--ink); }
 .library .continue-feature:focus-within { outline: 2px solid var(--pen); outline-offset: 3px; }
