@@ -335,15 +335,15 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   return (
     <div className="reader">
       <header className={pages.barAway && !tocOpen ? "topbar topbar-away" : "topbar"}>
-        <Link href="/" className="icon-button" aria-label="Back to your books">
+        <Link href="/" className="icon-button" aria-label="Back to your books" title="Back to your books">
           <ArrowLeft size={20} aria-hidden />
         </Link>
-        <button type="button" className="icon-button" aria-label="Chapters" aria-expanded={tocOpen} onClick={() => setTocOpen(true)}>
+        <button type="button" className="icon-button" aria-label="Chapters" title="Chapters" aria-expanded={tocOpen} onClick={() => setTocOpen(true)}>
           <List size={20} aria-hidden />
         </button>
         {/* The page's one h1: the book. Chapter titles are h2; the chapter named here is for the eye alone.
             On a phone the book and the chapter take a line each, so the dot between them is for wider screens. */}
-        <h1 className="topbar-title">
+        <h1 className="topbar-title" title={[book?.title, currentTitle].filter(Boolean).join(" · ")}>
           <span className="topbar-book">{book?.title ?? ""}</span>
           {currentTitle && (
             <span className="topbar-chapter" aria-hidden>
@@ -365,7 +365,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
             </button>
           )}
           {book && (
-            <button type="button" className="icon-button" aria-label="Find in this book" onClick={() => setSearchOpen(true)}>
+            <button type="button" className="icon-button" aria-label="Find in this book" title="Find in this book" onClick={() => setSearchOpen(true)}>
               <Search size={20} aria-hidden />
             </button>
           )}
@@ -374,6 +374,8 @@ export function ReaderPage({ bookId, chapterId }: Props) {
               ref={listenButton}
               type="button"
               className="quiet-button topbar-listen"
+              title={listen.active ? "Stop listening" : "Listen to this book"}
+              aria-label={listen.active ? "Stop listening" : "Listen"}
               onClick={listen.active ? stopListening : listenFromView}
               aria-pressed={listen.active}
             >

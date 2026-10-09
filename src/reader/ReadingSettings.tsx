@@ -1,4 +1,4 @@
-import { AlignJustify, AlignLeft, ArrowLeft, AudioWaveform, BookOpen, Monitor, ScrollText, Settings, X } from "lucide-react";
+import { AlignJustify, AlignLeft, ArrowLeft, AudioWaveform, BookOpen, ChevronRight, Monitor, ScrollText, Settings, X } from "lucide-react";
 import { useEffect, useState, type FocusEvent, type ReactNode, type ToggleEvent } from "react";
 import { LANGUAGES, type AiProviderId, type AiStatus, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
@@ -13,7 +13,7 @@ import { keepingLine } from "./useReadingPosition.ts";
 
 const PANEL = "reading-settings";
 
-type Option<T extends string> = { value: T; label: string; content: ReactNode };
+type Option<T extends string> = { value: T; label: string; caption?: string; content: ReactNode };
 
 /** One choice out of a few, shown side by side; `iconOnly` keeps the label for screen readers and the tooltip. */
 function Choice<T extends string>(props: {
@@ -23,6 +23,7 @@ function Choice<T extends string>(props: {
   options: Option<T>[];
   onChange: (value: T) => void;
   iconOnly?: boolean;
+  showLabel?: boolean;
   className?: string;
 }) {
   return (
@@ -35,10 +36,12 @@ function Choice<T extends string>(props: {
               type="radio"
               name={`${PANEL}-${props.name}`}
               value={option.value}
+              aria-label={option.label}
               checked={props.value === option.value}
               onChange={() => props.onChange(option.value)}
             />
             {option.content}
+            {props.showLabel && <span className="choice-caption">{option.caption ?? option.label}</span>}
             {props.iconOnly ? <span className="visually-hidden">{option.label}</span> : null}
           </label>
         ))}
@@ -94,15 +97,15 @@ const FONT_OPTIONS: Option<Prefs["font"]>[] = [
 ];
 
 const SPACING_OPTIONS: Option<Prefs["spacing"]>[] = [
-  { value: "tight", label: "Tight line spacing", content: <SpacingIcon gap={3.5} /> },
-  { value: "normal", label: "Normal line spacing", content: <SpacingIcon gap={5} /> },
-  { value: "loose", label: "Loose line spacing", content: <SpacingIcon gap={6.5} /> },
+  { value: "tight", label: "Tight line spacing", caption: "Tight", content: <SpacingIcon gap={3.5} /> },
+  { value: "normal", label: "Normal line spacing", caption: "Normal", content: <SpacingIcon gap={5} /> },
+  { value: "loose", label: "Loose line spacing", caption: "Loose", content: <SpacingIcon gap={6.5} /> },
 ];
 
 const MARGIN_OPTIONS: Option<Prefs["margins"]>[] = [
-  { value: "narrow", label: "Narrow margins", content: <MarginsIcon inset={2.5} /> },
-  { value: "normal", label: "Normal margins", content: <MarginsIcon inset={4.5} /> },
-  { value: "wide", label: "Wide margins", content: <MarginsIcon inset={6} /> },
+  { value: "narrow", label: "Narrow margins", caption: "Narrow", content: <MarginsIcon inset={2.5} /> },
+  { value: "normal", label: "Normal margins", caption: "Normal", content: <MarginsIcon inset={4.5} /> },
+  { value: "wide", label: "Wide margins", caption: "Wide", content: <MarginsIcon inset={6} /> },
 ];
 
 const ALIGN_OPTIONS: Option<Prefs["align"]>[] = [
@@ -346,7 +349,7 @@ export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; rea
   const translationBlocked = readersTranslate === false && info?.mode === "profiles" && !info.session?.admin;
   return (
     <>
-      <button type="button" className="icon-button settings-button" popoverTarget={PANEL} aria-label="Reading settings">
+      <button type="button" className="icon-button settings-button" popoverTarget={PANEL} aria-label="Reading settings" title="Reading settings">
         Aa
       </button>
       <section
@@ -355,7 +358,10 @@ export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; rea
         className="popover settings"
         aria-label="Reading settings"
         onBlur={closeWhenTabbedAway}
+        onToggle={returnFocus}
       >
+        <PanelHeading title="Appearance" />
+        <p className="settings-intro">Make yourself comfortable. Changes save automatically.</p>
         <Choice
           name="theme"
           legend="Theme"
@@ -369,7 +375,7 @@ export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; rea
 
         <div className="settings-group" role="group" aria-labelledby={`${PANEL}-size`}>
           <p id={`${PANEL}-size`} className="settings-label">
-            Text size
+            Text size <output className="settings-value" aria-live="polite">{prefs.fontSize} px</output>
           </p>
           <div className="size-row">
             <button
@@ -388,6 +394,7 @@ export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; rea
               min={FONT_SIZES.min}
               max={FONT_SIZES.max}
               value={prefs.fontSize}
+              aria-valuetext={`${prefs.fontSize} pixels`}
               onChange={(event) => reflow({ fontSize: Number(event.target.value) })}
             />
             <button
@@ -409,7 +416,8 @@ export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; rea
             value={prefs.spacing}
             options={SPACING_OPTIONS}
             onChange={(spacing) => reflow({ spacing })}
-            iconOnly
+            showLabel
+            className="settings-illustrated"
           />
           <Choice
             name="margins"
@@ -417,7 +425,8 @@ export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; rea
             value={prefs.margins}
             options={MARGIN_OPTIONS}
             onChange={(margins) => reflow({ margins })}
-            iconOnly
+            showLabel
+            className="settings-illustrated"
           />
         </div>
 
@@ -427,7 +436,7 @@ export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; rea
           value={prefs.align}
           options={ALIGN_OPTIONS}
           onChange={(align) => reflow({ align })}
-          iconOnly
+          showLabel
         />
 
         <Choice name="layout" legend="Layout" value={prefs.layout} options={LAYOUT_OPTIONS} onChange={(layout) => reflow({ layout })} />
@@ -435,7 +444,7 @@ export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; rea
         <TranslationSwitch prefs={prefs} blocked={translationBlocked} />
 
         <button type="button" className="quiet-button settings-next" aria-label="Reader preferences" onClick={() => switchPanel(PANEL, "reader-preferences")}>
-          <Settings size={18} aria-hidden /> Reader preferences
+          <Settings size={18} aria-hidden /> Reader preferences <ChevronRight className="settings-chevron" size={16} aria-hidden />
         </button>
       </section>
 
@@ -499,7 +508,7 @@ export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; rea
         </div>
 
         <button type="button" className="quiet-button settings-next" aria-label="Voice settings" onClick={() => switchPanel("reader-preferences", "reading-voice")}>
-          <AudioWaveform size={18} aria-hidden /> Voice settings
+          <AudioWaveform size={18} aria-hidden /> Voice settings <ChevronRight className="settings-chevron" size={16} aria-hidden />
         </button>
 
         <AiHelper open={open} viewer={viewer} />
@@ -530,12 +539,12 @@ function returnFocus(event: ToggleEvent<HTMLElement>): void {
   }
 }
 
-function PanelHeading({ title, back }: { title: string; back: string }) {
+function PanelHeading({ title, back }: { title: string; back?: string }) {
   return (
     <header className="settings-heading">
-      <button type="button" className="icon-button" aria-label={back === PANEL ? "Back to appearance" : "Back to reader preferences"} onClick={(event) => switchPanel(event.currentTarget.closest("[popover]")!.id, back)}>
+      {back && <button type="button" className="icon-button" aria-label={back === PANEL ? "Back to appearance" : "Back to reader preferences"} onClick={(event) => switchPanel(event.currentTarget.closest("[popover]")!.id, back)}>
         <ArrowLeft size={18} aria-hidden />
-      </button>
+      </button>}
       <h2>{title}</h2>
       <button type="button" className="icon-button" aria-label={`Close ${title.toLowerCase()}`} onClick={(event) => event.currentTarget.closest<HTMLElement>("[popover]")?.hidePopover()}>
         <X size={18} aria-hidden />

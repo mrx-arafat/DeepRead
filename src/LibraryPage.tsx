@@ -273,6 +273,7 @@ export function LibraryPage() {
         <div className="library-top" data-empty={empty || undefined} data-waiting={(books === null && !loadError) || undefined}>
           <header className="library-head">
             <h1>DeepRead</h1>
+            {books && !empty && <p className="library-subtitle">Your space for a little deeper reading.</p>}
             {empty && (
               <>
                 <p>Read a book in English. Tap any word, select any passage, and get it explained right there.</p>
@@ -361,31 +362,31 @@ export function LibraryPage() {
         {resume && (statusFilter === "all" || statusFilter === "reading") && <ContinueCard book={resume} compact={books?.length === 1} onContext={() => setContext({ book: resume, reader })} />}
 
         {books && books.length > 1 && (
-          <div className="library-status-filters" role="group" aria-label="Filter by reading status">
-            {STATUS_FILTERS.map(({ value, label }) => (
-              <button
-                key={value}
-                ref={statusFilter === value ? selectedFilter : undefined}
-                type="button"
-                aria-pressed={statusFilter === value}
-                onClick={() => setStatusFilter(value)}
-              >
-                {label} <span>{value === "all" ? searchedBooks.length : searchedBooks.filter((book) => book.readingStatus === value).length}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {books && books.length > 1 && (
-          <div className="library-search">
-            <label htmlFor="library-search">Find a book</label>
-            <div className="library-search-field">
-              <Search size={18} aria-hidden />
-              <input id="library-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} />
-              {query && <button type="button" className="icon-button" aria-label="Clear book search" title="Clear book search" onClick={() => setQuery("")}><X size={18} aria-hidden /></button>}
+          <section className="library-toolbar" aria-label="Browse your library">
+            <div className="library-toolbar-heading"><h2>Your library</h2><span>{books.length} books</span></div>
+            <div className="library-status-filters" role="group" aria-label="Filter by reading status">
+              {STATUS_FILTERS.map(({ value, label }) => (
+                <button
+                  key={value}
+                  ref={statusFilter === value ? selectedFilter : undefined}
+                  type="button"
+                  aria-pressed={statusFilter === value}
+                  onClick={() => setStatusFilter(value)}
+                >
+                  {label} <span>{value === "all" ? searchedBooks.length : searchedBooks.filter((book) => book.readingStatus === value).length}</span>
+                </button>
+              ))}
             </div>
-            {query.trim() && <p className="library-search-count" role="status">{visibleBooks.length} {visibleBooks.length === 1 ? "book" : "books"} found</p>}
-          </div>
+            <div className="library-search">
+              <label className="visually-hidden" htmlFor="library-search">Find a book</label>
+              <div className="library-search-field">
+                <Search size={18} aria-hidden />
+                <input id="library-search" type="search" placeholder="Search by title or author…" value={query} onChange={(event) => setQuery(event.target.value)} />
+                {query && <button type="button" className="icon-button" aria-label="Clear book search" title="Clear book search" onClick={() => setQuery("")}><X size={18} aria-hidden /></button>}
+              </div>
+              {query.trim() && <p className="library-search-count" role="status">{visibleBooks.length} {visibleBooks.length === 1 ? "book" : "books"} found</p>}
+            </div>
+          </section>
         )}
 
         {books && books.length > 0 && visibleBooks.length === 0 && (
