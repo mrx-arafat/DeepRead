@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Bookmark, FileUp, LoaderCircle, Search, X } from "lucide-react";
+import { ArrowRight, Bookmark, FileUp, LoaderCircle, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation } from "wouter";
 import { formatBytes } from "../shared/bytes.ts";
@@ -281,8 +281,7 @@ export function LibraryPage() {
         {/* Held back until the list has loaded: a first visit turns this into the welcome below, and showing the add button first would make it jump. */}
         <div className="library-top" data-empty={empty || undefined} data-waiting={(books === null && !loadError) || undefined}>
           <header className="library-head">
-            <h1><BookOpen size={25} strokeWidth={1.6} aria-hidden /> DeepRead</h1>
-            {books && !empty && <p className="library-subtitle">A home for curious minds.</p>}
+            <h1>DeepRead</h1>
             {empty && (
               <>
                 <p>Read a book in English. Tap any word, select any passage, and get it explained right there.</p>
@@ -372,9 +371,8 @@ export function LibraryPage() {
           <section className="library-discover" aria-labelledby="library-welcome">
             <div className="library-welcome">
               <div>
-                <p className="library-eyebrow">THE READING ROOM</p>
-                <h2 id="library-welcome">A little time. <em>A good book.</em></h2>
-                <p>Pick up a thought where you left it, or discover your next one.</p>
+                <h2 id="library-welcome">Your library</h2>
+                <p>Continue reading or open a book from your collection.</p>
               </div>
               <p className="library-tally"><strong>{books.length}</strong> {books.length === 1 ? "book" : "books"} on your shelf<span>{finishedCount} finished</span></p>
             </div>
@@ -382,7 +380,7 @@ export function LibraryPage() {
               {resume && <ContinueCard book={resume} onContext={() => setContext({ book: resume, reader })} />}
               {upNext && statusFilter === "all" && (
                 <section className="library-up-next" aria-labelledby="up-next-heading">
-                  <p className="library-eyebrow"><Bookmark size={15} aria-hidden /> SAVED FOR A QUIET MOMENT</p>
+                  <p className="library-eyebrow"><Bookmark size={15} aria-hidden /> SAVED FOR LATER</p>
                   <h3 id="up-next-heading">Up next</h3>
                   <div className="up-next-book">
                     <div className="up-next-cover" aria-hidden><Cover book={upNext} /></div>
