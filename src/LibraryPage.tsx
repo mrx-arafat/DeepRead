@@ -1,4 +1,4 @@
-import { FileUp, LoaderCircle, Search, X } from "lucide-react";
+import { ArrowRight, BookOpen, Bookmark, FileUp, LoaderCircle, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation } from "wouter";
 import { formatBytes } from "../shared/bytes.ts";
@@ -9,6 +9,7 @@ import { BookRow } from "./library/BookRow.tsx";
 import type { Mode } from "./library/BookRow.tsx";
 import { addFailure, filterBooks, latestRead, shortTitle, splitPinned } from "./library/bookText.ts";
 import type { StartedBook } from "./library/bookText.ts";
+import { Cover } from "./library/Cover.tsx";
 import { ContinueCard } from "./library/ContinueCard.tsx";
 import { ResumeContext } from "./library/ResumeContext.tsx";
 import { addBook, dropBook, patchBook, readerKey, readShelf, rememberBooks, rememberStorage, watchShelves } from "./library/shelfCache.ts";
@@ -43,11 +44,17 @@ export function LibraryPage() {
   // cache, not kept in state, so a progress save that is still on its way as this page opens lands on it as well.
   const { books, storage } = useSyncExternalStore(watchShelves, () => readShelf(reader));
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<"recent" | "title" | "progress">("recent");
   const [statusFilter, setStatusFilter] = useState<ReadingStatus | "all">("all");
   const [focusFilterAfterStatus, setFocusFilterAfterStatus] = useState(false);
   const [context, setContext] = useState<{ book: StartedBook; reader: string } | null>(null);
   const searchedBooks = useMemo(() => filterBooks(books ?? [], query), [books, query]);
-  const visibleBooks = useMemo(() => filterBooks(searchedBooks, "", statusFilter), [searchedBooks, statusFilter]);
+  const visibleBooks = useMemo(() => {
+    const filtered = filterBooks(searchedBooks, "", statusFilter);
+    if (sort === "title") filtered.sort((a, b) => a.title.localeCompare(b.title));
+    if (sort === "progress") filtered.sort((a, b) => (b.progress?.percent ?? 0) - (a.progress?.percent ?? 0));
+    return filtered;
+  }, [searchedBooks, statusFilter, sort]);
   // Pinned books get a shelf of their own above the others, which stay in the order the server lists them.
   const { pinned, rest } = useMemo(() => splitPinned(visibleBooks), [visibleBooks]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -234,6 +241,8 @@ export function LibraryPage() {
 
   const empty = books?.length === 0;
   const resume = books && latestRead(books);
+  const upNext = books?.find((book) => book.readingStatus === "saved" && book.id !== resume?.id);
+  const finishedCount = books?.filter((book) => book.readingStatus === "finished").length ?? 0;
 
   function row(book: BookSummary) {
     const mine = active?.id === book.id ? active : null;
@@ -272,8 +281,8 @@ export function LibraryPage() {
         {/* Held back until the list has loaded: a first visit turns this into the welcome below, and showing the add button first would make it jump. */}
         <div className="library-top" data-empty={empty || undefined} data-waiting={(books === null && !loadError) || undefined}>
           <header className="library-head">
-            <h1>DeepRead</h1>
-            {books && !empty && <p className="library-subtitle">Your space for a little deeper reading.</p>}
+            <h1><BookOpen size={25} strokeWidth={1.6} aria-hidden /> DeepRead</h1>
+            {books && !empty && <p className="library-subtitle">A home for curious minds.</p>}
             {empty && (
               <>
                 <p>Read a book in English. Tap any word, select any passage, and get it explained right there.</p>
@@ -359,11 +368,45 @@ export function LibraryPage() {
           </div>
         )}
 
-        {resume && (statusFilter === "all" || statusFilter === "reading") && <ContinueCard book={resume} compact={books?.length === 1} onContext={() => setContext({ book: resume, reader })} />}
+        {books && !empty && !query.trim() && (statusFilter === "all" || statusFilter === "reading") && (
+          <section className="library-discover" aria-labelledby="library-welcome">
+            <div className="library-welcome">
+              <div>
+                <p className="library-eyebrow">THE READING ROOM</p>
+                <h2 id="library-welcome">A little time. <em>A good book.</em></h2>
+                <p>Pick up a thought where you left it, or discover your next one.</p>
+              </div>
+              <p className="library-tally"><strong>{books.length}</strong> {books.length === 1 ? "book" : "books"} on your shelf<span>{finishedCount} finished</span></p>
+            </div>
+            <div className="library-spotlight" data-paired={Boolean(resume && upNext && statusFilter === "all") || undefined}>
+              {resume && <ContinueCard book={resume} onContext={() => setContext({ book: resume, reader })} />}
+              {upNext && statusFilter === "all" && (
+                <section className="library-up-next" aria-labelledby="up-next-heading">
+                  <p className="library-eyebrow"><Bookmark size={15} aria-hidden /> SAVED FOR A QUIET MOMENT</p>
+                  <h3 id="up-next-heading">Up next</h3>
+                  <div className="up-next-book">
+                    <div className="up-next-cover" aria-hidden><Cover book={upNext} /></div>
+                    <div><h4>{upNext.title}</h4>{upNext.author && <p>{upNext.author}</p>}</div>
+                  </div>
+                  <Link className="up-next-link" href={`/book/${upNext.id}`} aria-label={`Open ${upNext.title}`}>Open book <ArrowRight size={18} aria-hidden /></Link>
+                </section>
+              )}
+            </div>
+          </section>
+        )}
 
         {books && books.length > 1 && (
           <section className="library-toolbar" aria-label="Browse your library">
-            <div className="library-toolbar-heading"><h2>Your library</h2><span>{books.length} books</span></div>
+            <div className="library-toolbar-heading"><h2>Your collection</h2><span>{books.length} books</span></div>
+            <div className="library-search">
+              <label className="visually-hidden" htmlFor="library-search">Find a book</label>
+              <div className="library-search-field">
+                <Search size={18} aria-hidden />
+                <input id="library-search" type="search" placeholder="Search by title or author…" value={query} onChange={(event) => setQuery(event.target.value)} />
+                {query && <button type="button" className="icon-button" aria-label="Clear book search" title="Clear book search" onClick={() => setQuery("")}><X size={18} aria-hidden /></button>}
+              </div>
+              {query.trim() && <p className="library-search-count" role="status">{visibleBooks.length} {visibleBooks.length === 1 ? "book" : "books"} found</p>}
+            </div>
             <div className="library-status-filters" role="group" aria-label="Filter by reading status">
               {STATUS_FILTERS.map(({ value, label }) => (
                 <button
@@ -377,14 +420,13 @@ export function LibraryPage() {
                 </button>
               ))}
             </div>
-            <div className="library-search">
-              <label className="visually-hidden" htmlFor="library-search">Find a book</label>
-              <div className="library-search-field">
-                <Search size={18} aria-hidden />
-                <input id="library-search" type="search" placeholder="Search by title or author…" value={query} onChange={(event) => setQuery(event.target.value)} />
-                {query && <button type="button" className="icon-button" aria-label="Clear book search" title="Clear book search" onClick={() => setQuery("")}><X size={18} aria-hidden /></button>}
-              </div>
-              {query.trim() && <p className="library-search-count" role="status">{visibleBooks.length} {visibleBooks.length === 1 ? "book" : "books"} found</p>}
+            <div className="library-sort">
+              <label htmlFor="library-sort">Sort by</label>
+              <select id="library-sort" value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}>
+                <option value="recent">Recently added</option>
+                <option value="title">Title A–Z</option>
+                <option value="progress">Reading progress</option>
+              </select>
             </div>
           </section>
         )}

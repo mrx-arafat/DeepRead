@@ -32,7 +32,7 @@ export function ContinueCard({ book, compact = false, onContext }: { book: Start
     );
   }
   return (
-    <section aria-labelledby={headingId}>
+    <section className="continue-feature" aria-labelledby={headingId}>
       <h2 className="library-section" id={headingId}>
         Continue reading
       </h2>

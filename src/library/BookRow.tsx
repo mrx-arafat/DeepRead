@@ -84,6 +84,10 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
           </span>
         )}
       </Link>
+      <div className="shelf-description">
+        <h3><Link href={`/book/${book.id}`} title={book.title}>{book.title}</Link></h3>
+        {book.author && <p>{book.author}</p>}
+      </div>
       {/* Always there, so books that have not been started line up with the ones that have. */}
       <span className="read-bar" aria-hidden data-empty={book.progress === null || undefined}>
         <span style={{ width: `${note.percent}%` }} />
