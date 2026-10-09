@@ -18,6 +18,7 @@ export type Pages = {
   left: number | null;
   /** The top bar has slid away while the reader reads. */
   barAway: boolean;
+  showToolbar: () => void;
   canNext: boolean;
   canPrevious: boolean;
   next: () => void;
@@ -35,10 +36,10 @@ const BAR_INTRO_MS = 2500;
 
 // Everything a reader acts on: a press there is never a page turn.
 const CONTROLS =
-  "a, button, input, select, textarea, label, summary, [contenteditable], [data-block], .note, .tip, .aid, .topbar, .listen-bar, .toast, dialog, [popover], .book-end";
+  "a, button, input, select, textarea, label, summary, [contenteditable], [data-block], .note, .tip, .aid, .topbar, .listen-bar, .toast, dialog, [popover], .book-end, .page-turn-controls, .page-toolbar-reveal";
 
 // Where a wheel or a swipe belongs to the control under it, not to the page: a slider, the menus, the player.
-const OWN_GESTURES = "input, select, textarea, dialog, [popover], .topbar, .listen-bar";
+const OWN_GESTURES = "input, select, textarea, dialog, [popover], .topbar, .listen-bar, .page-turn-controls, .page-toolbar-reveal";
 
 /** The Aa menu or the chapter list is open, or `target` is a control that takes the gesture itself. */
 function gestureTaken(target: EventTarget | null): boolean {
@@ -97,6 +98,12 @@ export function usePages(on: boolean, ready: boolean, paused: boolean): Pages {
   const turned = useRef<{ from: number; to: number }[]>([]);
   const pausedNow = useRef(paused);
   pausedNow.current = paused;
+
+  const showToolbar = useCallback(() => {
+    setBarAway(false);
+    // The reveal button disappears; hand focus to a visible toolbar control.
+    document.querySelector<HTMLButtonElement>(".topbar button")?.focus({ preventScroll: true });
+  }, []);
 
   const settle = useCallback(() => {
     const frame = pageFrame();
@@ -280,6 +287,8 @@ export function usePages(on: boolean, ready: boolean, paused: boolean): Pages {
     };
     const onPointerMove = (event: PointerEvent) => {
       if (event.pointerType !== "mouse") return;
+      // Keep the explicit reveal button in place while the pointer approaches it.
+      if (event.target instanceof Element && event.target.closest(".page-toolbar-reveal button")) return;
       if (event.clientY < 64) setBarAway(false);
       else if (event.clientY > 160) setBarAway(true);
     };
@@ -316,5 +325,5 @@ export function usePages(on: boolean, ready: boolean, paused: boolean): Pages {
     };
   }, [on, ready, settle, next, previous]);
 
-  return { end, left, barAway, canNext, canPrevious, next, previous };
+  return { end, left, barAway, showToolbar, canNext, canPrevious, next, previous };
 }

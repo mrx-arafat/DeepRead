@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Headphones, List, NotebookPen, Search } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Headphones, List, NotebookPen, Search, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import type { BookDetail, ExplainMode, Note } from "../../shared/types.ts";
@@ -495,31 +495,39 @@ export function ReaderPage({ bookId, chapterId }: Props) {
         )}
       </main>
 
-      {turning && pages.end !== null && (
-        <nav className="page-turn-controls" aria-label="Page navigation">
-          <button type="button" className="page-turn-button page-turn-previous" aria-label="Previous page" disabled={!pages.canPrevious} onClick={pages.previous}>
-            <ChevronLeft size={22} aria-hidden />
-          </button>
-          <button type="button" className="page-turn-button page-turn-next" aria-label="Next page" disabled={!pages.canNext} onClick={pages.next}>
-            <ChevronRight size={22} aria-hidden />
-          </button>
-        </nav>
+      {turning && book && (
+        <>
+          {pages.barAway && (
+            <div className="page-toolbar-reveal">
+              <span title={currentTitle ?? undefined}>{currentTitle}</span>
+              <button type="button" className="quiet-button" onClick={pages.showToolbar}>
+                <SlidersHorizontal size={17} aria-hidden /> Reading tools
+              </button>
+            </div>
+          )}
+          <nav className={`page-turn-controls${listen.active ? "" : " reading-footer page-turn-dock"}`} aria-label="Page navigation">
+            <button type="button" className="page-turn-button page-turn-previous" aria-label="Previous page" title="Previous page (←)" aria-keyshortcuts="ArrowLeft PageUp" disabled={!pages.canPrevious} onClick={pages.previous}>
+              <ChevronLeft size={22} aria-hidden /><span className="page-turn-label">Previous</span>
+            </button>
+            {!listen.active && (
+              <div className="page-turn-status">
+                <p>{position.completed ? "End of the book" : pages.left !== null ? pagesLeftText(pages.left) : "Reading chapter"}</p>
+                <span>{position.percent}% of book</span>
+                <span className="page-turn-track" aria-hidden><span style={{ width: `${position.percent}%` }} /></span>
+              </div>
+            )}
+            <button type="button" className="page-turn-button page-turn-next" aria-label="Next page" title="Next page (→)" aria-keyshortcuts="ArrowRight PageDown" disabled={!pages.canNext} onClick={pages.next}>
+              <span className="page-turn-label">Next</span><ChevronRight size={22} aria-hidden />
+            </button>
+          </nav>
+        </>
       )}
 
-      {/* The e-reader's footer, for the eye: the same progress is the top bar's progress bar for a screen reader.
-          The player takes its place while listening. */}
-      {book && !listen.active && (
+      {/* Scroll mode keeps its quiet time estimate; Pages includes progress in its navigation dock. */}
+      {book && !listen.active && !turning && (
         <footer className="reading-footer" aria-hidden>
           <p className="reading-footer-line">
-            <span>
-              {turning && pages.left !== null
-                ? pagesLeftText(pages.left)
-                : position.completed
-                  ? "End of the book"
-                  : timeLeft(position.minutesLeft)}
-            </span>
-            {/* Turning pages, the top bar is mostly away, so the footer carries the book's percentage too. */}
-            {turning && <span>{position.percent}%</span>}
+            <span>{position.completed ? "End of the book" : timeLeft(position.minutesLeft)}</span>
           </p>
         </footer>
       )}
