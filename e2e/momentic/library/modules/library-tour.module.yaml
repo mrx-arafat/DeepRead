@@ -61,10 +61,10 @@ steps:
   - click:
       on: Add a book button
       retries: 2
-  # Reading the PDF takes a few seconds, and longer on a busy machine.
+  # Reading the PDF takes a few seconds, and longer on a busy machine. The card then counts down about 4 s before it opens the book.
   - waitForUrl:
       substring: /book/
-      timeout: 30000
+      timeout: 40000
   # The book opens at its own text (the preface), past the title page and contents.
   - checkElementVisible:
       css: "main.page > article.chapter:nth-of-type(1) .chapter-text"

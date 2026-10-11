@@ -1,0 +1,593 @@
+/*
+ * A book on its way into the library (UploadPanel.tsx). The book is drawn in the cloth its title will be bound in:
+ * an outline at first, the cloth rising up it as the file uploads, a light passing over it while DeepRead reads the
+ * pages, and then it turns to face the reader in its own cover. The card behind it is ruled like a notebook page.
+ */
+
+/* On a phone the book sits beside its title only, and the bars, buttons and sentence take the card's full width
+   below: beside a book, a phone leaves the text about 190px. The body's own box steps aside (display: contents) so
+   its parts can each take a place in the card's grid; the spare row beside the book takes up its extra height. */
+.upload-panel {
+  position: relative;
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  grid-template-rows: auto auto auto 1fr auto auto auto;
+  grid-template-areas:
+    "book kicker"
+    "book title"
+    "book meta"
+    "book ."
+    "progress progress"
+    "status status"
+    "cancel cancel";
+  gap: 0 1rem;
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  background: var(--raised);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 0.75rem 1.5rem -1.25rem rgb(0 0 0 / 0.35);
+  animation: upload-arrive 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Notebook rules, fading in from the left, so the card reads as a page and the text side stays clean. Only on a wide
+   card: on a phone the text fills the width and the rules would run through it. */
+.upload-panel::before {
+  content: none;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: repeating-linear-gradient(
+    180deg,
+    transparent 0 calc(1.75rem - 1px),
+    color-mix(in srgb, var(--rule) 75%, transparent) calc(1.75rem - 1px) 1.75rem
+  );
+  mask-image: linear-gradient(90deg, transparent 40%, #000 95%);
+  pointer-events: none;
+}
+
+@media (min-width: 40rem) {
+  .upload-panel {
+    grid-template-columns: auto minmax(0, 44rem) 1fr;
+    grid-template-rows: auto;
+    grid-template-areas: "book body cancel";
+    align-items: center;
+    gap: 1.75rem;
+    padding: 1.5rem 1.75rem;
+  }
+
+  .upload-panel::before {
+    content: "";
+  }
+}
+
+@keyframes upload-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+}
+
+/* On an empty shelf the drop box is already the frame: the book arrives inside it. */
+.drop .upload-panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.drop .upload-panel::before {
+  content: none;
+}
+
+.drop-body:has(.upload-panel) {
+  flex: 1;
+}
+
+/* ---- The book ---- */
+
+/* Held to its own height, so the shadow under it stays under the book when the rows beside it run taller. */
+.upload-book {
+  grid-area: book;
+  position: relative;
+  isolation: isolate;
+  align-self: start;
+  width: 4.5rem;
+  perspective: 32rem;
+}
+
+@media (min-width: 40rem) {
+  .upload-book {
+    align-self: center;
+    width: 5.25rem;
+  }
+}
+
+/* The shadow the book casts on the page. */
+.upload-book::after {
+  content: "";
+  position: absolute;
+  right: -6%;
+  bottom: -0.5rem;
+  left: 6%;
+  z-index: -1;
+  height: 0.875rem;
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.3), transparent);
+  opacity: calc(0.35 + var(--sent) * 0.65);
+}
+
+.upload-book-board {
+  position: relative;
+  display: block;
+  transform: rotateY(-24deg);
+  transform-origin: 40% 50%;
+  transform-style: preserve-3d;
+}
+
+/* Before the cloth: the shape of the book, dashed in pencil. */
+.upload-book-ghost {
+  position: absolute;
+  inset: 0;
+  border: 1px dashed var(--ink-faint);
+  border-radius: 2px 5px 5px 2px;
+  background: repeating-linear-gradient(0deg, color-mix(in srgb, var(--rule) 70%, transparent) 0 1px, transparent 1px 0.5rem);
+  opacity: calc(1 - var(--sent));
+  transition: opacity 220ms linear;
+}
+
+/* The cloth rises from the bottom with the bytes sent. */
+.upload-book .cover {
+  clip-path: inset(calc((1 - var(--sent)) * 100%) 0 0 0 round 2px 5px 5px 2px);
+  transition: clip-path 220ms linear;
+}
+
+/* The edge of the rising cloth, drawn in pen while the file is still going. */
+.upload-book-board::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  /* A 2px line, moved by its background position so the rise is repainted, not laid out again. */
+  background: linear-gradient(var(--pen), var(--pen)) no-repeat 0 calc((1 - var(--sent)) * 100%) / 100% 2px;
+  transform: translateZ(1px);
+  transition: background-position 220ms linear;
+}
+
+.upload-panel:not([data-phase="sending"]) .upload-book-board::before {
+  opacity: 0;
+}
+
+/* The fore-edge: the pages, seen past the cover as the book stands at an angle. */
+.upload-book-board::after {
+  content: "";
+  position: absolute;
+  top: 2%;
+  bottom: 2%;
+  left: 100%;
+  width: 0.5rem;
+  background: repeating-linear-gradient(90deg, #f7f2e6 0 1px, #d9d1bd 1px 2px);
+  transform: rotateY(90deg);
+  transform-origin: left center;
+  opacity: var(--sent);
+}
+
+/* A light passing over the cloth while DeepRead reads the book. */
+.upload-book-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: 2px 5px 5px 2px;
+  background: linear-gradient(110deg, transparent 32%, rgb(255 255 255 / 0.3) 48%, transparent 64%) no-repeat;
+  background-size: 250% 100%;
+  opacity: 0;
+  transform: translateZ(1px);
+  pointer-events: none;
+}
+
+.upload-panel[data-phase="reading"] .upload-book-board {
+  animation: upload-float 2.4s ease-in-out infinite alternate;
+}
+
+.upload-panel[data-phase="reading"] .upload-book-sheen {
+  opacity: 1;
+  animation: upload-sheen 1.8s ease-in-out infinite;
+}
+
+/* Done: the book turns to face the reader and lifts off the page. */
+.upload-panel[data-phase="ready"] .upload-book-board {
+  animation: upload-face 520ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.upload-panel[data-phase="ready"] .upload-book::after {
+  transform: scaleX(0.92);
+  opacity: 0.7;
+  transition:
+    transform 520ms,
+    opacity 520ms;
+}
+
+@keyframes upload-float {
+  to {
+    transform: rotateY(-14deg) translateY(-3px);
+  }
+}
+
+@keyframes upload-sheen {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+@keyframes upload-face {
+  from {
+    transform: rotateY(-18deg);
+  }
+  to {
+    transform: rotateY(0deg) translateY(-4px);
+  }
+}
+
+/* A green seal once the book is on the shelf. */
+.upload-book-done {
+  position: absolute;
+  top: -0.5rem;
+  right: -0.625rem;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 50%;
+  background: var(--live);
+  color: #ffffff;
+  box-shadow: 0 0 0 3px var(--raised);
+  transform: scale(0);
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1) 180ms;
+}
+
+.drop .upload-book-done {
+  box-shadow: 0 0 0 3px var(--paper);
+}
+
+.upload-panel[data-phase="ready"] .upload-book-done {
+  transform: scale(1);
+}
+
+/* ---- What is happening ---- */
+
+.upload-body {
+  display: contents;
+}
+
+.upload-kicker {
+  grid-area: kicker;
+}
+
+.upload-title {
+  grid-area: title;
+}
+
+.upload-meta {
+  grid-area: meta;
+}
+
+.upload-steps,
+.upload-actions {
+  grid-area: progress;
+}
+
+.upload-status {
+  grid-area: status;
+}
+
+@media (min-width: 40rem) {
+  .upload-body {
+    display: block;
+    grid-area: body;
+    min-width: 0;
+  }
+}
+
+.upload-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.upload-pulse {
+  position: relative;
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--pen);
+}
+
+.upload-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: upload-pulse 1.6s ease-out infinite;
+}
+
+.upload-panel[data-phase="ready"] .upload-pulse {
+  background: var(--live);
+}
+
+.upload-panel[data-phase="ready"] .upload-pulse::after {
+  animation: none;
+}
+
+@keyframes upload-pulse {
+  from {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.75);
+  }
+}
+
+/* Set in the book face: the title is the book's, not the interface's. The main title may take two lines and its
+   subtitle one (BookTitle), so a title as long as a blurb is cut at a line's end and the card stays its size. */
+.upload-title {
+  --title-main-lines: 2;
+  --title-sub-lines: 1;
+  --title-sub-size: 0.9375rem;
+
+  margin: 0.375rem 0 0;
+  color: var(--ink);
+  font-family: var(--font-book);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+@media (min-width: 40rem) {
+  .upload-title {
+    font-size: 1.375rem;
+  }
+}
+
+.upload-meta {
+  margin: 0.25rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Three steps, each with its own bar, widest where the wait is longest. */
+.upload-steps {
+  display: grid;
+  grid-template-columns: 6fr 5fr 2fr;
+  gap: 0.375rem;
+  margin: 1.125rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upload-track {
+  position: relative;
+  display: block;
+  height: 0.375rem;
+  overflow: hidden;
+  border-radius: 0.1875rem;
+  background: var(--wash);
+}
+
+/* Scaled, not resized, so a bar that moves several times a second never lays the card out again. */
+.upload-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--pen);
+  transform: scaleX(var(--fill));
+  transform-origin: left center;
+  transition: transform 220ms linear;
+}
+
+/* DeepRead does not say how far it has read, so the Read bar sweeps rather than pretending to a percentage. */
+.upload-step:nth-child(2)[data-state="active"] .upload-fill {
+  right: auto;
+  width: 38%;
+  border-radius: inherit;
+  animation: upload-sweep 1.3s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes upload-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(265%);
+  }
+}
+
+/* The percent stays beside "Upload": at the far end of its bar it would read as the next step's. */
+.upload-step-label {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  color: var(--ink-faint);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.upload-step-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.upload-step[data-state="active"] .upload-step-label {
+  color: var(--ink);
+}
+
+.upload-step[data-state="done"] .upload-step-label {
+  color: var(--ink-soft);
+}
+
+.upload-step[data-state="done"] .upload-step-name svg {
+  color: var(--pen);
+}
+
+.upload-percent {
+  color: var(--pen);
+  font-variant-numeric: tabular-nums;
+}
+
+.upload-status {
+  margin: 0.875rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.upload-cancel {
+  grid-area: cancel;
+  justify-self: start;
+  margin-top: 1rem;
+}
+
+@media (min-width: 40rem) {
+  .upload-cancel {
+    align-self: start;
+    justify-self: end;
+    margin-top: 0;
+  }
+}
+
+/* ---- The finished book ---- */
+
+/* Where the step bars were: the bars have said all they had to, and the card keeps its height. */
+.upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem 0.75rem;
+  margin-top: 1.125rem;
+}
+
+/* The countdown to opening fills along the button's foot, held with the rest of the countdown. */
+.upload-open {
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-open::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: currentColor;
+  opacity: 0.5;
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: upload-countdown var(--auto-open) linear forwards;
+}
+
+.upload-panel[data-held] .upload-open::after {
+  animation-play-state: paused;
+}
+
+.upload-panel[data-stayed] .upload-open::after {
+  content: none;
+}
+
+@keyframes upload-countdown {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.upload-countdown {
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Put away without opening: in the corner, where Cancel was while the file went up. */
+.upload-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+/* On a phone the text runs to the card's edge, so it leaves the close button its corner. */
+.upload-panel[data-phase="ready"] :is(.upload-kicker, .upload-title) {
+  padding-right: 2.25rem;
+}
+
+@media (min-width: 40rem) {
+  .upload-panel[data-phase="ready"] :is(.upload-kicker, .upload-title) {
+    padding-right: 0;
+  }
+}
+
+/* While a book is on its way, the add button stays in place and focusable, but takes no second file. */
+.library .library-top .drop .button[aria-disabled="true"],
+.library .library-top .drop .button[aria-disabled="true"]:hover {
+  background: var(--ink);
+  color: var(--paper);
+  opacity: 0.5;
+  cursor: progress;
+}
+
+/* The book still fills, turns and is sealed; only the sweeping, floating and pulsing stop. */
+@media (prefers-reduced-motion: reduce) {
+  /* The countdown is still said in words beside the button. */
+  .upload-open::after {
+    content: none;
+  }
+
+  .upload-panel,
+  .upload-panel[data-phase="reading"] .upload-book-board,
+  .upload-panel[data-phase="reading"] .upload-book-sheen,
+  .upload-pulse::after {
+    animation: none;
+  }
+
+  .upload-panel[data-phase="reading"] .upload-book-sheen {
+    opacity: 0;
+  }
+
+  .upload-panel[data-phase="ready"] .upload-book-board {
+    animation: none;
+    transform: none;
+  }
+
+  .upload-step:nth-child(2)[data-state="active"] .upload-fill {
+    width: 100%;
+    opacity: 0.4;
+    transform: none;
+    animation: none;
+  }
+
+  .upload-book-done,
+  .upload-book .cover,
+  .upload-book-ghost,
+  .upload-book-board::before,
+  .upload-fill {
+    transition: none;
+  }
+}

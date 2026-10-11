@@ -570,8 +570,7 @@ select {
   align-content: center;
 }
 
-.drop-hint,
-.drop-busy {
+.drop-hint {
   color: var(--ink-soft);
 }
 
@@ -584,45 +583,6 @@ select {
 @media (pointer: coarse), (max-width: 40rem) {
   .drop-hint {
     display: none;
-  }
-}
-
-.drop-busy {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 0.75rem;
-  min-width: 0;
-}
-
-.drop-busy-text {
-  display: grid;
-  min-width: 0;
-}
-
-/* One line, so a long file name cannot change the height of the box. */
-.drop-busy-name {
-  overflow: hidden;
-  color: var(--ink);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.drop-spinner {
-  flex: none;
-  color: var(--pen);
-  animation: drop-spin 1s linear infinite;
-}
-
-@keyframes drop-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .drop-spinner {
-    animation: none;
   }
 }
 
@@ -4434,6 +4394,12 @@ h5[data-block] {
 
 .profile-spinner {
   animation: drop-spin 1s linear infinite;
+}
+
+@keyframes drop-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Said only if DeepRead is slow to answer: a quick answer replaces the page before this has appeared. */

@@ -103,6 +103,19 @@ export function addFailure(fileName: string, reason: unknown): string {
   return `${fileName} could not be added. ${why}`;
 }
 
+/**
+ * A title as its main title and its subtitle: "Mastering Mind Games - The Art of Influence" is "Mastering Mind Games" over
+ * "The Art of Influence". Split at the first colon or spaced dash only, and only when both halves are words, not "Re: X".
+ */
+export function splitTitle(title: string): { main: string; sub: string | null } {
+  const whole = title.trim();
+  const parts = /^(.+?)(?::\s+|\s+[-–—]\s+)(.+)$/su.exec(whole);
+  const main = parts?.[1]?.trim() ?? "";
+  const sub = parts?.[2]?.trim() ?? "";
+  if (main.length < 3 || sub.length < 3) return { main: whole, sub: null };
+  return { main, sub };
+}
+
 /** A title short enough to sit inside a sentence. Cuts between words, and never inside a letter the reader sees as one (Bangla). */
 export function shortTitle(title: string, max = 60): string {
   const letters = Array.from(new Intl.Segmenter().segment(title.trim()), (part) => part.segment);

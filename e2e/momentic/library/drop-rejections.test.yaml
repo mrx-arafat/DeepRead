@@ -17,7 +17,7 @@ steps:
         await new Promise((resolve) => setTimeout(resolve, 0));
         if (!document.querySelector(".inline-error")?.textContent?.includes("one PDF at a time"))
           throw new Error("Multi-file drop did not explain the single-file limit");
-        if (document.querySelector(".drop-busy")) throw new Error("Multi-file drop started an upload");
+        if (document.querySelector(".upload-panel")) throw new Error("Multi-file drop started an upload");
         if ((await (await fetch("/api/books")).json()).length !== 0) throw new Error("Multi-file drop added a book");
   - module: ./modules/add-fixture-book.module.yaml
   - click: Back to your books
@@ -68,7 +68,7 @@ steps:
         };
         window.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
         await new Promise((resolve) => setTimeout(resolve, 0));
-        if (!document.querySelector(".drop-busy")) throw new Error("First drop did not start uploading");
+        if (!document.querySelector(".upload-panel")) throw new Error("First drop did not start uploading");
         window.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: window.__secondDrop }));
         await new Promise((resolve) => setTimeout(resolve, 0));
         if (uploads !== 1) throw new Error(`Second drop started another upload: ${uploads}`);

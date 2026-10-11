@@ -32,7 +32,7 @@ steps:
       saveAs: OFFLINE_UPLOAD
       code: |-
         await new Promise((r) => setTimeout(r, 800));
-        return { alert: document.querySelector("[role=alert]")?.innerText, busy: !!document.querySelector(".drop-busy") };
+        return { alert: document.querySelector("[role=alert]")?.innerText, busy: !!document.querySelector(".upload-panel") };
   - online
   - javascript:
       code: |-

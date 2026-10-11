@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import type { BookSummary, BookUpdate, ReadingStatus } from "../../shared/types.ts";
 import { BookEditDialog } from "./BookEditDialog.tsx";
 import { BookMenu } from "./BookMenu.tsx";
+import { BookTitle } from "./BookTitle.tsx";
 import { readingNote, shortTitle } from "./bookText.ts";
 import { Avatar } from "../profiles/Avatar.tsx";
 import { Cover } from "./Cover.tsx";
@@ -85,7 +86,8 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
         )}
       </Link>
       <div className="shelf-description">
-        <h3><Link href={`/book/${book.id}`} title={book.title}>{book.title}</Link></h3>
+        {/* BookTitle carries the tooltip with the whole title, so the link has none of its own. */}
+        <h3><Link href={`/book/${book.id}`}><BookTitle title={book.title} /></Link></h3>
         {book.author && <p>{book.author}</p>}
       </div>
       {/* Always there, so books that have not been started line up with the ones that have. */}

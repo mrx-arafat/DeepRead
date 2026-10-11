@@ -1,0 +1,31 @@
+fileType: momentic/test/v2
+id: library-add-book-close-card
+description: A reader adds the fixture book and closes the Added to your library card with its Close button. The card goes away, the book does not open by itself, and keyboard focus lands on the Add a book button. Run from the repo root (fileUpload paths are relative to it).
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
+  - click: Add a book button
+  - checkPageContains: Added to your library
+  - click: Close button on the Added to your library card
+  # The card would open the book about 4 s after it finished, so waiting 6 s shows whether Close held.
+  - javascript:
+      environment: browser
+      code: |-
+        await new Promise((r) => setTimeout(r, 6000));
+        if (location.pathname.includes("/book/")) throw new Error("Closing the card opened the book");
+        if (document.querySelector(".upload-panel")) throw new Error("The Added to your library card is still on the page after Close");
+  - javascript:
+      environment: browser
+      code: |-
+        const el = document.activeElement;
+        const focused = el && el !== document.body ? el.innerText ?? "" : "";
+        if (!focused.includes("Add a book")) throw new Error(`Focus did not return to the Add a book button after Close, it is on: ${focused.slice(0, 60)}`);
+  # Closing the card only puts it away: the book was added and stays on the shelf.
+  - javascript:
+      environment: browser
+      code: |-
+        const titles = [...document.querySelectorAll(".shelf-item h3")].map((h) => h.innerText);
+        if (!titles.some((t) => t.includes("Problems of Philosophy"))) throw new Error(`The added book is not on the shelf after Close: ${titles.join(" | ")}`);

@@ -1,0 +1,25 @@
+fileType: momentic/test/v2
+id: library-add-book-stay-here
+description: A reader adds the fixture book and chooses Stay here on the Added to your library card. The library keeps the reader on the page instead of opening the book, and the Open book button on the card still opens it. Run from the repo root (fileUpload paths are relative to it).
+viewport: 1440, 900
+before:
+  - module: ./modules/reset-library.module.yaml
+steps:
+  - refresh
+  - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
+  - click: Add a book button
+  - checkPageContains: Added to your library
+  - click: Stay here button
+  # The card would open the book about 4 s after it finished, so waiting 6 s shows whether Stay here held.
+  - javascript:
+      environment: browser
+      code: |-
+        await new Promise((r) => setTimeout(r, 6000));
+        if (location.pathname.includes("/book/")) throw new Error("the library opened the book after Stay here");
+        return location.pathname;
+  - checkPageContains: On your shelf. Open it whenever you like.
+  - assertVisually: The Added to your library card shows the cover of The Problems of Philosophy with a green check mark, the title, and an Open book button. There is no countdown text, and the page stays on the library
+  - click: Open book
+  - waitForUrl:
+      substring: /book/
+      timeout: 30000

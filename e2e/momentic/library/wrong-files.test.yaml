@@ -15,7 +15,7 @@ steps:
       saveAs: TXT_ERROR
       code: |-
         const e = document.querySelector(".inline-error");
-        return { text: e?.innerText, role: e?.getAttribute("role"), addButtonVisible: !!document.querySelector(".drop .button"), uploadingMessage: !!document.querySelector(".drop-busy") };
+        return { text: e?.innerText, role: e?.getAttribute("role"), addButtonVisible: !!document.querySelector(".drop .button"), uploadingMessage: !!document.querySelector(".upload-panel") };
   - module: ./modules/measure-contrast.module.yaml
   - fileUpload: data/e2e-library/scanned.pdf
   - click:

@@ -69,15 +69,49 @@ async function connect(path: string, init?: RequestInit): Promise<Response> {
 /** Fired on window when DeepRead answers that nobody is signed in (the session ended): App shows the profiles. */
 export const SIGNED_OUT_EVENT = "deepread:signed-out";
 
-/** The response of a request DeepRead answered with success; anything else throws an ApiFailure. */
-async function accept(path: string, init?: RequestInit): Promise<Response> {
-  const res = await connect(path, init);
+/** What an upload reports while it runs: the bytes the browser has sent of the whole request. */
+export interface UploadWatch {
+  onSent?: (sent: number, total: number) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * `connect` for a body worth watching: XMLHttpRequest reports the bytes it has sent, which fetch cannot. The answer comes
+ * back as a Response, so it is read the same way as any other. An abort rejects with the same AbortError fetch gives.
+ */
+function connectWatched(path: string, body: FormData, { onSent, signal }: UploadWatch): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const aborted = () => new DOMException("The upload was cancelled.", "AbortError");
+    if (signal?.aborted) return reject(aborted());
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", path);
+    xhr.responseType = "blob";
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onSent?.(event.loaded, event.total);
+    };
+    // The last progress event can come before the whole body has gone, so the end of the upload is told on its own.
+    xhr.upload.onload = (event) => onSent?.(event.total || event.loaded, event.total || event.loaded);
+    xhr.onload = () => resolve(new Response(xhr.status === 204 ? null : (xhr.response as Blob), { status: xhr.status }));
+    xhr.onerror = () => reject(new ApiFailure("unreachable", NOT_REACHABLE, 0));
+    xhr.onabort = () => reject(aborted());
+    signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.send(body);
+  });
+}
+
+/** The response, when DeepRead answered with success; anything else throws an ApiFailure. */
+async function accepted(res: Response): Promise<Response> {
   if (!res.ok) {
     const error = await failure(res);
     if (error.code === "sign_in_required") window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
     throw error;
   }
   return res;
+}
+
+/** The response of a request DeepRead answered with success; anything else throws an ApiFailure. */
+async function accept(path: string, init?: RequestInit): Promise<Response> {
+  return accepted(await connect(path, init));
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -121,10 +155,10 @@ export const api = {
     (await request<{ readingStatus: ReadingStatus }>(`/api/books/${id}/reading-status`, json("PUT", { status }))).readingStatus,
   getChapter: (bookId: string, chapterId: string, signal?: AbortSignal) =>
     request<Chapter>(`/api/books/${bookId}/chapters/${chapterId}`, { signal }),
-  uploadBook: async (file: File): Promise<{ book: BookDetail; alreadyHad: boolean }> => {
+  uploadBook: async (file: File, watch: UploadWatch = {}): Promise<{ book: BookDetail; alreadyHad: boolean }> => {
     const form = new FormData();
     form.append("file", file);
-    const res = await accept("/api/books", { method: "POST", body: form });
+    const res = await accepted(await connectWatched("/api/books", form, watch));
     // 201 is a new book; 200 means this exact file is already in the library and nothing was added.
     return { book: (await res.json()) as BookDetail, alreadyHad: res.status === 200 };
   },

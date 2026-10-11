@@ -1,4 +1,4 @@
-import { ArrowRight, Bookmark, FileUp, LoaderCircle, X } from "lucide-react";
+import { ArrowRight, Bookmark, FileUp, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation } from "wouter";
 import { formatBytes } from "../shared/bytes.ts";
@@ -6,6 +6,7 @@ import { LANGUAGES } from "../shared/types.ts";
 import type { BookSummary, BookUpdate, ReadingStatus } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { BookRow } from "./library/BookRow.tsx";
+import { BookTitle } from "./library/BookTitle.tsx";
 import type { Mode } from "./library/BookRow.tsx";
 import { addFailure, filterBooks, latestRead, shortTitle, splitPinned } from "./library/bookText.ts";
 import type { StartedBook } from "./library/bookText.ts";
@@ -14,6 +15,8 @@ import { Cover } from "./library/Cover.tsx";
 import { ContinueCard } from "./library/ContinueCard.tsx";
 import { ResumeContext } from "./library/ResumeContext.tsx";
 import { addBook, dropBook, patchBook, readerKey, readShelf, rememberBooks, rememberStorage, watchShelves } from "./library/shelfCache.ts";
+import { UploadPanel } from "./library/UploadPanel.tsx";
+import type { UploadState } from "./library/UploadPanel.tsx";
 import { useFileDrop } from "./library/useFileDrop.ts";
 import { APP_NAME, useDocumentTitle } from "./pageTitle.ts";
 import { usePrefs } from "./prefs.ts";
@@ -64,7 +67,8 @@ export function LibraryPage() {
   const [error, setError] = useState<string | null>(null);
   /** The book the reader tried to add again, which the library already holds. */
   const [already, setAlready] = useState<{ id: string; title: string } | null>(null);
-  const [uploading, setUploading] = useState<string | null>(null);
+  const [upload, setUpload] = useState<UploadState | null>(null);
+  const stopUpload = useRef<AbortController | null>(null);
   const [active, setActive] = useState<Active | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   // Where keyboard focus goes once a removed row is gone: a book's id, or "add". Set for one render.
@@ -134,23 +138,43 @@ export function LibraryPage() {
     uploadingNow.current = true;
     setError(null);
     setAlready(null);
-    setUploading(file.name);
+    const stop = new AbortController();
+    stopUpload.current = stop;
+    setUpload({ fileName: file.name, size: file.size, sent: 0, phase: "sending", startedAt: Date.now(), readyAt: null, book: null });
+    const finish = () => {
+      setUpload(null);
+      stopUpload.current = null;
+      uploadingNow.current = false;
+    };
     try {
-      const { book, alreadyHad } = await api.uploadBook(file);
+      const { book, alreadyHad } = await api.uploadBook(file, {
+        signal: stop.signal,
+        // Once the last byte has gone, the wait is DeepRead reading the book.
+        onSent: (sent, total) =>
+          setUpload((now) => now && { ...now, sent: total > 0 ? sent / total : 0, phase: sent >= total ? "reading" : "sending" }),
+      });
       if (alreadyHad) {
         // Stay on the shelf: the reader asked to add a book, not to open one, and nothing was added.
         setAlready({ id: book.id, title: book.title });
-        setUploading(null);
-        uploadingNow.current = false;
+        finish();
         return;
       }
-      // The shelf the reader comes back to from this book already has it.
+      // On the shelf at once, so the card can be closed and the book is still there.
       addBook(reader, book);
-      navigate(`/book/${book.id}`);
-    } catch (err) {
-      setError(addFailure(file.name, err));
-      setUploading(null);
+      // The finished card shows the book in its own cover with an Open button, and opens it by itself after a few
+      // seconds unless the reader stays. Another book can be added meanwhile; it takes this card's place.
+      setUpload((now) => now && { ...now, sent: 1, phase: "ready", readyAt: Date.now(), book });
+      stopUpload.current = null;
       uploadingNow.current = false;
+    } catch (err) {
+      // Cancelled before the whole file was sent: DeepRead never had the book, so there is nothing to report.
+      if (stop.signal.aborted) {
+        finish();
+        addButton.current?.focus();
+        return;
+      }
+      setError(addFailure(file.name, err));
+      finish();
     }
   }
 
@@ -275,6 +299,20 @@ export function LibraryPage() {
     </p>
   );
 
+  // A book on its way holds the Add button; the finished card does not, and the next book takes its place.
+  const adding = upload !== null && upload.phase !== "ready";
+  const uploadPanel = upload && (
+    <UploadPanel
+      upload={upload}
+      onCancel={() => stopUpload.current?.abort()}
+      onOpen={(bookId) => navigate(`/book/${bookId}`)}
+      onClose={() => {
+        setUpload(null);
+        setFocusAfterRemoval(ADD_BUTTON);
+      }}
+    />
+  );
+
   return (
     <>
       {session?.impersonatedBy && <ReadingAs session={session} admin={session.impersonatedBy} />}
@@ -313,7 +351,7 @@ export function LibraryPage() {
               </span>
             )}
             <div className="drop-body">
-              {empty && !uploading && (
+              {empty && !upload && (
                 <>
                   <p className="library-empty">No books yet. Add a PDF to start reading.</p>
                   <p className="library-empty-more">
@@ -321,17 +359,22 @@ export function LibraryPage() {
                   </p>
                 </>
               )}
-              {uploading ? (
-                <div className="drop-busy" role="status">
-                  <LoaderCircle className="drop-spinner" size={20} aria-hidden />
-                  <span className="drop-busy-text">
-                    <strong className="drop-busy-name">Reading {uploading}</strong>
-                    <span>A long book can take a minute.</span>
-                  </span>
-                </div>
+              {/* An empty shelf has room for the arriving book in its own box; a full one shows it under the header. */}
+              {empty && upload ? (
+                uploadPanel
               ) : (
                 <div className="drop-actions">
-                  <button ref={addButton} type="button" className="button" title="Add a PDF book" onClick={() => input.current?.click()}>
+                  {/* aria-disabled, not disabled: the button keeps keyboard focus while the book it started is on its way. */}
+                  <button
+                    ref={addButton}
+                    type="button"
+                    className="button"
+                    title="Add a PDF book"
+                    aria-disabled={adding || undefined}
+                    onClick={() => {
+                      if (!adding) input.current?.click();
+                    }}
+                  >
                     <FileUp size={18} aria-hidden /> Add a book
                   </button>
                   <span className="drop-hint">
@@ -344,6 +387,8 @@ export function LibraryPage() {
           <AppearanceMenu />
           {session && <ProfileMenu session={session} />}
         </div>
+
+        {!empty && uploadPanel}
 
         {error && (
           <p className="inline-error" role="alert">
@@ -388,7 +433,7 @@ export function LibraryPage() {
                   <h3 id="up-next-heading">Up next</h3>
                   <div className="up-next-book">
                     <div className="up-next-cover" aria-hidden><Cover book={upNext} /></div>
-                    <div><h4>{upNext.title}</h4>{upNext.author && <p>{upNext.author}</p>}</div>
+                    <div><h4><BookTitle title={upNext.title} /></h4>{upNext.author && <p>{upNext.author}</p>}</div>
                   </div>
                   <Link className="up-next-link" href={`/book/${upNext.id}`} aria-label={`Open ${upNext.title}`}>Open book <ArrowRight size={18} aria-hidden /></Link>
                 </section>

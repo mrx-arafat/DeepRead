@@ -47,16 +47,74 @@ describe("api.uploadBook", () => {
   const file = new File(["%PDF-1.4"], "book.pdf", { type: "application/pdf" });
   const bookJson = JSON.stringify({ id: "book-12345678", title: "Book" });
 
+  type Progress = { lengthComputable: boolean; loaded: number; total: number };
+
+  /** XMLHttpRequest as the browser drives it: the body goes in two halves, then the server answers (or the network fails). */
+  const fakeXhr = (answer: { status: number; body: string } | "network-error" | "never") =>
+    class {
+      upload: { onprogress: ((event: Progress) => void) | null; onload: ((event: Progress) => void) | null } = { onprogress: null, onload: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      status = 0;
+      response: Blob | null = null;
+      responseType = "";
+      open() {}
+      abort() {
+        this.onabort?.();
+      }
+      send() {
+        if (answer === "never") return;
+        queueMicrotask(() => {
+          if (answer === "network-error") return this.onerror?.();
+          this.upload.onprogress?.({ lengthComputable: true, loaded: 500, total: 1000 });
+          this.upload.onload?.({ lengthComputable: true, loaded: 1000, total: 1000 });
+          this.status = answer.status;
+          this.response = new Blob([answer.body]);
+          this.onload?.();
+        });
+      }
+    };
+
   it("should say the library already held the book when the server answers 200", async () => {
-    vi.stubGlobal("fetch", () => Promise.resolve(new Response(bookJson, { status: 200 })));
+    vi.stubGlobal("XMLHttpRequest", fakeXhr({ status: 200, body: bookJson }));
 
     await expect(api.uploadBook(file)).resolves.toMatchObject({ book: { id: "book-12345678" }, alreadyHad: true });
   });
 
-  it("should say the book is new when the server answers 201", async () => {
-    vi.stubGlobal("fetch", () => Promise.resolve(new Response(bookJson, { status: 201 })));
+  it("should say the book is new and report every byte sent when the server answers 201", async () => {
+    vi.stubGlobal("XMLHttpRequest", fakeXhr({ status: 201, body: bookJson }));
+    const sent: number[] = [];
 
-    await expect(api.uploadBook(file)).resolves.toMatchObject({ book: { id: "book-12345678" }, alreadyHad: false });
+    const result = await api.uploadBook(file, { onSent: (bytes, total) => sent.push(bytes / total) });
+
+    expect(result).toMatchObject({ book: { id: "book-12345678" }, alreadyHad: false });
+    expect(sent).toEqual([0.5, 1]);
+  });
+
+  it("should say DeepRead is not reachable when a proxy answers with its own error page", async () => {
+    vi.stubGlobal("XMLHttpRequest", fakeXhr({ status: 500, body: "<html>500 Internal Server Error</html>" }));
+
+    await expect(api.uploadBook(file)).rejects.toMatchObject({
+      status: 500,
+      message: "DeepRead is not reachable. Check that it is running, then try again.",
+    });
+  });
+
+  it("should say DeepRead is not reachable when the upload never gets an answer", async () => {
+    vi.stubGlobal("XMLHttpRequest", fakeXhr("network-error"));
+
+    await expect(api.uploadBook(file)).rejects.toMatchObject({ code: "unreachable" });
+  });
+
+  it("should stop with an AbortError when the reader cancels the upload", async () => {
+    vi.stubGlobal("XMLHttpRequest", fakeXhr("never"));
+    const stop = new AbortController();
+
+    const upload = api.uploadBook(file, { signal: stop.signal });
+    stop.abort();
+
+    await expect(upload).rejects.toMatchObject({ name: "AbortError" });
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BookSummary, ReadingStatus } from "../../shared/types.ts";
-import { CLOTH_COUNT, clothFor, coverTitleSize, filterBooks, latestRead, readingNote, shortTitle, splitPinned } from "./bookText.ts";
+import { CLOTH_COUNT, clothFor, coverTitleSize, filterBooks, latestRead, readingNote, shortTitle, splitPinned, splitTitle } from "./bookText.ts";
 
 /** 36 000 words: exactly 200 minutes of reading at 180 words a minute. */
 function book(title: string, progress?: { percent: number; updatedAt: string }, readingStatus: ReadingStatus = "reading"): BookSummary {
@@ -17,6 +17,27 @@ function book(title: string, progress?: { percent: number; updatedAt: string }, 
     readingStatus,
   };
 }
+
+describe("splitTitle", () => {
+  it("should set a subtitle under the main title at the first colon or spaced dash", () => {
+    expect(splitTitle("Dark Psychology Secrets and Manipulation: A Guide To Influence People: Volume 2")).toEqual({
+      main: "Dark Psychology Secrets and Manipulation",
+      sub: "A Guide To Influence People: Volume 2",
+    });
+    expect(splitTitle("Mastering Mind Games - The Art of Psychological Influence")).toEqual({
+      main: "Mastering Mind Games",
+      sub: "The Art of Psychological Influence",
+    });
+    expect(splitTitle("Meditations — A New Translation")).toEqual({ main: "Meditations", sub: "A New Translation" });
+  });
+
+  it("should keep a title whole when it has no subtitle or a split would leave a scrap", () => {
+    expect(splitTitle("The Problems of Philosophy")).toEqual({ main: "The Problems of Philosophy", sub: null });
+    expect(splitTitle("Re: Zero")).toEqual({ main: "Re: Zero", sub: null });
+    expect(splitTitle("Self-Made Millionaires")).toEqual({ main: "Self-Made Millionaires", sub: null });
+    expect(splitTitle("Arrival at 10:30")).toEqual({ main: "Arrival at 10:30", sub: null });
+  });
+});
 
 describe("shortTitle", () => {
   it("should keep a title that fits as it is", () => {

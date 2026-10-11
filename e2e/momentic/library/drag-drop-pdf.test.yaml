@@ -1,6 +1,6 @@
 fileType: momentic/test/v2
 id: library-drag-drop-pdf
-description: Momentic cannot drag a file in from the operating system, so this test simulates a drop with synthetic dragover and drop events on the drop area (a File is built in the page from the fixture served by the dev server; the events bubble up to the window, where the page listens, so a drop anywhere on the page works the same). It checks the highlight while a file is over the page and that dropping the PDF adds the book and opens the reader.
+description: Automated browser tests cannot drag a file in from the operating system, so this test simulates a drop with synthetic dragover and drop events on the drop area (a File is built in the page from the fixture served by the dev server; the events bubble up to the window, where the page listens, so a drop anywhere on the page works the same). It checks the highlight while a file is over the page and that dropping the PDF adds the book and opens the reader.
 viewport: 1440, 900
 before:
   - module: ./modules/reset-library.module.yaml
@@ -29,9 +29,10 @@ steps:
         const drop = document.querySelector(".drop");
         drop.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: window.__deepreadDt }));
         return { draggingAfterDrop: drop.dataset.dragging ?? null };
+  # The card counts down about 4 s before it opens the book, so this timeout leaves room for that.
   - waitForUrl:
       substring: /book/
-      timeout: 30000
+      timeout: 40000
   # The book opens at its own text (the preface), past the title page and contents.
   - checkElementVisible:
       css: "main.page > article.chapter:nth-of-type(1) .chapter-text"

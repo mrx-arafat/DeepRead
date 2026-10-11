@@ -4,6 +4,7 @@ import type { ReactElement } from "react";
 import { Link } from "wouter";
 import { readingNote } from "./bookText.ts";
 import type { StartedBook } from "./bookText.ts";
+import { BookTitle } from "./BookTitle.tsx";
 import { Cover } from "./Cover.tsx";
 
 /** The book read last, with direct resume and an optional reminder of the saved passage. */
@@ -41,7 +42,7 @@ export function ContinueCard({ book, compact = false, onContext }: { book: Start
           <Cover book={book} />
         </div>
         <div className="continue-body">
-          <h3 className="continue-title">{book.title}</h3>
+          <h3 className="continue-title"><BookTitle title={book.title} /></h3>
           {book.author && <p className="continue-author">{book.author}</p>}
           <p className="continue-chapter">
             <Bookmark size={16} aria-hidden />

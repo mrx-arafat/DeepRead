@@ -1,0 +1,86 @@
+/*
+ * A title in two parts (BookTitle.tsx): the main title in the size its place gives it, the subtitle smaller and softer
+ * under it. Each part is held to a number of lines its place sets, so a long title is cut at a line's end with an
+ * ellipsis instead of pushing everything below it down.
+ *
+ *   --title-main-lines  lines the main title may take (default 2)
+ *   --title-sub-lines   lines the subtitle may take (default 1)
+ *   --title-sub-size    the subtitle's size, as a share of the main title's (default 0.62em)
+ */
+
+.book-title {
+  display: block;
+  min-width: 0;
+}
+
+.book-title-main,
+.book-title-sub {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+}
+
+.book-title-main {
+  -webkit-line-clamp: var(--title-main-lines, 2);
+}
+
+.book-title-sub {
+  margin-top: 0.25em;
+  color: var(--ink-soft);
+  font-size: var(--title-sub-size, 0.62em);
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.35;
+  -webkit-line-clamp: var(--title-sub-lines, 1);
+}
+
+/*
+ * What each place gives a title. The headings below were clamped as a whole (a 4 line clamp on the Continue card, a 2 line
+ * clamp on the shelf link). BookTitle clamps each part itself, so those are switched off here: left on, they would cut the
+ * subtitle whenever the main title used its lines.
+ */
+
+/* Continue card: the largest title on the page (22 to 30px), so three lines of main title and two of subtitle. The
+   subtitle is 0.58 of the title's size but never under 15px, which keeps it above the 14px author line on a phone. */
+.continue-card .continue-title {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: none;
+  --title-main-lines: 3;
+  --title-sub-lines: 2;
+  --title-sub-size: max(0.9375rem, 0.58em);
+}
+
+.continue-card .continue-title .book-title-sub {
+  margin-top: 0.375rem;
+}
+
+/* Shelf rows: a 14px title in a column about 190px wide, under a cover that is already the biggest thing in the row, so
+   two lines of main title and one of subtitle. The subtitle at 13px sits between the title (14px) and the author (12px),
+   and its weight (500, against the title's bold) keeps the three apart. */
+.shelf-description h3 a {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: none;
+  --title-main-lines: 2;
+  --title-sub-lines: 1;
+  --title-sub-size: 0.8125rem;
+}
+
+/* The hover underline belongs to the main title: drawn across the grey subtitle it would be the link's blue. */
+.shelf-description h3 a:hover {
+  text-decoration: none;
+}
+
+.shelf-description h3 a:hover .book-title-main {
+  text-decoration: underline;
+}
+
+/* Up next: a 15px title beside a small cover in the side card, so two lines of main title and one of subtitle,
+   the subtitle at the 13px the author line under it uses. */
+.up-next-book h4 {
+  --title-main-lines: 2;
+  --title-sub-lines: 1;
+  --title-sub-size: 0.8125rem;
+}
