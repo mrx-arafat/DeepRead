@@ -19,6 +19,13 @@ describe("photoProblem", () => {
     expect(photoProblem({ type: "image/webp", size: 5_000_000 })).toBeNull();
   });
 
+  it("should let the server inspect photos when the file picker omits the image type", () => {
+    expect(photoProblem({ type: "", size: 1000 })).toBeNull();
+    expect(photoProblem({ type: "application/octet-stream", size: 1000 })).toBeNull();
+    expect(photoProblem({ type: "", size: 6_200_000 })).toContain("choose a smaller one");
+    expect(photoProblem({ type: "image/heic", size: 1000 })).toBe("Choose a PNG, JPEG or WebP photo.");
+  });
+
   it("should explain a photo that is too big or not an accepted picture", () => {
     expect(photoProblem({ type: "image/png", size: 6_200_000 })).toBe(
       "That photo is 6.2 MB. Photos can be up to 5 MB, so choose a smaller one.",

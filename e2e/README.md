@@ -57,6 +57,8 @@ pnpm e2e:run ux02-profile-recovery
 
 The first command lists supported names. Each named run chooses unused local ports, forces local storage even when `.env.local` points at R2, creates a temporary data folder, uploads the Gutenberg fixture when needed, uses a unique headless `playwright-cli` session, and closes the browser and servers afterward. Profile journeys use their test-only codes and upload their own fixture through the UI. A failing journey reports the browser output and exits nonzero. `playwright-cli` and the installed project dependencies are required. Keep the manual commands below for journeys that need custom multi-book fixtures or a persistent debugging session.
 
+`pnpm e2e:run profile-photo` checks profile-photo uploads at a 390px viewport: JPEG, PNG, WebP, and valid JPEGs with missing or generic MIME metadata. It verifies image rendering and reload persistence, rejection of corrupt images without losing the saved photo, retry after a simulated connection failure, and photo removal at desktop width. It uses only temporary local profile data.
+
 The scripts below run against the same isolated fixture instance, without a Momentic account or AI calls.
 Use `playwright-cli` in separate named sessions; `open` is headless unless `--headed` is added.
 Save a reading position partway through a chapter first, so **Where I left off** has preceding text to show.

@@ -28,7 +28,10 @@ export function deleteQuestion(name: string, bookCount: number): string {
 
 /** Why a chosen photo cannot be used, or null when it can. */
 export function photoProblem(file: { size: number; type: string }): string | null {
-  if (!PHOTO_TYPES.includes(file.type)) return "Choose a PNG, JPEG or WebP photo.";
+  // File pickers can omit MIME metadata or provide a generic binary type. Let the server inspect those bytes,
+  // just as it does for a declared image, instead of rejecting a valid camera photo before it can be uploaded.
+  const unknownType = file.type === "" || file.type === "application/octet-stream";
+  if (!unknownType && !PHOTO_TYPES.includes(file.type)) return "Choose a PNG, JPEG or WebP photo.";
   if (file.size > MAX_PHOTO_BYTES) {
     return `That photo is ${formatBytes(file.size)}. Photos can be up to ${formatBytes(MAX_PHOTO_BYTES)}, so choose a smaller one.`;
   }
