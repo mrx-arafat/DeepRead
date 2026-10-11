@@ -323,6 +323,28 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     return pdf ? sendPdf(c, pdf) : bookNotFound(c);
   });
 
+  routes.get("/:id/pages/:page", async (c) => {
+    const id = c.req.param("id");
+    if (!isReadableBookId(id)) return invalidId(c);
+    const pageText = c.req.param("page");
+    if (!/^[1-9]\d{0,5}$/.test(pageText)) return apiError(c, 400, "invalid_page", "Choose a valid page number.");
+    const page = await c.var.library.sourcePage(id, Number(pageText));
+    if (!page) return apiError(c, 404, "page_not_found", "This original page could not be displayed. Try again shortly.");
+    return c.body(page.data, 200, { "Content-Type": page.type, "Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff" });
+  });
+
+  routes.get("/:id/figures/:name", async (c) => {
+    const id = c.req.param("id");
+    if (!isReadableBookId(id)) return invalidId(c);
+    const data = await c.var.library.figure(id, c.req.param("name"));
+    if (!data) return apiError(c, 404, "figure_not_found", "This book figure could not be found.");
+    return c.body(data, 200, {
+      "Content-Type": "image/png",
+      "Cache-Control": "private, no-cache",
+      "X-Content-Type-Options": "nosniff",
+    });
+  });
+
   routes.get("/:id/cover", async (c) => {
     const { library } = c.var;
     const id = c.req.param("id");

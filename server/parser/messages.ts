@@ -15,7 +15,7 @@ const KINDS: Partial<Record<PdfParseErrorCode, ParseErrorKind>> = {
 // Each says what is wrong and what to do next, in words a reader who has never heard of OCR or PDF internals can follow.
 const MESSAGES: Partial<Record<PdfParseErrorCode, string>> = {
   scanned:
-    "This PDF is a scan (pictures of pages, not words), so DeepRead cannot read it. Use a version of the book with text you can select, or run this one through a text-recognition tool first.",
+    "This PDF is a scan (pictures of pages, not words), and DeepRead could not recognize enough text to read it. Ask the administrator to check local text recognition. Use a version of the book with text you can select, or run this one through a text-recognition tool first.",
   garbled:
     "The words in this PDF are scrambled, so DeepRead cannot read it. Use another copy of the book, or run this one through a text-recognition tool first.",
   invalid_pdf: "This PDF looks damaged. Try downloading or exporting it again.",

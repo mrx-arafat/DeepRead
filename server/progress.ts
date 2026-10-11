@@ -16,7 +16,7 @@ export function describePosition(
 ): Pick<ReadingProgress, "chapterTitle" | "percent"> | null {
   const chapter = book.chapters.find((candidate) => candidate.id === chapterId);
   if (!chapter) return null;
-  const blocks = readableBlocks(chapter);
+  const blocks = readableBlocks(chapter).filter((block) => block.type !== "image");
   const at = blocks.findIndex((block) => block.id === blockId);
   if (at === -1) return null;
 

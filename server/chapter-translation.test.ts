@@ -143,6 +143,20 @@ describe("createChapterTranslator", () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
+  it("translates recovered words and preserved code without sending figure assets", async () => {
+    const { fetchImpl, calls } = services();
+    const illustrated: Chapter = { ...chapter([]), blocks: [
+      { id: "figure", type: "image", text: "", page: 1, image: { src: `figures/${"a".repeat(64)}.png`, width: 80, height: 60, alt: "Illustration" } },
+      { id: "ocr", type: "paragraph", text: "Recovered words.", page: 1 },
+      { id: "code", type: "code", text: "  return value;\nnext();", page: 1 },
+    ] };
+    const translated = await createChapterTranslator({ fetchImpl }).chapter({ library, bookId }, illustrated, "bn", "auto");
+    expect(calls.map(({ texts }) => texts)).toEqual([["Recovered words.", "  return value;\nnext();"]]);
+    expect(translated.blocks.figure).toBeUndefined();
+    expect(translated.blocks.ocr).toBe("ms:Recovered words.");
+    expect(translated.blocks.code).toContain("return value;");
+  });
+
   it("should translate a chapter once, keep it with the book, and translate again only a block whose text changed", async () => {
     const { fetchImpl, calls } = services();
     const first = await createChapterTranslator({ fetchImpl }).chapter({ library, bookId }, chapter(TEXTS), "bn", "auto");

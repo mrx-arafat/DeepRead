@@ -6,6 +6,7 @@ import { ChapterClosing } from "./ChapterClosing.tsx";
 import { ChapterText, type TextActions } from "./ChapterText.tsx";
 import { titleId } from "./listenBlocks.ts";
 import { LookupTip } from "./LookupTip.tsx";
+import { OriginalPage } from "./OriginalPage.tsx";
 import { useChapterTranslation } from "./useChapterTranslation.ts";
 
 type Props = {
@@ -58,6 +59,7 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
                 : `About ${minutes(summary?.wordCount ?? 0)} min`}
         </p>
         <h2 id={headingId}>{chapter.title}</h2>
+        <OriginalPage bookId={book.id} startPage={chapter.startPage} pageCount={book.pageCount} />
         {/* Outside the title: the voice highlights the title's own text node as it reads it. */}
         {titleTranslation && (
           <p className="chapter-title-translation" lang={lang} dir="auto">

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { chaptersIn, mergeLines, pageEnd, pagesLeft, previousPageTop, showOnPage, snapShift } from "./paging.ts";
+import { chaptersIn, linesIn, mergeLines, pageEnd, pagesLeft, previousPageTop, showOnPage, snapShift } from "./paging.ts";
 
 /** Lines 20px tall every 30px from `first`, as text set with some leading would give. */
 const linesFrom = (first: number, count: number) =>
@@ -37,6 +37,41 @@ describe("chaptersIn", () => {
     const overlapping = chaptersIn(chapters, 1000, 2000);
     expect(overlapping.map(({ id }) => id)).toEqual([11, 12]);
     expect(overlapping).toHaveLength(2);
+  });
+});
+
+describe("figure paging", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("measures a figure without text as a whole page item", () => {
+    class ElementBox {
+      readonly figure: boolean;
+      readonly top: number;
+      readonly bottom: number;
+      constructor(figure: boolean, top: number, bottom: number) {
+        this.figure = figure;
+        this.top = top;
+        this.bottom = bottom;
+      }
+      matches(selector: string) { return this.figure && selector === "[data-book-figure]"; }
+      getBoundingClientRect() { return { top: this.top, bottom: this.bottom, left: 0, right: 600, width: 600, height: this.bottom - this.top }; }
+    }
+    const chapter = new ElementBox(false, 0, 900);
+    const figure = new ElementBox(true, 200, 500);
+    vi.stubGlobal("Element", ElementBox);
+    vi.stubGlobal("NodeFilter", { SHOW_ELEMENT: 1, SHOW_TEXT: 4, FILTER_REJECT: 2, FILTER_SKIP: 3 });
+    vi.stubGlobal("document", {
+      documentElement: { dataset: { layout: "pages" } },
+      querySelector: (selector: string) => selector === "main.page" ? { querySelectorAll: () => [chapter] } : {},
+      createRange: () => ({}),
+      createTreeWalker: (_root: unknown, _what: number, filter: { acceptNode(node: ElementBox): number }) => ({
+        nextNode() { filter.acceptNode(figure); return null; },
+      }),
+    });
+    const measured = linesIn(100, 600);
+    expect(measured).toEqual([{ top: 200, bottom: 500 }]);
+    expect(pageEnd(measured, 100, 400)).toBe(200);
+    expect(snapShift(measured, 300)).toBe(-100);
   });
 });
 

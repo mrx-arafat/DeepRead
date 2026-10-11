@@ -33,4 +33,12 @@ describe("what is read aloud", () => {
       "In this chapter we have to ask whether matter exists.",
     ]);
   });
+
+  it("skips figures and empty blocks while reading recovered text and code", () => {
+    const chapter: Chapter = {
+      id: "c1", title: "Illustrations", startPage: 1, endPage: 1,
+      blocks: [block("figure", "image", ""), block("empty", "paragraph", "  "), block("ocr", "paragraph", "Recovered words."), block("code", "code", "return value;")],
+    };
+    expect(listenBlocks([chapter]).map(({ id }) => id)).toEqual(["chapter-title-c1", "ocr", "code"]);
+  });
 });

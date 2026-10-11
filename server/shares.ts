@@ -340,6 +340,18 @@ export function readerShelf(own: Library, readerId: string, deps: ShelfDeps): Li
       return isBookId(id) ? own.pdf(id) : null;
     },
 
+    async sourcePage(id, page) {
+      if (isBookId(id)) return own.sourcePage(id, page);
+      const from = await source(id);
+      return from ? from.library.sourcePage(from.bookId, page) : null;
+    },
+
+    async figure(id, name) {
+      if (isBookId(id)) return own.figure(id, name);
+      const from = await source(id);
+      return from ? from.library.figure(from.bookId, name) : null;
+    },
+
     async cover(id) {
       if (isBookId(id)) return own.cover(id);
       const from = await source(id);

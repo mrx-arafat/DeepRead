@@ -99,6 +99,12 @@ export function linesIn(from: number, to: number): Box[] {
     const walker = document.createTreeWalker(chapter, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         if (node instanceof Element) {
+          // A figure has no text node, but occupies a whole piece of the page like an open note.
+          if (node.matches("[data-book-figure]")) {
+            const box = node.getBoundingClientRect();
+            if (box.bottom >= from && box.top <= to) pieces.push({ top: box.top, bottom: box.bottom });
+            return NodeFilter.FILTER_REJECT;
+          }
           if (pagesMode && node.matches(".aid:not([data-closed]), .note:not([data-folded])")) {
             const box = node.getBoundingClientRect();
             const visible = box.bottom >= from && box.top <= to && box.right > column.left && box.left < column.right;

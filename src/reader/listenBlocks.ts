@@ -15,6 +15,6 @@ export const isTitleId = (blockId: string): boolean => blockId.startsWith(TITLE_
 export function listenBlocks(chapters: Chapter[]): Block[] {
   return chapters.flatMap((chapter) => [
     { id: titleId(chapter.id), type: "heading", level: 1, text: chapter.title, page: chapter.blocks[0]?.page ?? chapter.startPage },
-    ...readableBlocks(chapter),
+    ...readableBlocks(chapter).filter((block) => block.type !== "image" && block.text.trim() !== ""),
   ]);
 }

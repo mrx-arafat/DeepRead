@@ -68,4 +68,18 @@ describe("describePosition", () => {
     expect(describePosition(book, wordCounts, "c9", "c9-b1")).toBeNull();
     expect(describePosition(book, wordCounts, "c2", "c2-b99")).toBeNull();
   });
+
+  it("ignores figures in progress while counting preserved code characters", () => {
+    const illustrated: ParsedBook = { ...book, chapters: [{
+      id: "c1", title: "One", startPage: 1, endPage: 1,
+      blocks: [
+        { id: "image", type: "image", text: "", page: 1 },
+        { id: "code", type: "code", text: "x\n  y", page: 1 },
+        { id: "paragraph", type: "paragraph", text: "words", page: 1 },
+      ],
+    }] };
+    expect(describePosition(illustrated, { c1: 2 }, "c1", "image")).toBeNull();
+    expect(describePosition(illustrated, { c1: 2 }, "c1", "code", 3)).toEqual({ chapterTitle: "One", percent: 30 });
+    expect(describePosition(illustrated, { c1: 2 }, "c1", "paragraph")).toEqual({ chapterTitle: "One", percent: 50 });
+  });
 });

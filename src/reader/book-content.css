@@ -1,0 +1,76 @@
+.chapter-text .book-figure {
+  margin: 1.5rem 0;
+  break-inside: avoid;
+}
+
+.book-figure img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+  object-fit: contain;
+}
+
+/* Reserve the image's aspect ratio before loading; keep a complete figure on a reading page. */
+:root[data-layout="pages"] .book-figure img {
+  max-height: max(8rem, calc(100dvh - var(--topbar) - 10rem));
+}
+
+.chapter-text .book-code {
+  margin: 0 0 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.85em;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+  hyphens: none;
+}
+
+.chapter-text .book-list-item {
+  margin-bottom: 0.5rem;
+  padding-inline-start: 1.25em;
+  text-indent: -1.25em;
+}
+
+.chapter-text .book-caption {
+  text-align: center;
+  font-style: italic;
+  font-size: 0.9em;
+}
+
+.book-table {
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+}
+
+.book-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font: inherit;
+}
+
+.book-table td {
+  padding: 0.5em 0.75em;
+  border: 1px solid var(--rule);
+  vertical-align: top;
+}
+
+/* Delimiters keep tab/newline source offsets without occupying a cell's visual layout. */
+.book-table-separator {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  white-space: pre;
+}
+
+.chapter-text .book-figure-text {
+  font-size: 0.9em;
+  white-space: pre-wrap;
+  text-align: start;
+}

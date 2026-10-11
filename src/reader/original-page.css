@@ -1,0 +1,21 @@
+.original-page-trigger { margin-top: 0.75rem; font-size: 0.85rem; }
+.original-page-dialog {
+  width: min(70rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 1rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--paper);
+  overflow: auto;
+}
+.original-page-dialog::backdrop { background: rgb(0 0 0 / 50%); }
+.original-page-controls, .original-page-navigation { display: flex; align-items: center; gap: 0.75rem; }
+.original-page-controls { justify-content: space-between; }
+.original-page-controls h2 { margin: 0; font-size: 1rem; }
+.original-page-navigation { justify-content: center; margin: 0.75rem 0; }
+.original-page-navigation input { width: 4.5rem; padding: 0.25rem; font: inherit; color: inherit; background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius); }
+.original-page-image { overflow: auto; text-align: center; }
+.original-page-image img { display: block; width: 100%; height: auto; background: white; }
+.original-page-image img[hidden] { display: none; }
+.original-page-image[data-zoom] img { width: 180%; max-width: none; }

@@ -12,6 +12,16 @@ const chapter: Chapter = {
 };
 
 describe("searchChapter", () => {
+  it("searches recovered and code text at unchanged offsets without indexing figure labels", () => {
+    const illustrated: Chapter = { ...chapter, blocks: [
+      { id: "figure", type: "image", text: "", page: 4, image: { src: `figures/${"a".repeat(64)}.png`, width: 80, height: 60, alt: "return value" } },
+      { id: "code", type: "code", text: "if (ready) {\n  return value;\n}", page: 4 },
+      { id: "ocr", type: "paragraph", text: "Recovered return value.", page: 4 },
+    ] };
+    expect(searchChapter(illustrated, "return value").map(({ blockId, offset }) => ({ blockId, offset }))).toEqual([
+      { blockId: "code", offset: 15 }, { blockId: "ocr", offset: 10 },
+    ]);
+  });
   it("should find each repeated literal occurrence at its exact source offset", () => {
     const results = searchChapter(chapter, "echo");
     expect(results.map(({ chapterId, chapterTitle, blockId, offset }) => ({ chapterId, chapterTitle, blockId, offset }))).toEqual([
