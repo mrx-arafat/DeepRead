@@ -1,10 +1,10 @@
 fileType: momentic/module/v2
 id: deepread-library-add-fixture
 name: add-fixture-book
-description: Adds the public-domain fixture book through the Add a book (PDF) button and waits for the reader to open. The file path is relative to the directory momentic is run from (the repo root).
+description: Adds the public-domain fixture book through the Add a book button and waits for the reader to open. The file path is relative to the directory momentic is run from (the repo root).
 steps:
   - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
-  - click: Add a book (PDF) button
+  - click: Add a book button
   # Reading the PDF takes a few seconds, and longer on a busy machine.
   - waitForUrl:
       substring: /book/

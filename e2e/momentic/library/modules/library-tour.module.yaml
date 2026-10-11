@@ -41,14 +41,14 @@ steps:
         };
         return document.documentElement.dataset.theme;
       saveAs: T_THEME
-  - assertVisually: The library page has a bold serif DeepRead title, a short grey intro, and a dashed welcome box. In the box stand a few faded books on a shelf board, the sentence No books yet. Add a PDF to start reading., a line saying each book gets a cover, and a blue Add a book (PDF) button (on a wide screen also the hint "or drop a PDF here"; a phone leaves it out, since a phone cannot drop files). Text is readable against the background, spacing is even and nothing is cut off
+  - assertVisually: The library page has a bold serif DeepRead title, a short grey intro, and a dashed welcome box. In the box stand a few faded books on a shelf board, the sentence No books yet. Add a PDF to start reading., a line saying each book gets a cover, and a blue Add a book button (on a wide screen also the hint "or drop a PDF here"; a phone leaves it out, since a phone cannot drop files). Text is readable against the background, spacing is even and nothing is cut off
   - javascript:
       environment: browser
       code: return window.__measure();
       saveAs: T_EMPTY
   - fileUpload: data/e2e-library/notes.txt
   - click:
-      on: Add a book (PDF) button
+      on: Add a book button
       retries: 2
   - checkPageContains: That file is not a PDF
   # A screenshot cannot show that the box kept its size (the AI check compares it with other screenshots, even ones from an older design), so the size is measured: see the dropBox check at the end.
@@ -59,7 +59,7 @@ steps:
       saveAs: T_ERROR
   - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
   - click:
-      on: Add a book (PDF) button
+      on: Add a book button
       retries: 2
   # Reading the PDF takes a few seconds, and longer on a busy machine.
   - waitForUrl:
@@ -128,7 +128,7 @@ steps:
         document.querySelector(".drop").dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }));
         await new Promise((r) => setTimeout(r, 200));
         return { dragging: document.querySelector(".drop").dataset.dragging ?? null, measure: window.__measure() };
-  - assertVisually: A blue frame runs round the whole window, and the area with the Add a book (PDF) button has a light blue tint inside a blue ring; its text (on a wide screen "Drop the PDF to add it") and button are still easy to read
+  - assertVisually: A blue frame runs round the whole window, and the area with the Add a book button has a light blue tint inside a blue ring; its text (on a wide screen "Drop the PDF to add it") and button are still easy to read
   - javascript:
       code: |-
         const states = { empty: env.T_EMPTY, error: env.T_ERROR, list: env.T_LIST, edit: env.T_EDIT, long: env.T_LONG, confirm: env.T_CONFIRM, drag: env.T_DRAG.measure };

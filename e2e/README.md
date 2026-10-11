@@ -170,6 +170,8 @@ playwright-cli -s=deepread-library-keyboard-check run-code --filename e2e/librar
 
 ## Library fixtures
 
+`pnpm e2e:run library-header` checks the compact header in an isolated profile-enabled library: desktop alignment, mobile overflow, theme persistence and dismissal, account disclosure, and PDF upload.
+
 The library journeys upload a few odd files from `data/e2e-library`, which is not in git.
 Make them once, from the repo root:
 

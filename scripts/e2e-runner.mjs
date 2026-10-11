@@ -17,6 +17,7 @@ const journeys = {
   "notebook-missing-source": { fixture: true },
   "notebook-shared": { passkey: "shared-notebook-test-code-2026" },
   "library-continue": { fixture: true },
+  "library-header": { passkey: "ux02-profile-test-code-2026" },
 };
 const children = new Set();
 
@@ -128,6 +129,13 @@ async function run(name, setup) {
     const output = await command("playwright-cli", [`-s=${session}`, "run-code", "--filename", `e2e/${name}.js`]);
     // run-code exits 0 even when the journey throws, and prints the error under "### Error" instead.
     if (output.includes("### Error")) throw new Error(`journey ${name} failed: ${output}`);
+    if (name === "library-header") {
+      if (!output.includes("[File chooser]")) throw new Error(`Upload button did not open the file chooser: ${output}`);
+      const upload = await command("playwright-cli", [`-s=${session}`, "upload", fixture]);
+      if (upload.includes("### Error")) throw new Error(upload);
+      const afterUpload = await command("playwright-cli", [`-s=${session}`, "run-code", "--filename", "e2e/library-header-after-upload.js"]);
+      if (afterUpload.includes("### Error") || !afterUpload.includes('### Result\n"HEADER_CHECKS_PASSED"')) throw new Error(`Header journey did not finish: ${afterUpload}`);
+    }
     console.log(`journey: ${name}\nstatus: passed\nduration_ms: ${Date.now() - started}`);
   } finally {
     await command("playwright-cli", [`-s=${session}`, "close"], 10000).catch(() => {});

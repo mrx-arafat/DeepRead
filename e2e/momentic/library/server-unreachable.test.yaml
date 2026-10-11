@@ -25,7 +25,7 @@ steps:
   - offline
   - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
   - click:
-      on: Add a book (PDF) button
+      on: Add a book button
       retries: 2
   - javascript:
       environment: browser

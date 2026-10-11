@@ -7,7 +7,7 @@ before:
 steps:
   - refresh
   - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
-  - click: Add a book (PDF) button
+  - click: Add a book button
   - waitForUrl:
       substring: /book/
       timeout: 30000
@@ -17,7 +17,7 @@ steps:
   - checkPageContains: Your books
   - fileUpload: data/e2e-library/book-two.pdf
   - click:
-      on: Add a book (PDF) button
+      on: Add a book button
       retries: 2
   - waitForUrl:
       substring: /book/
@@ -27,7 +27,7 @@ steps:
   - checkPageContains: Your books
   - fileUpload: data/e2e-library/book-three.pdf
   - click:
-      on: Add a book (PDF) button
+      on: Add a book button
       retries: 2
   - waitForUrl:
       substring: /book/

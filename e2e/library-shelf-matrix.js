@@ -9,7 +9,7 @@ async (page) => {
     return response.json();
   };
   const upload = async path => {
-    assert(await page.getByRole('button', { name: 'Add a book (PDF)' }).isVisible(), 'Upload action must be visible');
+    assert(await page.getByRole('button', { name: 'Add a book' }).isVisible(), 'Upload action must be visible');
     await page.locator('input[type="file"]').setInputFiles(path);
     await page.getByRole('link', { name: 'Back to your books' }).waitFor();
     await page.getByRole('link', { name: 'Back to your books' }).click();

@@ -420,11 +420,6 @@ select {
   padding: 2.5rem 1.5rem 6rem;
 }
 
-/* A first visit has only the welcome on the page, so it sits a little lower rather than hugging the top edge. */
-.library:has(> .library-top[data-empty]) {
-  padding-top: 5rem;
-}
-
 /* A file being dragged over the page: a frame around the whole window, whichever part of it the file is over. */
 .library[data-dragging]::after {
   content: "";
@@ -4492,17 +4487,8 @@ h5[data-block] {
   }
 }
 
-/* Who is reading, in the library's top margin above the add button. The first-visit rule for the top margin is more
-   specific than this one, so a first visit keeps its own, lower, start. */
-.library:has(> .profile-menu) {
-  position: relative;
-  padding-top: 4.25rem;
-}
-
 .profile-menu {
-  position: absolute;
-  top: 0.75rem;
-  right: 1rem;
+  position: relative;
   z-index: 10;
 }
 

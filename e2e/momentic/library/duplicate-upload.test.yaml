@@ -10,7 +10,7 @@ steps:
   - click: Back to your books
   - checkPageContains: Your books
   - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
-  - click: Add a book (PDF) button
+  - click: Add a book button
   - checkPageContains: is already in your library
   - javascript:
       saveAs: BOOK_COUNT

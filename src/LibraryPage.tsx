@@ -1,4 +1,4 @@
-import { ArrowRight, Bookmark, FileUp, LoaderCircle, Moon, Sun, Sunset, X } from "lucide-react";
+import { ArrowRight, Bookmark, FileUp, LoaderCircle, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation } from "wouter";
 import { formatBytes } from "../shared/bytes.ts";
@@ -16,7 +16,8 @@ import { ResumeContext } from "./library/ResumeContext.tsx";
 import { addBook, dropBook, patchBook, readerKey, readShelf, rememberBooks, rememberStorage, watchShelves } from "./library/shelfCache.ts";
 import { useFileDrop } from "./library/useFileDrop.ts";
 import { APP_NAME, useDocumentTitle } from "./pageTitle.ts";
-import { setPrefs, usePrefs } from "./prefs.ts";
+import { usePrefs } from "./prefs.ts";
+import { AppearanceMenu } from "./library/appearance-menu.tsx";
 import { ProfileMenu } from "./profiles/ProfileMenu.tsx";
 import { ReadingAs } from "./profiles/ReadingAs.tsx";
 import { useSession } from "./profiles/session.tsx";
@@ -36,7 +37,7 @@ type Active = { kind: "edit" | "share"; id: string } | { kind: "delete"; id: str
 export function LibraryPage() {
   const [, navigate] = useLocation();
   useDocumentTitle(`Your books - ${APP_NAME}`);
-  const { lang, theme } = usePrefs();
+  const { lang } = usePrefs();
   const { info } = useSession();
   // Null with no profiles (nobody to show or switch) and while nobody is signed in (App shows the profiles then).
   const session = info?.mode === "profiles" ? info.session : null;
@@ -278,28 +279,17 @@ export function LibraryPage() {
     <>
       {session?.impersonatedBy && <ReadingAs session={session} admin={session.impersonatedBy} />}
       <main className="library" data-dragging={dragging || undefined}>
-        {session && <ProfileMenu session={session} />}
         {/* Held back until the list has loaded: a first visit turns this into the welcome below, and showing the add button first would make it jump. */}
         <div className="library-top" data-empty={empty || undefined} data-waiting={(books === null && !loadError) || undefined}>
           <header className="library-head">
             <h1>DeepRead</h1>
-            {empty && (
-              <>
-                <p>Read a book in English. Tap any word, select any passage, and get it explained right there.</p>
-                <p>Meanings in {LANGUAGES[lang]} and simple English. Works with PDFs whose text you can select, not scans.</p>
-              </>
-            )}
           </header>
-
-          <fieldset className="dashboard-theme">
-            <legend className="visually-hidden">Color theme</legend>
-            {([{ value: "light", label: "Light", Icon: Sun }, { value: "sepia", label: "Sepia", Icon: Sunset }, { value: "dark", label: "Dark", Icon: Moon }] as const).map(({ value, label, Icon }) => (
-              <label key={value} title={`${label} theme`}>
-                <input type="radio" name="dashboard-theme" value={value} checked={theme === value} onChange={() => setPrefs({ theme: value })} />
-                <Icon size={17} aria-hidden /><span className="visually-hidden">{label}</span>
-              </label>
-            ))}
-          </fieldset>
+          {empty && (
+            <div className="library-intro">
+              <p>Read a book in English. Tap any word, select any passage, and get it explained right there.</p>
+              <p>Meanings in {LANGUAGES[lang]} and simple English. Works with PDFs whose text you can select, not scans.</p>
+            </div>
+          )}
           <div className="drop" data-dragging={dragging || undefined}>
             <input
               ref={input}
@@ -341,8 +331,8 @@ export function LibraryPage() {
                 </div>
               ) : (
                 <div className="drop-actions">
-                  <button ref={addButton} type="button" className="button" onClick={() => input.current?.click()}>
-                    <FileUp size={18} aria-hidden /> Add a book (PDF)
+                  <button ref={addButton} type="button" className="button" title="Add a PDF book" onClick={() => input.current?.click()}>
+                    <FileUp size={18} aria-hidden /> Add a book
                   </button>
                   <span className="drop-hint">
                     {dragging ? "Drop one PDF to add it" : empty ? "or drop one PDF here" : "or drop one PDF anywhere"}
@@ -351,6 +341,8 @@ export function LibraryPage() {
               )}
             </div>
           </div>
+          <AppearanceMenu />
+          {session && <ProfileMenu session={session} />}
         </div>
 
         {error && (

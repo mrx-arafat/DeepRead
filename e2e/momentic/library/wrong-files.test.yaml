@@ -7,9 +7,9 @@ before:
 steps:
   - refresh
   - fileUpload: data/e2e-library/notes.txt
-  - click: Add a book (PDF) button
+  - click: Add a book button
   - checkPageContains: That file is not a PDF
-  - assertVisually: A red error sentence is shown just under the dashed drop box and the Add a book (PDF) button is still available to try again
+  - assertVisually: A red error sentence is shown just under the dashed drop box and the Add a book button is still available to try again
   - javascript:
       environment: browser
       saveAs: TXT_ERROR
@@ -19,7 +19,7 @@ steps:
   - module: ./modules/measure-contrast.module.yaml
   - fileUpload: data/e2e-library/scanned.pdf
   - click:
-      on: Add a book (PDF) button
+      on: Add a book button
       retries: 2
   - checkPageContains: scanned
   - assertVisually: A red error message is shown under the drop box about the PDF being a scan, with the drop box and Add button back in their normal state
@@ -31,7 +31,7 @@ steps:
         return { text: e?.innerText, count: document.querySelectorAll(".inline-error").length };
   - fileUpload: data/e2e-library/broken.pdf
   - click:
-      on: Add a book (PDF) button
+      on: Add a book button
       retries: 2
   - checkPageContains: This PDF looks damaged
   - javascript:

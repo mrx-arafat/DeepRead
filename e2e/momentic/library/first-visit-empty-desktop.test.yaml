@@ -7,12 +7,12 @@ before:
 steps:
   - refresh
   - checkPageContains: No books yet. Add a PDF to start reading.
-  - assert: The page shows the app name DeepRead as a heading, a sentence saying what the app does, an Add a book (PDF) button, and a hint about dropping a PDF
-  - assertVisually: The page has a clear hierarchy - a title, a short intro, and a dashed welcome box holding a row of faded books on a shelf board, the sentence No books yet. Add a PDF to start reading., one more line about covers and picking up where you stopped, and a blue Add a book (PDF) button with the hint beside it. Nothing is cut off or overlapping, spacing looks even, and the page looks inviting rather than empty or unfinished
+  - assert: The page shows the app name DeepRead as a heading, a sentence saying what the app does, an Add a book button, and a hint about dropping a PDF
+  - assertVisually: The page has a clear hierarchy - a title, a short intro, and a dashed welcome box holding a row of faded books on a shelf board, the sentence No books yet. Add a PDF to start reading., one more line about covers and picking up where you stopped, and a blue Add a book button with the hint beside it. Nothing is cut off or overlapping, spacing looks even, and the page looks inviting rather than empty or unfinished
   - javascript:
       code: |-
         return { title: document.title, h1: document.querySelector("h1")?.textContent, bodyWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth, theme: document.documentElement.dataset.theme };
       environment: browser
       saveAs: FIRST_VISIT
   - press: Tab
-  - assertVisually: One control on the page shows a clearly visible keyboard focus ring (the Add a book (PDF) button)
+  - assertVisually: One control on the page shows a clearly visible keyboard focus ring (the Add a book button)

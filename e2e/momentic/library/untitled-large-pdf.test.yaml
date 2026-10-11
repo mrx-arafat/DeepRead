@@ -7,7 +7,7 @@ before:
 steps:
   - refresh
   - fileUpload: data/e2e-library/big.pdf
-  - click: Add a book (PDF) button
+  - click: Add a book button
   - checkPageContains: A long book can take a minute
   - assertVisually: The drop box keeps its size and now shows a small spinner next to a line naming the file big.pdf and a second line saying a long book can take a minute, and the sentence No books yet is not shown
   - waitForUrl:

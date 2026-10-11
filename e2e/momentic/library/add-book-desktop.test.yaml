@@ -1,13 +1,13 @@
 fileType: momentic/test/v2
 id: library-add-book-desktop
-description: A reader adds the fixture book with the Add a book (PDF) button, sees progress feedback, lands in the reader, returns to the library and checks how the book is listed. Run from the repo root (fileUpload paths are relative to it).
+description: A reader adds the fixture book with the Add a book button, sees progress feedback, lands in the reader, returns to the library and checks how the book is listed. Run from the repo root (fileUpload paths are relative to it).
 viewport: 1440, 900
 before:
   - module: ./modules/reset-library.module.yaml
 steps:
   - refresh
   - fileUpload: e2e/fixtures/problems-of-philosophy.pdf
-  - click: Add a book (PDF) button
+  - click: Add a book button
   - checkPageContains: A long book can take a minute.
   - waitForUrl:
       substring: /book/

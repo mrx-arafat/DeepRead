@@ -10,7 +10,7 @@ import { useSession } from "./session.tsx";
 /**
  * Who is reading, in the corner of the library, and what that reader can do about it: pick someone else, or open the
  * admin page. A disclosure like the book menu's: its items follow the button in tab order, and Escape, a click elsewhere
- * or tabbing away folds them back in. The stylesheet lays it over the page's top margin.
+ * or tabbing away folds them back in. It shares the library header with the appearance and upload controls.
  */
 export function ProfileMenu({ session }: { session: Session }) {
   const { signOut, startChoosing } = useSession();
