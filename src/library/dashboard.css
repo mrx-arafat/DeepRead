@@ -39,7 +39,7 @@
 .library { max-width: 76rem; padding: 1.75rem 2rem 5rem; }
 .library .library-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "brand profile" "upload appearance"; gap: 0.75rem; }
 .library .library-head { grid-area: brand; min-width: 0; }
-.library .library-top > .profile-menu { grid-area: profile; justify-self: end; }
+.library .library-top > .profile-menu { grid-area: profile; justify-self: end; z-index: 12; }
 .library .library-top > .drop { grid-area: upload; min-width: 0; margin: 0; }
 .library-appearance { grid-area: appearance; position: relative; justify-self: end; z-index: 11; }
 .library-appearance summary { display: flex; align-items: center; justify-content: center; gap: 0.375rem; min-height: 2.75rem; padding: 0 0.625rem; border-radius: 0.625rem; color: var(--ink-soft); cursor: pointer; list-style: none; }
