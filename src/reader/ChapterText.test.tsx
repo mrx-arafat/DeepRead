@@ -11,6 +11,16 @@ const figure: Block = { id: "c1-figure", type: "image", page: 1, text: "", image
 const render = (blocks: Block[]) => renderToStaticMarkup(<ChapterText blocks={blocks} notes={[]} bookId="shared-book" chapterId="c1" actions={actions} />);
 
 describe("preserved book content", () => {
+  it("groups retained rows into bounded rendering chunks and preserves headings at their boundaries", () => {
+    const blocks: Block[] = Array.from({ length: 97 }, (_, at) => ({ id: `b${at}`, type: at === 48 ? "heading" : "paragraph", page: 1, text: `Source ${at}`, ...(at === 48 ? { level: 1 } : {}) }));
+    const html = render(blocks);
+    expect(html.match(/class="text-chunk"/g)).toHaveLength(3);
+    expect(html.match(/class="row"/g)).toHaveLength(97);
+    expect(html).toContain('<h3 data-block="b48"');
+    expect(html.indexOf('data-block="b47"')).toBeLessThan(html.indexOf('data-block="b48"'));
+    expect(html.indexOf('data-block="b48"')).toBeLessThan(html.indexOf('data-block="b49"'));
+  });
+
   it("renders source alignment, relative size, font category and overlapping inline emphasis safely", () => {
     const html = render([{ id: "styled", type: "paragraph", page: 1, text: "Bold italic <safe>", style: { align: "right", fontFamily: "sans-serif", fontSize: 1.1 }, runs: [
       { start: 0, end: 11, bold: true }, { start: 5, end: 11, italic: true, underline: true },

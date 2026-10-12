@@ -7,6 +7,7 @@ import { useWordCursor } from "./useWordCursor.ts";
 import type { Lookup } from "./WordPopover.tsx";
 import "./book-content.css";
 import { offsetInBlock, rangeWithin } from "./domText.ts";
+import { useMobileRowRendering } from "./useMobileRowRendering.ts";
 
 /** What the reader can do with the text. Shared by every chapter on the page, so keep the functions stable. */
 export type TextActions = {
@@ -30,6 +31,8 @@ type Props = {
 
 // How long a touch selection must rest before the bar offers explanations: the handles may still be moving.
 const TOUCH_SETTLE_MS = 400;
+// A few dozen rows share one rendering boundary, avoiding containment work per paragraph.
+const TEXT_CHUNK_SIZE = 48;
 
 const FONTS = { serif: "var(--book-face)", "sans-serif": "var(--font-ui)", monospace: "ui-monospace, SFMono-Regular, Consolas, monospace" };
 
@@ -133,8 +136,13 @@ function bookText(selection: Selection): string {
 export function ChapterText({ blocks, notes, bookId, chapterId, actions, translation }: Props) {
   const { onWord, onSelect, onDismiss, onCloseNote, onSaveAnswer } = actions;
   const container = useRef<HTMLDivElement>(null);
+  useMobileRowRendering(container, blocks, notes, translation?.blocks, translation?.lang);
   const cursor = useWordCursor(blocks.find((block) => block.type !== "image" && block.text.trim())?.id, (word) => ask(word, "keyboard"));
   const tags = useMemo(() => headingTags(blocks), [blocks]);
+  const chunks = useMemo(() => Array.from(
+    { length: Math.ceil(blocks.length / TEXT_CHUNK_SIZE) },
+    (_, at) => blocks.slice(at * TEXT_CHUNK_SIZE, (at + 1) * TEXT_CHUNK_SIZE),
+  ), [blocks]);
 
   /** Ask about the selected text if there is any, else about `word`; with neither, close what is open. */
   function ask(word: Range | null, via: "mouse" | "keyboard" | "touch") {
@@ -223,25 +231,29 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions, transla
       onFocus={cursor.onFocus}
       onBlur={cursor.onBlur}
     >
-      {blocks.map((block, at) => {
-        const translated = translation?.blocks[block.id];
-        return (
-          <div className="row" key={block.id}>
-            {notes
-              .filter((note) => note.blockId === block.id)
-              .map((note) => (
-                <NoteCard key={note.id} note={note} bookId={bookId} latest={note.id === notes.at(-1)?.id} onClose={onCloseNote} onSaveAnswer={onSaveAnswer} />
-              ))}
-            <BlockText block={block} bookId={bookId} tag={tags[at] ?? null} tabbable={block.id === cursor.tabbable} />
-            {/* Translations stay beside the block, so every source offset remains in the original book text. */}
-            {translation && translated ? (
-              <p className="block-translation" lang={translation.lang} dir="auto" data-translation-of={block.id}>
-                {translated}
-              </p>
-            ) : null}
-          </div>
-        );
-      })}
+      {chunks.map((chunk, chunkAt) => (
+        <div className="text-chunk" key={chunk[0]!.id}>
+          {chunk.map((block, at) => {
+            const translated = translation?.blocks[block.id];
+            return (
+              <div className="row" key={block.id}>
+                {notes
+                  .filter((note) => note.blockId === block.id)
+                  .map((note) => (
+                    <NoteCard key={note.id} note={note} bookId={bookId} latest={note.id === notes.at(-1)?.id} onClose={onCloseNote} onSaveAnswer={onSaveAnswer} />
+                  ))}
+                <BlockText block={block} bookId={bookId} tag={tags[chunkAt * TEXT_CHUNK_SIZE + at] ?? null} tabbable={block.id === cursor.tabbable} />
+                {/* Translations stay beside the block, so every source offset remains in the original book text. */}
+                {translation && translated ? (
+                  <p className="block-translation" lang={translation.lang} dir="auto" data-translation-of={block.id}>
+                    {translated}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }

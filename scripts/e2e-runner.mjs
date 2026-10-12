@@ -54,7 +54,7 @@ function start(command, args, env) {
   children.add(child);
   child.once("exit", () => children.delete(child));
   let output = "";
-  const append = chunk => { output = (output + chunk.toString()).slice(-4000); };
+  const append = chunk => { output = (output + chunk.toString()).slice(-64000); };
   child.stdout.on("data", append);
   child.stderr.on("data", append);
   child.on("error", append);
@@ -133,6 +133,14 @@ async function run(name, setup) {
     const output = await command("playwright-cli", [`-s=${session}`, "run-code", "--filename", `e2e/${name}.js`]);
     // run-code exits 0 even when the journey throws, and prints the error under "### Error" instead.
     if (output.includes("### Error")) throw new Error(`journey ${name} failed: ${output}`);
+    if (name === "translation-mobile") {
+      const result = output.match(/### Result\n([\s\S]*?)(?:\n###|$)/)?.[1];
+      if (!result) throw new Error(`Missing translation mobile result: ${output}`);
+      if (result) {
+        const report = JSON.parse(result);
+        console.log(`scroll_metrics: ${JSON.stringify(report.scrolling)}`);
+      }
+    }
     if (name === "library-header") {
       if (!output.includes("[File chooser]")) throw new Error(`Upload button did not open the file chooser: ${output}`);
       const upload = await command("playwright-cli", [`-s=${session}`, "upload", fixture]);

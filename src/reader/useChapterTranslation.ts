@@ -22,7 +22,7 @@ const fetched = new TranslationCache();
 // What the reader may be looking at, top to bottom: each box of a chapter (its title, a preview, the text's rows, the
 // recap after it) and the lines between chapters. Never a box that holds others, a status line that comes and goes, or
 // the tip, which floats beside the text on a wide screen and so is not in line with the rest.
-const CHAPTER_SPOTS = ":scope > :not(.chapter-text, .translation-status, .tip), :scope > .chapter-text > .row";
+const CHAPTER_SPOTS = ":scope > :not(.chapter-text, .translation-status, .tip), :scope > .chapter-text .row";
 
 function spotAtEyeLine(): HTMLElement | undefined {
   const line = eyeLine();

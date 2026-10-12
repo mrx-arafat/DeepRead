@@ -74,3 +74,28 @@
   white-space: pre-wrap;
   text-align: start;
 }
+
+.chapter-text > .text-chunk {
+  display: contents;
+}
+
+/* Below the margin-note breakpoint, static chunks retain their measured height while distant
+   text skips rendering. Auto preserves browser find, selection and accessibility. Pages
+   and desktop floats use ordinary layout; unsupported browsers do so automatically. */
+@supports (content-visibility: auto) and (contain-intrinsic-block-size: 1px) {
+  @media (width < 72rem) {
+    :root:not([data-layout="pages"]) .chapter-text > .text-chunk {
+      display: block;
+    }
+
+    :root:not([data-layout="pages"]) .chapter-text > .text-chunk[data-mobile-rendering] {
+      content-visibility: auto;
+      contain-intrinsic-block-size: var(--text-chunk-size);
+    }
+
+    /* Keyboard and source-navigation focus rings extend beyond their row. */
+    :root:not([data-layout="pages"]) .chapter-text > .text-chunk[data-mobile-rendering]:focus-within {
+      content-visibility: visible;
+    }
+  }
+}

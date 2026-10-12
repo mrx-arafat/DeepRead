@@ -67,6 +67,7 @@ describe("reading detour history", () => {
 
 function reader(initialState: unknown = detourState()) {
   let scrollY = 0;
+  let characterMeasurements = 0;
   let columns = 20;
   const windowEvents = new EventTarget();
   const documentEvents = new EventTarget();
@@ -84,16 +85,18 @@ function reader(initialState: unknown = detourState()) {
     isConnected = true;
     top: number;
     chapterId: string;
+    rowTrailing = 0;
     constructor(id: string, top: number, chapterId = "c1") { this.dataset = { block: id }; this.top = top; this.chapterId = chapterId; }
     getBoundingClientRect() { return { top: this.top - scrollY, bottom: this.top + Math.ceil(600 / columns) * 20 - scrollY }; }
-    closest(selector: string) { return selector === ".row" ? this : chapters.find((chapter) => chapter.dataset.chapter === this.chapterId); }
+    closest(selector: string) { return selector === ".row" ? this.rowTrailing ? { getBoundingClientRect: () => ({ ...this.getBoundingClientRect(), bottom: this.getBoundingClientRect().bottom + this.rowTrailing }) } : this : chapters.find((chapter) => chapter.dataset.chapter === this.chapterId); }
     scrollIntoView() { scrollY = this.top - (hooks.pages ? 50 : 96); }
   }
   const sourceBlock = new FakeBlock("source", 1000);
   const returnBlock = new FakeBlock("return", 2000);
   let blocks = [sourceBlock, returnBlock];
-  const section = (id: string) => ({ dataset: { chapter: id }, lastElementChild: { getBoundingClientRect: () => ({ bottom: 3000 - scrollY }) }, querySelectorAll: () => blocks.filter((block) => block.chapterId === id), querySelector: () => blocks.find((block) => block.chapterId === id) });
+  const section = (id: string) => ({ dataset: { chapter: id }, lastElementChild: { getBoundingClientRect: () => ({ bottom: 3000 - scrollY }) }, querySelectorAll: (selector: string) => selector === "[data-block]" ? blocks.filter((block) => block.chapterId === id) : selector === ".text-chunk" ? chunks : [], querySelector: () => blocks.find((block) => block.chapterId === id) });
   let chapters = [section("c1")];
+  let chunks: Array<{ getBoundingClientRect: () => { height: number; bottom: number }; querySelectorAll: ReturnType<typeof vi.fn> }> = [];
   const historyMock = { state: initialState, scrollRestoration: "auto", replaceState: (state: unknown) => { historyMock.state = state; } };
   vi.stubGlobal("history", historyMock);
   vi.stubGlobal("Text", FakeText);
@@ -108,13 +111,13 @@ function reader(initialState: unknown = detourState()) {
   let visibilityState = "visible";
   vi.stubGlobal("document", {
     get visibilityState() { return visibilityState; },
-    querySelectorAll: () => chapters,
+    querySelectorAll: (selector: string) => selector === "[data-chapter]" ? chapters : [],
     querySelector: (selector: string) => selector.startsWith("[data-block=") ? blocks.find((block) => selector.includes(`"${block.dataset.block}"`)) ?? null : selector.startsWith("[data-chapter=") ? chapters[0] : null,
     addEventListener: documentEvents.addEventListener.bind(documentEvents), removeEventListener: documentEvents.removeEventListener.bind(documentEvents),
     createRange: () => {
       let text: FakeText;
       let offset = 0;
-      return { setStart: (node: FakeText, at: number) => { text = node; offset = at; }, setEnd: () => {}, getBoundingClientRect: () => ({ top: text.block.top + Math.floor(offset / columns) * 20 - scrollY, bottom: text.block.top + Math.floor(offset / columns) * 20 + 20 - scrollY }) };
+      return { setStart: (node: FakeText, at: number) => { text = node; offset = at; }, setEnd: () => {}, getBoundingClientRect: () => { characterMeasurements++; return { top: text.block.top + Math.floor(offset / columns) * 20 - scrollY, bottom: text.block.top + Math.floor(offset / columns) * 20 + 20 - scrollY }; } };
     },
   });
   hooks.navigate.mockImplementation((_url: string, options: { state?: unknown } = {}) => { historyMock.state = options.state ?? null; });
@@ -132,6 +135,11 @@ function reader(initialState: unknown = detourState()) {
     return position;
   };
   return { render, book, chapter, sourceBlock, returnBlock,
+    characterMeasurements: () => characterMeasurements,
+    enableChunks: () => {
+      chunks = blocks.map((block) => ({ getBoundingClientRect: () => ({ height: 600, bottom: block.top + 600 - scrollY }), querySelectorAll: vi.fn(() => [block]) }));
+      return chunks;
+    },
     resize: (width: number) => { columns = width; windowEvents.dispatchEvent(new Event("resize")); },
     scroll: (to: number) => { scrollY = to; windowEvents.dispatchEvent(new Event("scroll")); },
     hide: () => { visibilityState = "hidden"; documentEvents.dispatchEvent(new Event("visibilitychange")); },
@@ -152,6 +160,59 @@ describe("useReadingPosition detours", () => {
     vi.mocked(api.saveProgress).mockClear();
   });
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it("measures the logical character only once per scroll progress update", () => {
+    const page = reader({ place: source });
+    page.render();
+    page.scroll(2050);
+    const before = page.characterMeasurements();
+    vi.advanceTimersByTime(150);
+    expect(page.characterMeasurements() - before).toBeLessThanOrEqual(10);
+  });
+
+  it("keeps exact source-end progress while reading a translation without character-range probes", () => {
+    const page = reader({ place: source });
+    page.render();
+    page.returnBlock.rowTrailing = 400;
+    page.scroll(2550);
+    const before = page.characterMeasurements();
+    vi.advanceTimersByTime(300);
+    expect(page.characterMeasurements() - before).toBe(0);
+    expect(placeIn(history.state)).toEqual({ chapterId: "c1", blockId: "return", offset: 600 });
+  });
+
+  it("uses chunk bounds without measuring descendants of distant text", () => {
+    const page = reader({ place: source });
+    page.render();
+    const chunks = page.enableChunks();
+    const sourceGeometry = vi.spyOn(page.sourceBlock, "getBoundingClientRect");
+    page.scroll(2050);
+    vi.advanceTimersByTime(150);
+    expect(chunks[0]!.querySelectorAll).not.toHaveBeenCalled();
+    expect(chunks[1]!.querySelectorAll).toHaveBeenCalledWith("[data-block]");
+    expect(sourceGeometry).not.toHaveBeenCalled();
+  });
+
+  it("keeps progress at the next source text when a chunk ends in figures", () => {
+    const page = reader({ place: source });
+    page.render();
+    const chunks = page.enableChunks();
+    chunks[0]!.getBoundingClientRect = () => ({ height: 1300, bottom: 2300 - window.scrollY });
+    page.scroll(1750);
+    vi.advanceTimersByTime(300);
+    expect(placeIn(history.state)).toEqual({ chapterId: "c1", blockId: "return", offset: 0 });
+  });
+
+  it("does not rescan distant source text on repeated progress updates", () => {
+    const page = reader({ place: source });
+    const sourceText = vi.fn(() => page.sourceBlock.firstChild.data);
+    Object.defineProperty(page.sourceBlock, "textContent", { get: sourceText });
+    page.render();
+    sourceText.mockClear();
+    page.scroll(2050); vi.advanceTimersByTime(150);
+    page.scroll(2070); vi.advanceTimersByTime(150);
+    expect(sourceText).not.toHaveBeenCalled();
+  });
 
   it("should keep the same reading line when switching from Scroll to Pages", () => {
     const page = reader({ place: source });
