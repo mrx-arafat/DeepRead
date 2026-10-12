@@ -10,6 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = join(root, "e2e/fixtures/problems-of-philosophy.pdf");
 const journeys = {
+  "translation-mobile": {},
   "pdf-content": { illustrated: true },
   "profile-photo": { passkey: "profile-photo-test-code-2026" },
   "ux01-controls-matrix": { fixture: true },

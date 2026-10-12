@@ -465,6 +465,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
                 actions={actions}
                 onDismissTip={chapter === flow.start && tipOpen ? closeTip : undefined}
                 translate={prefs.translation}
+                translateNow={chapter.id === (position.chapterId ?? flow.start?.id)}
                 onTranslationRefused={refuseTranslation}
               />
             ))}

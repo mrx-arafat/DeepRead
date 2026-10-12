@@ -8,6 +8,7 @@ import { titleId } from "./listenBlocks.ts";
 import { LookupTip } from "./LookupTip.tsx";
 import { OriginalPage } from "./OriginalPage.tsx";
 import { useChapterTranslation } from "./useChapterTranslation.ts";
+import { useChapterTranslationEligibility } from "./useChapterTranslationEligibility.ts";
 
 type Props = {
   chapter: Chapter;
@@ -21,6 +22,8 @@ type Props = {
   onDismissTip?: () => void;
   /** Each paragraph in `lang` under the English (the reader's switch). */
   translate: boolean;
+  /** Start the chapter currently being read immediately; nearby chapters wait until approached. */
+  translateNow?: boolean;
   /** The server said the admin turned translation off. The same function for every chapter, so the memo holds. */
   onTranslationRefused: () => void;
 };
@@ -33,9 +36,10 @@ const AID_MIN_WORDS = 500;
  * One chapter as the book flows past: where it sits, its title, a preview, the text, a recap and a closing line.
  * Memoized: scrolling and popovers re-render the reader, and a long book must not re-render every chapter with it.
  */
-export const ChapterSection = memo(function ChapterSection({ chapter, book, notes, highlights, lang, actions, onDismissTip, translate, onTranslationRefused }: Props) {
+export const ChapterSection = memo(function ChapterSection({ chapter, book, notes, highlights, lang, actions, onDismissTip, translate, translateNow = false, onTranslationRefused }: Props) {
   const blocks = useMemo(() => readableBlocks(chapter), [chapter]);
-  const translation = useChapterTranslation(book.id, chapter.id, lang, translate && blocks.length > 0, onTranslationRefused);
+  const translationEligibility = useChapterTranslationEligibility(book.id, chapter.id, lang, translate, translateNow);
+  const translation = useChapterTranslation(book.id, chapter.id, lang, translationEligibility.eligible && blocks.length > 0, onTranslationRefused);
   const translated = translation.status === "ready" ? translation.blocks : null;
   // A first heading that repeats the chapter's title is shown as the title, so its translation goes under the title.
   const titleTranslation = translated && blocks.length < chapter.blocks.length ? translated[chapter.blocks[0]!.id] : undefined;
@@ -47,7 +51,7 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
   const aids = kind === "body" && (summary?.wordCount ?? 0) >= AID_MIN_WORDS;
 
   return (
-    <article className="chapter" data-chapter={chapter.id} aria-labelledby={headingId}>
+    <article ref={translationEligibility.ref} className="chapter" data-chapter={chapter.id} aria-labelledby={headingId}>
       <header className="chapter-head">
         <p className="chapter-meta">
           {kind === "front"

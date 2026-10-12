@@ -364,6 +364,7 @@ Explanation languages: Bangla (the default), Hindi, Urdu, Arabic, Spanish, Frenc
 **Translation** in **Aa** shows the whole chapter in your language as well, each paragraph's translation right under it, like a bilingual edition.
 A free translation service makes it (Microsoft Translator, or Google Translate when Microsoft cannot answer), not your AI helper, so it costs nothing and uses no one's AI.
 Each paragraph is translated once and kept with the book, so the chapter shows translated at once the next time, on any device, and for anyone it is shared with.
+The chapter you open starts first; other chapters begin translating as you approach them, keeping distant chapters from competing with reading on your phone.
 A translation service works a sentence at a time and can miss what a word means in its context, for example "table" as a chart instead of the furniture.
 When the meaning matters, select the passage and choose **Explain** or **In Bangla**.
 With profiles on, the admin decides whether readers may use it and which service makes it.
