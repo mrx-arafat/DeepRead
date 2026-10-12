@@ -315,7 +315,7 @@ describe("translation arrival commits", () => {
     expect(dom.scrollBy).toHaveBeenCalledWith({ top: 140, behavior: "instant" });
     expect(dom.globalQuery).toHaveBeenCalledWith("main.page > *");
     expect(dom.scopeQuery).toHaveBeenCalledTimes(1);
-    expect(dom.scopeQuery.mock.calls[0]).toEqual([":scope > :not(.chapter-text, .translation-status, .tip), :scope > .chapter-text > .row"]);
+    expect(dom.scopeQuery.mock.calls[0]).toEqual([":scope > :not(.chapter-text, .translation-status, .tip), :scope > .chapter-text .row"]);
   });
 
   it.each([[true, false], [false, true]])("yields when the anchor is the chapter header=%s or the changed chapter is below it=%s", (header, below) => {

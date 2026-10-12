@@ -3,9 +3,10 @@ import { useLocation } from "wouter";
 import { useHistoryState } from "wouter/use-browser-location";
 import type { BookDetail, Chapter, ReadingProgress } from "../../shared/types.ts";
 import { api } from "../api.ts";
-import { bookPercent, chapterMinutesLeft, indexAtLine, textFraction } from "./book.ts";
+import { bookPercent, chapterMinutesLeft, indexAtLine } from "./book.ts";
 import { inPages, pageFrame } from "./paging.ts";
 import { blockText, rangeWithin } from "./domText.ts";
+import { releaseMobileRowRendering } from "./useMobileRowRendering.ts";
 
 type Position = {
   /** The chapter at the top of the window. */
@@ -44,7 +45,7 @@ export const EYE_LINE = 96;
 /** The eye line now: in pages, the first line of the page, so the place kept is the line a reopened page starts on. */
 export const eyeLine = (): number => (inPages() ? pageFrame().top + 2 : EYE_LINE);
 
-const bottomOf = (elements: NodeListOf<HTMLElement>, part: (element: HTMLElement) => Element | null) => (index: number) => {
+const bottomOf = (elements: ArrayLike<HTMLElement>, part: (element: HTMLElement) => Element | null) => (index: number) => {
   const element = elements[index];
   return element ? (part(element) ?? element).getBoundingClientRect().bottom : 0;
 };
@@ -66,7 +67,24 @@ function spotAtEyeLine(): Spot | null {
   const chapter = chapters[Math.min(at, chapters.length - 1)];
   if (!chapter) return null;
   const blocks = chapter.querySelectorAll<HTMLElement>("[data-block]");
-  return { chapter, block: blocks[indexAtLine(blocks.length, bottomOf(blocks, blockRow), eyeLine())] ?? null, blocks };
+  // Mobile scrolling retains the DOM inside measured chunks. Probe chunk wrappers first:
+  // asking for arbitrary offscreen paragraph geometry would force skipped chunks to render.
+  const chunks = chapter.querySelectorAll<HTMLElement>(".text-chunk");
+  let candidates: ArrayLike<HTMLElement> = blocks;
+  if (chunks.length && chunks[0]!.getBoundingClientRect().height > 0) {
+    const chunk = chunks[indexAtLine(chunks.length, bottomOf(chunks, (element) => element), eyeLine())];
+    candidates = chunk?.querySelectorAll<HTMLElement>("[data-block]") ?? [];
+    // A figure-only chunk has no logical source anchor; retain the next text block behavior.
+    if (!candidates.length) candidates = blocks;
+  }
+  let block = candidates[indexAtLine(candidates.length, bottomOf(candidates, blockRow), eyeLine())] ?? null;
+  if (!block && candidates !== blocks && candidates.length) {
+    // Trailing figures can occupy the eye line after this chunk's last source paragraph.
+    // Keep the next logical text anchor rather than prematurely marking the chapter complete.
+    const last = Array.prototype.indexOf.call(blocks, candidates[candidates.length - 1]) as number;
+    block = blocks[last + 1] ?? null;
+  }
+  return { chapter, block, blocks };
 }
 
 /** The book block at the top of the window, if any. */
@@ -85,6 +103,11 @@ function charRange(block: HTMLElement, offset: number): Range {
 /** Where the line at `line` starts in the full block text. */
 function offsetAtLine(block: HTMLElement, line: number): number {
   const text = blockText(block);
+  const box = block.getBoundingClientRect();
+  // While the translated paragraph is at the eye line its source is already above it.
+  // Preserve the exact end offset without binary-searching source character rectangles.
+  if (box.bottom <= line) return text.length;
+  if (box.top >= line) return 0;
   return indexAtLine(text.length, (index) => charRange(block, index).getBoundingClientRect().bottom, line);
 }
 
@@ -108,6 +131,7 @@ export function keepingLine(change: () => void): void {
   const offset = again?.offset ?? offsetAtLine(block, eyeLine());
   const top = lineTop(block, offset);
   const beforeEye = eyeLine();
+  releaseMobileRowRendering();
   change();
   const afterEye = eyeLine();
   window.scrollBy(0, lineTop(block, offset) - (beforeEye === afterEye ? top : afterEye));
@@ -118,10 +142,24 @@ export function keepingLine(change: () => void): void {
  * How far into its chapter the spot is, 0 to 1, by the text above the line the reader is on (the server counts it the
  * same way, so the shelf agrees with the top bar). Above the text (heading, preview) is 0; the recap after it is 1.
  */
-function fractionRead({ block, blocks }: Spot): number {
+// Source blocks are immutable for the lifetime of their mounted chapter. Highlights can wrap
+// their text nodes, and translations/notes can change row height, without changing source lengths.
+const chapterLengths = new WeakMap<HTMLElement, { first?: HTMLElement; last?: HTMLElement; count: number; prefix: number[] }>();
+
+function fractionRead({ chapter, block, blocks }: Spot, offset: number): number {
   if (!block) return 1;
-  const lengths = Array.from(blocks, (each) => each.textContent?.length ?? 0);
-  return textFraction(lengths, Array.prototype.indexOf.call(blocks, block), offsetAtLine(block, eyeLine()));
+  let lengths = chapterLengths.get(chapter);
+  if (!lengths || lengths.count !== blocks.length || lengths.first !== blocks[0] || lengths.last !== blocks[blocks.length - 1]) {
+    const prefix = [0];
+    for (const each of blocks) prefix.push(prefix[prefix.length - 1]! + (each.textContent?.length ?? 0));
+    lengths = { first: blocks[0], last: blocks[blocks.length - 1], count: blocks.length, prefix };
+    chapterLengths.set(chapter, lengths);
+  }
+  const index = Array.prototype.indexOf.call(blocks, block) as number;
+  const total = lengths.prefix[lengths.prefix.length - 1]!;
+  const above = lengths.prefix[index]!;
+  const within = Math.min(Math.max(offset, 0), lengths.prefix[index + 1]! - above);
+  return total > 0 ? (above + within) / total : 0;
 }
 
 /** The closing heading is wholly above the footer, so no chapter time remains to be read. */
@@ -138,11 +176,11 @@ const same = (a: Position, b: Position) =>
 export type Place = Required<Pick<ReadingProgress, "chapterId" | "blockId" | "offset">>;
 
 /** The block at the eye line and how far into it the line there starts. */
-function placeOf(spot: Spot | null): Place | null {
+function placeOf(spot: Spot | null, offset?: number): Place | null {
   const blockId = spot?.block?.dataset.block;
   const chapterId = spot?.chapter.dataset.chapter;
   if (!spot?.block || !blockId || !chapterId) return null;
-  return { chapterId, blockId, offset: offsetAtLine(spot.block, eyeLine()) };
+  return { chapterId, blockId, offset: offset ?? offsetAtLine(spot.block, eyeLine()) };
 }
 
 const placeAtEyeLine = (): Place | null => placeOf(spotAtEyeLine());
@@ -347,8 +385,9 @@ export function useReadingPosition(
       const spot = spotAtEyeLine();
       const id = spot?.chapter.dataset.chapter;
       if (!spot || !id) return;
-      const fraction = fractionRead(spot);
-      latest = placeOf(spot);
+      const offset = spot.block ? offsetAtLine(spot.block, eyeLine()) : 0;
+      const fraction = fractionRead(spot, offset);
+      latest = placeOf(spot, offset);
       const completed = atBookEnd();
       const next: Position = {
         chapterId: id,
