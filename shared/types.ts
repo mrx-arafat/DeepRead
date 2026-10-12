@@ -4,7 +4,17 @@
 export type Block = {
   /** Stable within the book, e.g. "c3-b12". */
   id: string;
-  type: "heading" | "paragraph";
+  type: "heading" | "paragraph" | "code" | "image" | "table";
+  /** A list item keeps its printed marker and its exact selectable text. */
+  format?: "list-item" | "figure-text" | "caption";
+  /** Font size is relative to the book's body size; content offsets always refer to text. */
+  style?: { align?: "left" | "center" | "right" | "justify"; fontFamily?: "serif" | "sans-serif" | "monospace"; fontSize?: number; bold?: boolean; italic?: boolean };
+  /** Inline styles retain exact offsets into text, including reconstructed spaces. */
+  runs?: { start: number; end: number; bold?: boolean; italic?: boolean; underline?: boolean; fontFamily?: "serif" | "sans-serif" | "monospace" }[];
+  /** Conservative table detection; text uses tabs between cells and newlines between rows. */
+  rows?: string[][];
+  /** Figures use book-relative asset paths; the parser initially supplies a PNG data URL. */
+  image?: { src: string; width: number; height: number; alt: string; ocrText?: string };
   /** Headings only. */
   level?: 1 | 2 | 3;
   /** Clean text: de-hyphenated, no running headers, footers or page numbers. */

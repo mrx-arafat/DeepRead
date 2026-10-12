@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminProfile, ApiError, BookSummary, Chapter, ParsedBook, PublicProfile } from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
 import type { AppEnv } from "./app-env.ts";
@@ -17,13 +17,23 @@ import { loadSessionSecret } from "./sessions.ts";
 import { createLocalStore } from "./storage.ts";
 
 const PASSKEY = "a long admin passkey for tests, ".repeat(3);
+vi.mock("./source-page.ts", () => ({ renderSourcePageIsolated: async () => ({
+  data: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), type: "image/png", width: 600, height: 800,
+  text: { width: 600, height: 800, runs: [{ text: "Printed words", x: 0.1, y: 0.2, width: 0.4, height: 0.03, fontSize: 0.03, angle: 0, dir: "ltr" }] },
+}) }));
 
 const book = (title: string): ParsedBook => ({
   title,
   author: null,
   pageCount: 1,
   warnings: [],
-  chapters: [{ id: "c1", title: "One", startPage: 1, endPage: 1, blocks: [{ id: "c1-b0", type: "paragraph", text: `${title} text.`, page: 1 }] }],
+  chapters: [{ id: "c1", title: "One", startPage: 1, endPage: 1, blocks: [
+    { id: "c1-b0", type: "paragraph", text: `${title} text.`, page: 1 },
+    { id: "c1-b1", type: "image", text: "", page: 1, image: {
+      src: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+      width: 1, height: 1, alt: "A book figure",
+    } },
+  ] }],
 });
 // The fake parser reads the uploaded file from disk, so these bytes stand in for a real PDF.
 const pdfBytes = (title: string): string => `%PDF-1.4\n${JSON.stringify(book(title))}\n`;
@@ -146,5 +156,37 @@ describe("the PDF of a shared book", () => {
     const own = await call("GET", `/api/books/${bookId}/pdf`, asRafi);
     expect(own.status).toBe(200);
     expect(await own.text()).toBe(pdfBytes("Kokoro"));
+  });
+
+  it("serves stored figures to the owner and shared reader, and revokes access when sharing ends", async () => {
+    const { mina, rafiCookie, minaCookie, bookId, sharedId } = await sharedFromRafiToMina("Illustrated");
+    const chapter = await json<Chapter>(call("GET", `/api/books/${sharedId}/chapters/c1`, minaCookie));
+    const src = chapter.blocks[1]!.image!.src;
+    expect(src).toMatch(/^figures\/[0-9a-f]{64}\.png$/);
+    for (const [id, cookie] of [[bookId, rafiCookie], [sharedId, minaCookie]]) {
+      const response = await call("GET", `/api/books/${id}/${src}`, cookie);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("image/png");
+      expect(response.headers.get("cache-control")).toBe("private, no-cache");
+      expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(8);
+    }
+    expect((await call("GET", `/api/books/${bookId}/${src}`, minaCookie)).status).toBe(404);
+    expect((await call("GET", `/api/books/${sharedId}/figures/source.pdf`, minaCookie)).status).toBe(404);
+    const original = await call("GET", `/api/books/${sharedId}/pages/1`, minaCookie);
+    expect(original.status).toBe(200);
+    expect(original.headers.get("content-type")).toBe("image/png");
+    const selectable = await call("GET", `/api/books/${sharedId}/pages/1/text`, minaCookie);
+    expect(selectable.status).toBe(200);
+    expect(selectable.headers.get("cache-control")).toBe("private, no-cache");
+    expect(await selectable.json()).toMatchObject({ runs: [{ text: "Printed words" }] });
+    expect((await call("GET", `/api/books/${bookId}/pages/1/text`, minaCookie)).status).toBe(404);
+    expect((await call("GET", `/api/books/${sharedId}/pages/0/text`, minaCookie)).status).toBe(400);
+    expect((await call("GET", `/api/books/${bookId}/pages/1`, minaCookie)).status).toBe(404);
+    expect((await call("GET", `/api/books/${sharedId}/pages/2`, minaCookie)).status).toBe(404);
+    expect((await call("GET", `/api/books/${sharedId}/pages/0`, minaCookie)).status).toBe(400);
+    expect((await call("DELETE", `/api/books/${bookId}/shares/${mina.id}`, rafiCookie)).status).toBe(204);
+    expect((await call("GET", `/api/books/${sharedId}/${src}`, minaCookie)).status).toBe(404);
+    expect((await call("GET", `/api/books/${sharedId}/pages/1`, minaCookie)).status).toBe(404);
+    expect((await call("GET", `/api/books/${sharedId}/pages/1/text`, minaCookie)).status).toBe(404);
   });
 });

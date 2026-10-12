@@ -21,7 +21,8 @@ import { lookupTipDone, markLookupTipDone } from "./lookupTip.ts";
 import { ReadingSettings } from "./ReadingSettings.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
 import { canSpeak } from "./speech.ts";
-import { rangeInBlock, setHighlight } from "./textRanges.ts";
+import { blockOf, rangeInBlock, setHighlight } from "./textRanges.ts";
+import { offsetInBlock } from "./domText.ts";
 import { UndoToast } from "./UndoToast.tsx";
 import { useChapterFlow } from "./useChapterFlow.ts";
 import { useHighlightChoice } from "./useHighlightChoice.ts";
@@ -246,7 +247,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     if (!selection) return null;
     const chapter = flow.chapters.find((item) => item.id === selection.chapterId);
     if (!chapter) return null;
-    const from = selection.range.startContainer instanceof Text ? selection.range.startOffset : 0;
+    const from = offsetInBlock(blockOf(selection.range.startContainer), selection.range.startContainer, selection.range.startOffset);
     const source = quoteStart(readableBlocks(chapter), selection.blockId, selection.text, from);
     return source ? { chapterId: chapter.id, blockId: source.blockId, quote: selection.text, offset: source.offset } : null;
   }, [selection, flow.chapters]);
@@ -285,7 +286,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
 
   function listenFrom(lookup: Lookup) {
     rememberKeyboardStart();
-    listen.startAt(lookup.blockId, lookup.range.startOffset);
+    listen.startAt(lookup.blockId, offsetInBlock(blockOf(lookup.range.startContainer), lookup.range.startContainer, lookup.range.startOffset));
     window.getSelection()?.removeAllRanges();
     dismiss();
   }
@@ -464,6 +465,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
                 actions={actions}
                 onDismissTip={chapter === flow.start && tipOpen ? closeTip : undefined}
                 translate={prefs.translation}
+                translateNow={chapter.id === (position.chapterId ?? flow.start?.id)}
                 onTranslationRefused={refuseTranslation}
               />
             ))}
@@ -556,7 +558,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
 
       {word && (
         <WordPopover
-          key={`${word.blockId}-${word.range.startOffset}-${word.text}`}
+          key={`${word.blockId}-${offsetInBlock(blockOf(word.range.startContainer), word.range.startContainer, word.range.startOffset)}-${word.text}`}
           lookup={word}
           bookId={bookId}
           lang={prefs.lang}

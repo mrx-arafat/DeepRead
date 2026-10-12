@@ -8,6 +8,7 @@ import { inline } from "./RichText.tsx";
 import { BOTTOM_EDGE, clearSpan, TOP_EDGE } from "./sentenceView.ts";
 import { canSpeak, speak } from "./speech.ts";
 import { blockOf, highlighted, rangeInBlock, sentenceSpans } from "./textRanges.ts";
+import { blockText, offsetInBlock } from "./domText.ts";
 import { type AiStream, useAiStream } from "./useAiStream.ts";
 
 export type Lookup = {
@@ -102,9 +103,9 @@ function gutter(): number {
 
 /** The sentences the card must leave in view, most important first: the one being read aloud, then the word's own. */
 function sentencesToKeep(lookup: Lookup): Range[] {
-  const own = sentenceSpans(lookup.range.startContainer.textContent ?? "").find(
-    (span) => lookup.range.startOffset < span.end,
-  );
+  const block = blockOf(lookup.range.startContainer);
+  const offset = offsetInBlock(block, lookup.range.startContainer, lookup.range.startOffset);
+  const own = sentenceSpans(block ? blockText(block) : "").find((span) => offset < span.end);
   return [highlighted("dr-sentence"), own ? rangeInBlock(lookup.blockId, own) : null].filter((range) => range !== null);
 }
 

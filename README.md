@@ -196,7 +196,7 @@ The steps below are the same for every profile.
 
 Click **Add a book**, or drop a PDF anywhere on the page. The library header's **Appearance** menu offers Light, Sepia, and Dark themes beside your profile menu.
 DeepRead works with PDFs whose text you can select (most e-books and Project Gutenberg books).
-Scanned books, where each page is a photo, need OCR first.
+Scanned books, where each page is a photo, are recognized locally when the server has Tesseract installed (see [PDF import](docs/pdf-import.md)).
 
 <table><tr><td><img src="docs/images/library-empty.webp" alt="The first screen: a welcome box with an empty shelf and the Add a book button" width="900"></td></tr></table>
 
@@ -364,6 +364,7 @@ Explanation languages: Bangla (the default), Hindi, Urdu, Arabic, Spanish, Frenc
 **Translation** in **Aa** shows the whole chapter in your language as well, each paragraph's translation right under it, like a bilingual edition.
 A free translation service makes it (Microsoft Translator, or Google Translate when Microsoft cannot answer), not your AI helper, so it costs nothing and uses no one's AI.
 Each paragraph is translated once and kept with the book, so the chapter shows translated at once the next time, on any device, and for anyone it is shared with.
+The chapter you open starts first; other chapters begin translating as you approach them, keeping distant chapters from competing with reading on your phone.
 A translation service works a sentence at a time and can miss what a word means in its context, for example "table" as a chart instead of the furniture.
 When the meaning matters, select the passage and choose **Explain** or **In Bangla**.
 With profiles on, the admin decides whether readers may use it and which service makes it.
@@ -470,7 +471,9 @@ Replace the key or add credit at [openrouter.ai](https://openrouter.ai), then pr
 <summary><b>Adding a book says it is a scan</b></summary>
 
 The pages are pictures, not text.
-Find a version of the book whose text you can select, or run it through OCR first (for example with `ocrmypdf`), then add the new PDF.
+DeepRead tries local text recognition when Tesseract is installed on the server. On Ubuntu/Debian, install it with `sudo apt-get install tesseract-ocr tesseract-ocr-eng`; on macOS, use `brew install tesseract`.
+For other languages, install their Tesseract language data and set `DEEPREAD_OCR_LANG` (for example `eng+ben`) before starting DeepRead.
+If recognition cannot recover enough words, find a version whose text you can select, or run it through OCR first (for example with `ocrmypdf`), then add the new PDF.
 
 </details>
 
@@ -907,7 +910,7 @@ PDFs store positioned glyphs, not paragraphs, so the parser rebuilds the book:
 - Front matter (title page, copyright, contents) and back matter (notes, index, appendices, Project Gutenberg's header and licence) are marked as such, so the reader can skip them.
 - Running headers, footers and page numbers are removed.
 - Lines are joined into paragraphs, hyphenated line breaks are healed, and paragraphs that continue across a page break are stitched back together.
-- Scanned PDFs (pages that are images) are detected and rejected with a clear message instead of producing garbage.
+- Scanned PDFs and unreadable text layers are recognized locally with Tesseract when installed. Failed recognition produces a clear message; documents are never sent to an OCR service.
 - Parsing runs in a worker thread with a hard timeout, so a malformed PDF cannot hang the server.
 
 Checked against the raw text layer of an 86 page novel, the parsed book kept 36,353 of 36,358 words (99.98%).
@@ -1151,9 +1154,9 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 
 ## Limits
 
-- Scanned PDFs need OCR first.
-  OCR is not built in yet.
-- Figures, tables and images from the PDF are not shown in the reading view.
+- Scanned PDFs need Tesseract and its language data installed on the server for local text recognition. Recognition can make mistakes, especially with handwriting, rotated text or poor scans; the original scanned page is retained alongside the recovered text.
+- Newly added PDFs preserve figures, many vector diagrams, lists, code spacing, two-column prose, inline bold/italic, font families, relative sizes, captions and clearly aligned tables. **Original pages** opens the actual printed layout with zoom, including exact embedded fonts, equations and complex tables. Reflow uses conservative layout detection and source font families; complex magazine layouts and merged table cells may need the original-page view. Markdown symbols printed in a PDF remain literal book text.
+- Existing books keep their parsed text and saved note offsets. These import improvements apply to newly added books; existing books are not automatically reparsed.
 - Reading aloud uses the voices built into your browser and operating system, unless you choose the natural voice.
   The natural voice speaks English with one voice, needs WebGPU, and marks the spoken word by estimating where it falls in the sentence, so the green word can be a little early or late.
 - An answer takes a few seconds to start, even for a single word, because accuracy was chosen over speed.

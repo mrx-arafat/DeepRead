@@ -5,6 +5,7 @@ import type { BookDetail, Chapter, ReadingProgress } from "../../shared/types.ts
 import { api } from "../api.ts";
 import { bookPercent, chapterMinutesLeft, indexAtLine, textFraction } from "./book.ts";
 import { inPages, pageFrame } from "./paging.ts";
+import { blockText, rangeWithin } from "./domText.ts";
 
 type Position = {
   /** The chapter at the top of the window. */
@@ -74,26 +75,22 @@ export function blockAtTop(): HTMLElement | null {
 }
 
 /** A range over the character at `offset`, moved on past spaces: one where a line wraps may have no box of its own. */
-function charRange(text: Text, offset: number): Range {
+function charRange(block: HTMLElement, offset: number): Range {
+  const text = blockText(block);
   let at = Math.min(Math.max(offset, 0), text.length - 1);
-  while (at < text.length - 1 && /\s/.test(text.data.charAt(at))) at++;
-  const range = document.createRange();
-  range.setStart(text, at);
-  range.setEnd(text, at + 1);
-  return range;
+  while (at < text.length - 1 && /\s/.test(text.charAt(at))) at++;
+  return rangeWithin(block, at, at + 1)!;
 }
 
-/** Where the line at `line` (px from the window top) starts in `block`'s text, in characters. */
+/** Where the line at `line` starts in the full block text. */
 function offsetAtLine(block: HTMLElement, line: number): number {
-  const text = block.firstChild;
-  if (!(text instanceof Text)) return 0;
-  return indexAtLine(text.length, (index) => charRange(text, index).getBoundingClientRect().bottom, line);
+  const text = blockText(block);
+  return indexAtLine(text.length, (index) => charRange(block, index).getBoundingClientRect().bottom, line);
 }
 
-/** How far down the window the line holding character `offset` of `block` is, in px. */
+/** The line holding a logical character offset, even when inline styles split its text nodes. */
 function lineTop(block: HTMLElement, offset: number): number {
-  const text = block.firstChild;
-  return text instanceof Text && text.length > 0 ? charRange(text, offset).getBoundingClientRect().top : block.getBoundingClientRect().top;
+  return blockText(block).length > 0 ? charRange(block, offset).getBoundingClientRect().top : block.getBoundingClientRect().top;
 }
 
 // The place the last text size change kept on screen. Until the reader scrolls, the next change keeps that same

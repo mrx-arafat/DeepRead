@@ -11,6 +11,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { formatBytes } from "../shared/bytes.ts";
+import { FIGURE_NAME, separateFigures } from "./book-figures.ts";
+import { renderSourcePageIsolated } from "./source-page.ts";
+import type { SourcePageImage } from "./source-page.ts";
 import { applyNoteChange } from "../shared/notes.ts";
 import type { NoteChange } from "../shared/notes.ts";
 import type {
@@ -48,6 +51,8 @@ const COVER_FILES: Record<CoverImage["type"], string> = { "image/webp": "cover.w
 const ADDING = "adding books";
 const META_KEY = /^books\/([^/]+)\/meta\.json$/;
 const PINS_KEY = "pins.json";
+// Bound full-PDF materialization across profiles before storage downloads or renderer workers start.
+let activeSourcePages = 0;
 // Not a book id either, so pin changes queue apart from any one book's work.
 const PINNING = "pinning books";
 
@@ -208,6 +213,10 @@ export type Library = {
   pdf(id: string): Promise<StoredPdf | null>;
   /** Null when the book has no cover of its own, or has not been looked at yet. */
   cover(id: string): Promise<CoverImage | null>;
+  /** A figure from this readable book; filenames are content hashes, never paths. */
+  figure(id: string, name: string): Promise<Uint8Array<ArrayBuffer> | null>;
+  /** The original printed page as an image, available through the same permissions as book text. */
+  sourcePage(id: string, page: number): Promise<SourcePageImage | null>;
   /**
    * Books stored before covers were kept have never been looked at: finds theirs, one book at a time, and notes the
    * books without one so they are not looked at again. Never rejects.
@@ -320,6 +329,8 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
 
   // A reader taps words constantly and each tap needs the whole book; parsing book.json every time adds up.
   const parsedBooks = new Map<string, ParsedBook>();
+  const sourcePages = new Map<string, SourcePageImage>();
+  const drawingPages = new Map<string, Promise<SourcePageImage | null>>();
   function remember(id: string, book: ParsedBook): void {
     parsedBooks.delete(id);
     parsedBooks.set(id, book);
@@ -558,7 +569,9 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
       const oneAtATime = shared ? shared.adding : <T>(work: () => Promise<T>) => serialized(ADDING, work);
       return oneAtATime(async () => {
         await ready();
-        const bookJson = JSON.stringify(parsed);
+        const { book: storedBook, figures } = separateFigures(parsed);
+        const figureBytes = [...figures.values()].reduce((sum, data) => sum + data.byteLength, 0);
+        const bookJson = JSON.stringify(storedBook);
         const chapterWordCounts = Object.fromEntries(parsed.chapters.map((c) => [c.id, chapterWords(c)]));
         // Reading time is the book's own text: a title page, an index or a licence is not reading.
         const bodyWords = parsed.chapters
@@ -590,13 +603,14 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
             };
             const metaJson = JSON.stringify(meta);
             const pdfBytes = (await stat(uploadPath)).size;
-            await assertRoom(pdfBytes + Buffer.byteLength(bookJson) + (cover?.data.byteLength ?? 0) + Buffer.byteLength(metaJson));
+            await assertRoom(pdfBytes + Buffer.byteLength(bookJson) + figureBytes + (cover?.data.byteLength ?? 0) + Buffer.byteLength(metaJson));
 
             try {
               // Whatever an earlier copy of this book left behind (old notes, old answers) must not become part of this one.
               await store.removeAll(folderOf(id));
               await store.putFile(keyOf(id, "source.pdf"), uploadPath);
               await store.write(keyOf(id, "book.json"), bookJson);
+              for (const [name, data] of figures) await store.write(keyOf(id, `figures/${name}`), data);
               if (cover) await store.write(keyOf(id, COVER_FILES[cover.type]), cover.data);
               // Last: the book is in the library from this moment, with everything it needs already stored.
               await writeMeta(meta);
@@ -640,6 +654,33 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
       const key = keyOf(id, "source.pdf");
       const size = await store.size(key);
       return size === null ? null : { size, stream: (range) => store.stream(key, range) };
+    },
+
+    async sourcePage(id, page) {
+      const meta = await readMeta(id);
+      if (!meta || !Number.isInteger(page) || page < 1 || page > meta.pageCount) return null;
+      const key = `${id}/${page}`;
+      const known = sourcePages.get(key);
+      if (known) return known;
+      const drawing = drawingPages.get(key);
+      if (drawing) return drawing;
+      if (activeSourcePages >= 2) return null;
+      activeSourcePages++;
+      const run = withLocalPdf(id, (path) => renderSourcePageIsolated(path, page)).then((image) => {
+        if (image && image.data.byteLength <= 8 * 1024 * 1024) {
+          sourcePages.set(key, image);
+          while (sourcePages.size > 2) sourcePages.delete(sourcePages.keys().next().value!);
+        }
+        return image;
+      }).finally(() => { drawingPages.delete(key); activeSourcePages--; });
+      drawingPages.set(key, run);
+      return run;
+    },
+
+    async figure(id, name) {
+      if (!FIGURE_NAME.test(name) || !(await exists(id))) return null;
+      const data = await store.read(keyOf(id, `figures/${name}`));
+      return data ? new Uint8Array(data) : null;
     },
 
     async cover(id) {
@@ -714,6 +755,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
     remove(id) {
       return serialized(id, async () => {
         if (!(await exists(id))) return false;
+        for (const key of sourcePages.keys()) if (key.startsWith(`${id}/`)) sourcePages.delete(key);
         // meta.json first: the book leaves the library in one step, and the rest of its files go after it.
         await changeMeta(id, null, () => store.remove([keyOf(id, "meta.json")]));
         parsedBooks.delete(id);

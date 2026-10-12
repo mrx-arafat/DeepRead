@@ -4,14 +4,14 @@ import { setPrefs, usePrefs } from "../prefs.ts";
 import { readableBlocks } from "./book.ts";
 import type { HighlightChoice } from "./HighlightGroup.tsx";
 import { highlightTarget } from "./highlights.ts";
+import { blockOf } from "./textRanges.ts";
+import { offsetInBlock } from "./domText.ts";
 import type { Notes } from "./useNotes.ts";
 import type { Lookup } from "./WordPopover.tsx";
 
 /** How far into its paragraph's text a range starts. Selected from the paragraph's very edge, it starts at the element. */
 function startInBlock(range: Range): number {
-  const { startContainer, startOffset } = range;
-  if (startContainer instanceof Text) return startOffset;
-  return startOffset === 0 ? 0 : (startContainer.textContent?.length ?? 0);
+  return offsetInBlock(blockOf(range.startContainer), range.startContainer, range.startOffset);
 }
 
 /**

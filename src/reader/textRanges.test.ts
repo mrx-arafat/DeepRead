@@ -145,6 +145,35 @@ describe("sentenceSpans", () => {
 });
 
 describe("quoteSpans", () => {
+  it.each([
+    { first: "alpha\nbeta", firstType: "code" as const, second: "gamma", secondType: "paragraph" as const, quote: "alpha\nbeta\ngamma", offset: 0, end: 5 },
+    { first: "intro", firstType: "paragraph" as const, second: "  alpha\nbeta", secondType: "code" as const, quote: "intro\n  alpha\nbeta", offset: 0, end: 12 },
+    { first: "before\n  alpha\nbeta", firstType: "code" as const, second: "gamma after", secondType: "paragraph" as const, quote: "alpha\nbeta\ngamma", offset: 9, end: 5 },
+    { first: "before intro", firstType: "paragraph" as const, second: "next paragraph", secondType: "paragraph" as const, quote: "intro \n\n  next", offset: 7, end: 4 },
+  ])("preserves block text before matching newline boundaries: $quote", ({ first, firstType, second, secondType, quote, offset, end }) => {
+    const source: Block[] = [
+      { id: "first", type: firstType, text: first, page: 1 },
+      { id: "figure", type: "image", text: "", page: 1 },
+      { id: "next", type: secondType, text: second, page: 1 },
+    ];
+    expect(quoteSpans(source, "first", quote, offset)).toEqual([
+      { blockId: "first", span: { start: offset, end: first.length } },
+      { blockId: "next", span: { start: 0, end } },
+    ]);
+  });
+  it("keeps multiline code offsets and follows text selections across figures", () => {
+    const code: Block = { id: "code", type: "code", page: 1, text: "start\n  return value;\nfinish" };
+    expect(quoteSpans([code], "code", "  return value;\nfinish", 6)).toEqual([{ blockId: "code", span: { start: 6, end: code.text.length } }]);
+    const illustrated: Block[] = [
+      { id: "before", type: "paragraph", text: "Before the end", page: 1 },
+      { id: "figure", type: "image", text: "", page: 1 },
+      { id: "empty", type: "paragraph", text: " ", page: 1 },
+      { id: "after", type: "paragraph", text: "a new beginning after that", page: 1 },
+    ];
+    expect(quoteSpans(illustrated, "before", "the end\na new beginning", 7)).toEqual([
+      { blockId: "before", span: { start: 7, end: 14 } }, { blockId: "after", span: { start: 0, end: 15 } },
+    ]);
+  });
   const block = (id: string, text: string): Block => ({ id, type: "paragraph", text, page: 1 });
   const blocks = [
     block("b1", "Is there any knowledge? This question is hard."),

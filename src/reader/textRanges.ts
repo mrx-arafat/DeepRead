@@ -1,8 +1,10 @@
 // Finding words and sentences inside a block of book text.
-// Every block renders as one text node, so offsets here are offsets into `block.text`.
+// Inline typography can split DOM text nodes; every logical offset still refers to `block.text`.
 
 import { HIGHLIGHT_COLORS } from "../../shared/types.ts";
 import type { Block, HighlightColor } from "../../shared/types.ts";
+import { matchQuoteAt } from "./quoteSource.ts";
+import { blockText, offsetInBlock, rangeWithin } from "./domText.ts";
 
 export type Span = { start: number; end: number };
 
@@ -181,10 +183,18 @@ export function sentenceIndex(sentences: Sentence[], at: SentenceAt): number {
  * is not there. `offset`, where it starts in that block when known, tells apart the same words said twice there.
  */
 export function quoteSpans(blocks: Block[], blockId: string, quote: string, offset?: number): { blockId: string; span: Span }[] {
+  // Figures have no selectable text and contribute no line to a copied multi-block passage.
+  blocks = blocks.filter((block) => block.type !== "image" && block.text.trim() !== "");
   let at = blocks.findIndex((block) => block.id === blockId);
   const text = blocks[at]?.text ?? "";
   const whole = offset !== undefined && text.startsWith(quote, offset) ? offset : text.indexOf(quote);
   if (whole !== -1) return [{ blockId, span: { start: whole, end: whole + quote.length } }];
+  const firstLine = quote.split(/\s*\n\s*/)[0] ?? "";
+  if (firstLine) {
+    const start = offset !== undefined && text.startsWith(firstLine, offset) ? offset : text.indexOf(firstLine);
+    const match = matchQuoteAt(blocks, at, quote, start);
+    if (match) return match;
+  }
   // A selection over several paragraphs: the copied text breaks lines between them. It runs from somewhere in the
   // first paragraph to its end, over whole ones, into the start of the last. A note card in between came along too.
   const [first = "", ...rest] = quote.split(/\s*\n\s*/);
@@ -222,12 +232,12 @@ function caretAt(x: number, y: number): { node: Text; offset: number } | null {
 /** A range around the word under the pointer, or null if the pointer is not on a word. */
 export function wordRangeAtPoint(x: number, y: number): Range | null {
   const caret = caretAt(x, y);
-  if (!caret || !blockOf(caret.node)) return null;
-  const span = wordAt(caret.node.data, caret.offset);
+  const block = caret && blockOf(caret.node);
+  if (!caret || !block) return null;
+  const span = wordAt(blockText(block), offsetInBlock(block, caret.node, caret.offset));
   if (!span) return null;
-  const range = document.createRange();
-  range.setStart(caret.node, span.start);
-  range.setEnd(caret.node, span.end);
+  const range = rangeWithin(block, span.start, span.end);
+  if (!range) return null;
   // The caret snaps to the nearest text even from empty space, so confirm the pointer hit the word.
   const slack = 3;
   const hit = [...range.getClientRects()].some(
@@ -241,12 +251,7 @@ export function wordRangeAtPoint(x: number, y: number): Range | null {
 export function rangeInBlock(blockId: string, span: Span): Range | null {
   // A chapter's title is read like a block but is not one: it is found by its id.
   const element = document.querySelector(`[data-block="${CSS.escape(blockId)}"]`) ?? document.getElementById(blockId);
-  const node = element?.firstChild;
-  if (!(node instanceof Text) || span.end > node.length) return null;
-  const range = document.createRange();
-  range.setStart(node, span.start);
-  range.setEnd(node, span.end);
-  return range;
+  return element ? rangeWithin(element, span.start, span.end) : null;
 }
 
 // Where marks overlap, a later one here is painted over an earlier one: a word looked up inside the sentence

@@ -4,11 +4,14 @@ import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { illustratedBookPdf } from "../e2e/fixtures/illustrated-book.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = join(root, "e2e/fixtures/problems-of-philosophy.pdf");
 const journeys = {
+  "translation-mobile": {},
+  "pdf-content": { illustrated: true },
   "profile-photo": { passkey: "profile-photo-test-code-2026" },
   "ux01-controls-matrix": { fixture: true },
   "ux01-position-matrix": { fixture: true },
@@ -118,9 +121,9 @@ async function run(name, setup) {
     process.stderr.write(`Starting isolated ${name} journey...\n`);
     api = start(process.execPath, [join(root, "server/index.ts")], env);
     await ready(`http://127.0.0.1:${apiPort}/api/session`, api, "API");
-    if (setup.fixture) {
+    if (setup.fixture || setup.illustrated) {
       const form = new FormData();
-      form.append("file", new Blob([await readFile(fixture)], { type: "application/pdf" }), "problems-of-philosophy.pdf");
+      form.append("file", new Blob([setup.illustrated ? illustratedBookPdf() : await readFile(fixture)], { type: "application/pdf" }), setup.illustrated ? "illustrated-book.pdf" : "problems-of-philosophy.pdf");
       const response = await fetch(`http://127.0.0.1:${apiPort}/api/books`, { method: "POST", body: form });
       if (!response.ok) throw new Error(`fixture upload returned ${response.status}: ${(await response.text()).slice(0, 500)}`);
     }

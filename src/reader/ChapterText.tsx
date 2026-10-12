@@ -1,10 +1,12 @@
-import { memo, useEffect, useEffectEvent, useMemo, useRef, type MouseEvent } from "react";
+import { memo, useEffect, useEffectEvent, useMemo, useRef, type CSSProperties, type MouseEvent } from "react";
 import type { Block, LangCode, QuestionNote } from "../../shared/types.ts";
 import { headingTags } from "./book.ts";
 import { NoteCard } from "./NoteCard.tsx";
 import { blockOf, termSpan, wordRangeAtPoint } from "./textRanges.ts";
 import { useWordCursor } from "./useWordCursor.ts";
 import type { Lookup } from "./WordPopover.tsx";
+import "./book-content.css";
+import { offsetInBlock, rangeWithin } from "./domText.ts";
 
 /** What the reader can do with the text. Shared by every chapter on the page, so keep the functions stable. */
 export type TextActions = {
@@ -29,20 +31,84 @@ type Props = {
 // How long a touch selection must rest before the bar offers explanations: the handles may still be moving.
 const TOUCH_SETTLE_MS = 400;
 
-/** One block of book text. Must stay a single text node: word and sentence ranges rely on it. */
-const BlockText = memo(function BlockText({ block, tag, tabbable }: { block: Block; tag: ReturnType<typeof headingTags>[number]; tabbable: boolean }) {
+const FONTS = { serif: "var(--book-face)", "sans-serif": "var(--font-ui)", monospace: "ui-monospace, SFMono-Regular, Consolas, monospace" };
+
+function typography(style: Block["style"]): CSSProperties | undefined {
+  if (!style) return undefined;
+  return {
+    // Prose follows the reader's alignment preference; centered/right source elements keep their placement.
+    textAlign: style.align === "center" || style.align === "right" ? style.align : undefined,
+    fontFamily: style.fontFamily && FONTS[style.fontFamily],
+    fontSize: typeof style.fontSize === "number" && Number.isFinite(style.fontSize) ? `${Math.min(2, Math.max(0.65, style.fontSize))}em` : undefined,
+    fontWeight: style.bold ? 700 : undefined,
+    fontStyle: style.italic ? "italic" : undefined,
+  };
+}
+
+/** Only text and typed styles are rendered; every segment retains its offsets into the original text. */
+function formattedText(block: Block, start = 0, end = block.text.length) {
+  const runs = (block.runs ?? []).filter((run) => Number.isInteger(run.start) && Number.isInteger(run.end) && run.start >= 0 && run.end > run.start && run.end <= block.text.length && (
+    Boolean(run.bold) !== Boolean(block.style?.bold) || Boolean(run.italic) !== Boolean(block.style?.italic) || run.underline || (run.fontFamily && run.fontFamily !== block.style?.fontFamily)
+  ));
+  if (!runs.length) return block.text.slice(start, end);
+  const boundaries = [...new Set([start, end, ...runs.flatMap((run) => [Math.max(start, run.start), Math.min(end, run.end)]).filter((at) => at > start && at < end)])].sort((a, b) => a - b);
+  return boundaries.slice(0, -1).map((from, index) => {
+    const to = boundaries[index + 1]!;
+    const active = runs.filter((run) => run.start <= from && run.end >= to);
+    const text = block.text.slice(from, to);
+    if (!active.length) return text;
+    const style: CSSProperties = {};
+    if (active.some((run) => run.bold)) style.fontWeight = 700;
+    if (active.some((run) => run.italic)) style.fontStyle = "italic";
+    if (active.some((run) => run.underline)) style.textDecoration = "underline";
+    const family = active.findLast((run) => run.fontFamily)?.fontFamily;
+    if (family) style.fontFamily = FONTS[family];
+    return <span key={from} style={style}>{text}</span>;
+  });
+}
+
+/** A block's nested text nodes together equal block.text, so typography never changes source offsets. */
+const BlockText = memo(function BlockText({ block, bookId, tag, tabbable }: { block: Block; bookId: string; tag: ReturnType<typeof headingTags>[number]; tabbable: boolean }) {
   const tabIndex = tabbable ? 0 : -1;
+  const style = typography(block.style);
+  if (block.type === "image") {
+    const image = block.image;
+    // Figures are private book assets, never remote URLs or executable document content.
+    if (!image || !/^figures\/[a-f0-9]{64}\.png$/.test(image.src)) return null;
+    return (
+      <figure className="book-figure" data-book-figure={block.id}>
+        <img src={`/api/books/${encodeURIComponent(bookId)}/${image.src}`} width={image.width} height={image.height} alt={image.alt} loading="lazy" decoding="async" />
+      </figure>
+    );
+  }
+  if (block.type === "table" && block.rows?.length && block.rows.map((row) => row.join("\t")).join("\n") === block.text) {
+    let offset = 0;
+    return (
+      <div className="book-table" data-block={block.id} tabIndex={tabIndex} style={style}>
+        <table aria-label={`Table on page ${block.page}`}><tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => {
+          const start = offset;
+          offset += cell.length;
+          const separator = cellIndex < row.length - 1 ? "\t" : rowIndex < block.rows!.length - 1 ? "\n" : "";
+          offset += separator.length;
+          return <td key={cellIndex}>{formattedText(block, start, start + cell.length)}{separator && <span className="book-table-separator" aria-hidden="true">{separator}</span>}</td>;
+        })}</tr>)}</tbody></table>
+      </div>
+    );
+  }
+  if (block.type === "code") {
+    return <pre className="book-code" data-block={block.id} tabIndex={tabIndex} style={style}>{formattedText(block)}</pre>;
+  }
   if (block.type === "heading" && tag) {
     const Tag = tag;
     return (
-      <Tag data-block={block.id} tabIndex={tabIndex}>
-        {block.text}
+      <Tag data-block={block.id} tabIndex={tabIndex} style={style}>
+        {formattedText(block)}
       </Tag>
     );
   }
   return (
-    <p data-block={block.id} tabIndex={tabIndex}>
-      {block.text}
+    <p className={block.format === "list-item" ? "book-list-item" : block.format === "figure-text" ? "book-figure-text" : block.format === "caption" ? "book-caption" : undefined} data-block={block.id} tabIndex={tabIndex} style={style}>
+      {formattedText(block)}
     </p>
   );
 });
@@ -67,7 +133,7 @@ function bookText(selection: Selection): string {
 export function ChapterText({ blocks, notes, bookId, chapterId, actions, translation }: Props) {
   const { onWord, onSelect, onDismiss, onCloseNote, onSaveAnswer } = actions;
   const container = useRef<HTMLDivElement>(null);
-  const cursor = useWordCursor(blocks[0]?.id, (word) => ask(word, "keyboard"));
+  const cursor = useWordCursor(blocks.find((block) => block.type !== "image" && block.text.trim())?.id, (word) => ask(word, "keyboard"));
   const tags = useMemo(() => headingTags(blocks), [blocks]);
 
   /** Ask about the selected text if there is any, else about `word`; with neither, close what is open. */
@@ -82,13 +148,13 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions, transla
       const blockId = block.dataset.block;
       // A word or a short term ("a priori") gets its meaning, like a tap; anything longer is a passage to explain.
       // Not by touch: a long-press selects one word first, and its handles must stay to drag over the rest.
-      const term = range.startContainer === range.endContainer && via !== "touch" ? termSpan(range.toString()) : null;
+      const term = blockOf(range.endContainer) === block && via !== "touch" ? termSpan(range.toString()) : null;
       if (term) {
-        const from = range.startOffset;
-        range.setStart(range.startContainer, from + term.start);
-        range.setEnd(range.startContainer, from + term.end);
+        const from = offsetInBlock(block, range.startContainer, range.startOffset);
+        const termRange = rangeWithin(block, from + term.start, from + term.end);
+        if (!termRange) return;
         selection.removeAllRanges();
-        onWord({ range, text: range.toString(), chapterId, blockId });
+        onWord({ range: termRange, text: termRange.toString(), chapterId, blockId });
       } else {
         onSelect({ range, text: selected.slice(0, 1500), chapterId, blockId, via });
       }
@@ -166,9 +232,8 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions, transla
               .map((note) => (
                 <NoteCard key={note.id} note={note} bookId={bookId} latest={note.id === notes.at(-1)?.id} onClose={onCloseNote} onSaveAnswer={onSaveAnswer} />
               ))}
-            <BlockText block={block} tag={tags[at] ?? null} tabbable={block.id === cursor.tabbable} />
-            {/* Beside the block, never inside it: words, sentences, notes, search and the voice all count characters in
-                the block's one text node. */}
+            <BlockText block={block} bookId={bookId} tag={tags[at] ?? null} tabbable={block.id === cursor.tabbable} />
+            {/* Translations stay beside the block, so every source offset remains in the original book text. */}
             {translation && translated ? (
               <p className="block-translation" lang={translation.lang} dir="auto" data-translation-of={block.id}>
                 {translated}

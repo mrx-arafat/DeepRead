@@ -9,12 +9,14 @@
 
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { basename } from "node:path";
+import { basename, dirname } from "node:path";
+import { createRequire } from "node:module";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { separateMatter } from "./matter.mjs";
+import { extractPageVisuals } from "./pdfVisuals.mjs";
 
 /**
- * @typedef {{ id: string, type: "heading" | "paragraph", level?: 1 | 2 | 3, text: string, page: number }} Block
+ * @typedef {import("../../shared/types.ts").Block} Block
  * @typedef {{ id: string, title: string, kind: "front" | "body" | "back", startPage: number, endPage: number, blocks: Block[] }} Chapter
  * @typedef {{ title: string, author: string | null, pageCount: number, chapters: Chapter[], warnings: string[] }} Book
  * @typedef {"not_found" | "invalid_pdf" | "encrypted" | "scanned" | "garbled" | "empty" | "timeout"} ParseErrorCode
@@ -24,12 +26,19 @@ import { separateMatter } from "./matter.mjs";
  *   stepTimeoutMs?: number,      // getOutline/getMetadata/getDestination/getPageIndex
  *   pageTimeoutMs?: number,      // getPage + getTextContent, per page
  *   totalTimeoutMs?: number,     // whole parse budget
+ *   images?: boolean,           // default true: preserve PDF figures
+ *   ocr?: boolean,              // default true: local Tesseract OCR when needed
+ *   ocrLanguage?: string,       // default DEEPREAD_OCR_LANG or eng
+ *   ocrTimeoutMs?: number,      // each local OCR call, also bounded by page/total budgets
  *   hardTimeoutMs?: number,      // parsePdfIsolated only: worker is terminated after this
  * }} ParseOptions
  */
 
 const DEFAULTS = {
   useOutline: true,
+  images: true,
+  ocr: true,
+  ocrTimeoutMs: 15_000,
   openTimeoutMs: 30_000,
   stepTimeoutMs: 10_000,
   pageTimeoutMs: 10_000,
@@ -94,7 +103,7 @@ function normKey(s) {
 }
 
 const TERMINAL_RE = /[.!?\u2026:;]["'\u201D\u2019\u00BB)\]]*$/;
-const BULLET_RE = /^(?:[\u2022\u25CF\u25CB\u25E6\u25AA\u25A0\u25A1\u2023\u2219\u27A2\u27A4\u2713\u2714-]\s|\(?\d{1,2}[.)]\s|\d{1,2}(?:\.\d{1,2})+\s|\(?[a-z][.)]\s)/;
+const BULLET_RE = /^(?:[\u2022\u25CF\u25CB\u25E6\u25AA\u25A0\u25A1\u2023\u2219\u27A2\u27A4\u2713\u2714*+-]\s|\(?\d{1,2}[.)]\s|\d{1,2}(?:\.\d{1,2})+\s|\(?[a-z][.)]\s)/;
 // a list marker sitting alone on its line ("3.", "a)", a bullet), with the item text below it
 const BARE_MARKER_RE = /^(?:\(?\d{1,3}[.)]|[a-z][.)]|[\u2022\u25CF\u25A0\u25AA*-])$/;
 const CHAPTER_RE =
@@ -126,6 +135,14 @@ const median = (xs) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
+/** Letters and numbers are both readable text; private-use/replacement glyphs signal a broken map. */
+function textQuality(text) {
+  const visible = text.replace(/\s/g, "").length;
+  const legible = (text.match(/[\p{L}\p{N}]/gu) ?? []).length;
+  const junk = (text.match(/[\uE000-\uF8FF\uFFFD]/g) ?? []).length;
+  return { garbled: visible > 0 && (legible / visible < 0.5 || junk / visible > 0.1) };
+}
+
 // ---------------------------------------------------------------------------------------------
 // Stage 1: extraction (the only part that talks to pdf.js; everything after is pure functions)
 
@@ -144,8 +161,12 @@ async function extract(filePath, o, warnings) {
     throw new PdfParseError("not_found", `Cannot read file: ${e.message}`);
   }
   const deadline = Date.now() + o.totalTimeoutMs;
+  const assets = `${dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"))}/`;
   const task = getDocument({
     data,
+    standardFontDataUrl: `${assets}standard_fonts/`,
+    cMapUrl: `${assets}cmaps/`,
+    wasmUrl: `${assets}wasm/`,
     verbosity: 0,
     isEvalSupported: false,
     disableFontFace: true,
@@ -181,6 +202,11 @@ async function extract(filePath, o, warnings) {
 
     const pages = [];
     let failures = 0;
+    let figureBytes = 0;
+    let figureCount = 0;
+    let ocrPages = 0;
+    const visualWarnings = new Map();
+    const warnVisual = (message) => visualWarnings.set(message, (visualWarnings.get(message) ?? 0) + 1);
     for (let p = 1; p <= doc.numPages; p++) {
       if (Date.now() > deadline) {
         throw new PdfParseError("timeout", `Parsing exceeded ${o.totalTimeoutMs} ms at page ${p} of ${doc.numPages}.`);
@@ -188,8 +214,61 @@ async function extract(filePath, o, warnings) {
       try {
         const page = await withTimeout(doc.getPage(p), o.pageTimeoutMs, `Loading page ${p}`);
         const tc = await withTimeout(page.getTextContent(), o.pageTimeoutMs, `Reading text of page ${p}`);
-        const rawAlnum = tc.items.reduce((n, it) => n + (typeof it.str === "string" ? alnum(cleanStr(it.str)) : 0), 0);
-        pages.push({ num: p, view: page.view, items: compactItems(tc, page.view), rawAlnum, droppedAlnum: 0, hfAlnum: 0 });
+        let rawAlnum = tc.items.reduce((n, it) => n + (typeof it.str === "string" ? alnum(cleanStr(it.str)) : 0), 0);
+        let items = compactItems(tc, page.view);
+        const originalText = items.map((it) => it.s).join("");
+        const garbled = textQuality(originalText).garbled;
+        const scanned = originalText.replace(/\s/g, "").length < 40 || garbled;
+        const figures = [];
+        if (o.images || (o.ocr && scanned)) {
+          const budget = Math.max(1, Math.min(o.pageTimeoutMs, deadline - Date.now()));
+          try {
+            const visuals = await withTimeout(extractPageVisuals(page, {
+              pageNumber: p, textItems: items, scanned, forceOcr: garbled,
+              images: o.images, ocr: o.ocr,
+              ocrLanguage: o.ocrLanguage ?? process.env.DEEPREAD_OCR_LANG ?? "eng",
+              timeoutMs: budget, totalBudgetMs: budget,
+              ocrTimeoutMs: Math.min(o.ocrTimeoutMs, budget),
+              maxFigures: Math.max(0, Math.min(12, 256 - figureCount)),
+            }), budget + 100, `Reading figures and OCR on page ${p}`);
+            for (const message of visuals.warnings) warnVisual(message);
+            if (visuals.ocrUsed && visuals.ocrItems.length) {
+              const recovered = visuals.ocrItems.map((it) => it.s).join(" ");
+              if (!textQuality(recovered).garbled && alnum(recovered) >= 40) {
+                items = visuals.ocrItems;
+                rawAlnum = alnum(recovered);
+                ocrPages++;
+              }
+            }
+            for (const figure of visuals.figures) {
+              const bytes = Math.ceil(figure.image.src.length * 0.75);
+              if (figureCount >= 256 || figureBytes + bytes > 64 * 1024 * 1024) {
+                warnVisual("Some figures were omitted because the book reached its figure storage limit.");
+                break;
+              }
+              figures.push(figure);
+              figureBytes += bytes;
+              figureCount++;
+            }
+          } catch (e) {
+            warnVisual(`Some page figures or OCR could not be read (${e.message}).`);
+          }
+        }
+        try {
+          await withTimeout(page.getOperatorList(), Math.max(1, Math.min(o.pageTimeoutMs, deadline - Date.now())), `Reading font styles on page ${p}`);
+          for (const item of items) {
+            let font;
+            try { if (item.fontName && page.commonObjs.has(item.fontName)) font = page.commonObjs.get(item.fontName); } catch { /* an unresolved font keeps its fallback */ }
+            const name = font?.name ?? "";
+            const family = font?.fallbackName ?? item.fontFamily ?? (item.mono ? "monospace" : "sans-serif");
+            item.style = {
+              fontFamily: /mono/i.test(family) ? "monospace" : /sans/i.test(family) ? "sans-serif" : "serif",
+              bold: !!font?.bold || /bold|black|heavy|demi|semibold/i.test(name),
+              italic: !!font?.italic || /italic|oblique/i.test(name),
+            };
+          }
+        } catch { /* typography is optional; preserve readable text on a font-resolution failure */ }
+        pages.push({ num: p, view: page.view, items, figures, rawAlnum, droppedAlnum: 0, hfAlnum: 0 });
         page.cleanup();
       } catch (e) {
         failures++;
@@ -200,6 +279,12 @@ async function extract(filePath, o, warnings) {
       }
     }
     if (failures) warnings.push(`${failures} page(s) could not be read and were skipped.`);
+    if (ocrPages) warnings.push(`Recovered text with local OCR on ${ocrPages} page(s); recognition may contain mistakes. The original page is retained when figures are enabled.`);
+    let warningCount = 0;
+    for (const [message, count] of visualWarnings) {
+      if (warningCount++ < 20) warnings.push(count > 1 ? `${message} (${count} pages or figures)` : message);
+    }
+    if (visualWarnings.size > 20) warnings.push(`${visualWarnings.size - 20} additional figure/OCR warnings were omitted.`);
     return { numPages: doc.numPages, info, outline, pages };
   } finally {
     // destroy() terminates the (fake) worker; guard it too so cleanup can never hang the caller.
@@ -269,7 +354,7 @@ function compactItems(tc, view) {
     const s = cleanStr(it.str);
     // whitespace-only items are explicit word breaks (pdf.js emits them even when the geometric gap is tiny)
     if (!s.trim()) out.push({ s: " ", ws: true, x: e, y: f, w: Math.max(0, it.width), size });
-    else out.push({ s, x: e, y: f, w: Math.max(0, it.width), size, mono: tc.styles?.[it.fontName]?.fontFamily === "monospace" });
+    else out.push({ s, x: e, y: f, w: Math.max(0, it.width), size, mono: tc.styles?.[it.fontName]?.fontFamily === "monospace", fontName: it.fontName, fontFamily: tc.styles?.[it.fontName]?.fontFamily });
   }
   return out;
 }
@@ -301,8 +386,9 @@ function buildLines(page) {
     }
   }
 
+  const columnGroups = splitProseColumns(groups, view);
   const lines = [];
-  for (const g of groups) {
+  for (const g of columnGroups) {
     const all = g.items.sort((p, q) => p.x - q.x);
     const its = all.filter((it) => !it.ws);
     if (!its.length) continue;
@@ -322,6 +408,7 @@ function buildLines(page) {
     let prev = null;
     let pendingSpace = false;
     let monoChars = 0;
+    const parts = [];
     let x2 = -Infinity;
     for (const it of all) {
       if (it.ws) {
@@ -335,25 +422,30 @@ function buildLines(page) {
       }
       // fake-bold overprint: same string drawn twice at (almost) the same spot
       if (prev && prev.s === it.s && Math.abs(prev.x - it.x) < 0.5 * size) {
+        if (prev.style) prev.style.bold = true; // intentional overprint is a synthetic bold face
         page.droppedAlnum += alnum(it.s);
         continue;
       }
       if (prev) {
         const gap = it.x - (prev.x + prev.w);
         const needSpace = pendingSpace || gap > 0.12 * Math.min(prev.size, it.size);
-        if (needSpace && !text.endsWith(" ") && !it.s.startsWith(" ")) text += " ";
+        if (needSpace && !text.endsWith(" ") && !it.s.startsWith(" ")) {
+          const spaces = prev.mono && it.mono ? Math.max(1, Math.min(80, Math.round(gap / (0.6 * it.size)))) : 1;
+          text += " ".repeat(spaces);
+        }
       }
       pendingSpace = false;
       text += it.s;
+      parts.push({ text: it.s, x: it.x, x2: it.x + it.w, style: it.style });
       if (it.mono) monoChars += it.s.length;
       x2 = Math.max(x2, it.x + it.w);
       prev = it;
     }
-    text = text.replace(/\s+/g, " ").trim();
+    text = monoChars > totalChars * 0.9 ? text.trim() : text.replace(/\s+/g, " ").trim();
     if (!text) continue;
     // letter-spaced display text: "C H A P T E R" -> "CHAPTER"
-    if (/^(?:\S ){2,}\S$/.test(text)) text = text.replace(/ /g, "");
-    text = text.replace(/\b(?:\p{Lu} ){3,}\p{Lu}\b/gu, (m) => m.replace(/ /g, ""));
+    if (monoChars <= totalChars * 0.9 && /^(?:\S ){2,}\S$/.test(text)) text = text.replace(/ /g, "");
+    if (monoChars <= totalChars * 0.9) text = text.replace(/\b(?:\p{Lu} ){3,}\p{Lu}\b/gu, (m) => m.replace(/ /g, ""));
     lines.push({
       page: page.num,
       x: its[0].x,
@@ -361,7 +453,11 @@ function buildLines(page) {
       y: baseY,
       size,
       text,
-      mono: monoChars > text.length * 0.9,
+      parts,
+      view,
+      mono: monoChars > totalChars * 0.9,
+      column: g.column,
+      gutter: g.gutter,
       top: view[3] - baseY,
       bottom: baseY - view[1],
     });
@@ -387,12 +483,117 @@ function buildLines(page) {
       const gap = target.x - (dc.x + dc.w);
       target.text = dc.s.trim() + (gap > 0.15 * target.size ? " " : "") + target.text;
       target.x = dc.x;
+      target.parts.unshift({ text: dc.s.trim(), x: dc.x, x2: dc.x + dc.w, style: dc.style });
     } else {
       lines.push({ page: page.num, x: dc.x, x2: dc.x + dc.w, y: dc.y, size: dc.size, text: dc.s.trim(), mono: false, top: view[3] - dc.y, bottom: dc.y - view[1] });
     }
   }
   lines.sort((p, q) => q.y - p.y || p.x - q.x);
-  return lines;
+  detectTables(lines, page.num);
+  return orderColumns(lines);
+}
+
+/**
+ * Only infer columns from a repeated gutter separating substantial prose on both sides.
+ * A single wide word gap, a table of contents, and short table cells are not enough evidence.
+ * Spanning titles retain their own baseline group and divide the page into reading-order bands.
+ */
+function splitProseColumns(groups, view) {
+  const pageWidth = view[2] - view[0];
+  const candidates = [];
+  for (const g of groups) {
+    const items = g.items.filter((it) => !it.ws).sort((a, b) => a.x - b.x);
+    for (let i = 1; i < items.length; i++) {
+      const left = items.slice(0, i);
+      const right = items.slice(i);
+      const edge = Math.max(...left.map((it) => it.x + it.w));
+      const gap = right[0].x - edge;
+      const centre = (right[0].x + edge) / 2;
+      if (gap < Math.max(1.5 * g.refSize, 0.03 * pageWidth) || centre < view[0] + 0.3 * pageWidth || centre > view[0] + 0.7 * pageWidth) continue;
+      const prose = (side) => {
+        const text = side.map((it) => it.s).join(" ");
+        return !side.some((it) => it.mono) && text.length >= 25 && text.split(/\s+/).length >= 4;
+      };
+      if (prose(left) && prose(right)) candidates.push({ left: edge, right: right[0].x });
+    }
+  }
+  if (candidates.length < 4) return groups;
+  // Require a common empty vertical strip, rather than merely similar gap centres.
+  const gutter = candidates.map((c) => (c.left + c.right) / 2).find((x) => candidates.filter((c) => c.left < x && c.right > x).length >= Math.max(4, candidates.length * 0.75));
+  if (gutter == null) return groups;
+  const out = [];
+  for (const g of groups) {
+    const ink = g.items.filter((it) => !it.ws);
+    if (ink.some((it) => it.x < gutter && it.x + it.w > gutter)) {
+      out.push(g); // heading or other content spanning the gutter
+      continue;
+    }
+    for (const column of [0, 1]) {
+      const items = g.items.filter((it) => column === 0 ? it.x < gutter : it.x >= gutter);
+      if (items.some((it) => !it.ws)) out.push({ ...g, items, column, gutter });
+    }
+  }
+  return out;
+}
+
+/** Repeated aligned short cells are tables, while long prose remains in reading columns. */
+function detectTables(lines, page) {
+  for (const line of lines) {
+    const cells = [];
+    for (const part of line.parts ?? []) {
+      const prev = cells.at(-1);
+      if (prev && part.x - prev.x2 < 2 * line.size) {
+        const gap = part.x - prev.x2;
+        prev.text += `${gap > 0.12 * line.size && !/\s$/.test(prev.text) && !/^\s/.test(part.text) ? " " : ""}${part.text}`;
+        prev.x2 = part.x2;
+      } else cells.push({ x: part.x, x2: part.x2, text: part.text });
+    }
+    line.cells = cells.map((c) => ({ ...c, text: finalText(c.text) }));
+  }
+  let candidates = [];
+  let table = 0;
+  const flush = () => {
+    const shortCells = candidates.flatMap((l) => l.cells).filter((c) => c.text.split(/\s+/).length <= 3).length;
+    const cellCount = candidates.reduce((n, l) => n + l.cells.length, 0);
+    if (candidates.length >= 3 && candidates.every((l) => l.cells.every((c) => c.text.length <= 40)) &&
+        (candidates[0].cells.length >= 3 || shortCells >= 0.75 * cellCount)) {
+      const id = `p${page}-t${++table}`;
+      for (const line of candidates) line.tableId = id;
+    }
+    candidates = [];
+  };
+  for (const line of lines) {
+    if (line.cells.length < 2 || BULLET_RE.test(line.text) || CHAPTER_RE.test(line.text) || PART_RE.test(line.text) || line.column != null) { flush(); continue; }
+    const prev = candidates.at(-1);
+    if (prev && (prev.cells.length !== line.cells.length || prev.y - line.y > 3 * line.size || line.cells.some((c, i) => Math.abs(c.x - prev.cells[i].x) > line.size))) flush();
+    candidates.push(line);
+  }
+  flush();
+}
+
+function orderColumns(lines) {
+  if (!lines.some((l) => l.column != null)) return lines;
+  const ordered = [];
+  let band = [];
+  const flush = () => {
+    for (const column of [0, 1]) {
+      const own = band.filter((l) => l.column === column);
+      const body = own.filter((l) => !l.mono);
+      const left = Math.min(...(body.length ? body : own).map((l) => l.x));
+      const right = Math.max(...(body.length ? body : own).map((l) => l.x2));
+      for (const l of own) Object.assign(l, { layoutLeft: left, layoutRight: right });
+      ordered.push(...own);
+    }
+    band = [];
+  };
+  for (const l of lines) {
+    if (l.column == null) {
+      flush();
+      ordered.push(l);
+    } else band.push(l);
+  }
+  flush();
+  return ordered;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1004,6 +1205,90 @@ function applyMarks(marks, pages, stats) {
 // ---------------------------------------------------------------------------------------------
 // Stage 7: lines -> blocks
 
+/** Keep figures between paragraphs without changing the detected column reading order. */
+function prepareFigureBreaks(pages, stats) {
+  for (const pg of pages) {
+    const figures = (pg.figures ?? []).filter((f) => !f.scanned);
+    for (let i = 0; i < pg.lines.length; i++) {
+      const line = pg.lines[i];
+      const prev = pg.lines[i - 1];
+      const local = figures.filter((f) => line.gutter == null || (line.column === 0 ? f.x < line.gutter : f.x + f.width > line.gutter));
+      if (local.some((f) => line.y < f.y && (!prev || prev.column !== line.column || prev.y >= f.y - f.height))) line.figureBreak = true;
+      if (!/^(?:fig(?:ure)?\.?|table|plate|illustration)\s*(?:\d+|[IVX]+)\b/i.test(line.text) ||
+          !local.some((f) => line.y <= f.y - f.height && f.y - f.height - line.y < 5 * line.size)) continue;
+      const captionId = `p${pg.num}-caption${i}`;
+      const fontKey = (l) => {
+        const weights = new Map();
+        for (const part of l.parts ?? []) {
+          const key = JSON.stringify(part.style ?? {});
+          weights.set(key, (weights.get(key) ?? 0) + part.text.replace(/\s/g, "").length);
+        }
+        return [...weights].sort((a, b) => b[1] - a[1])[0]?.[0];
+      };
+      const centered = (l) => Math.abs((l.x + l.x2) / 2 - (l.view[0] + l.view[2]) / 2) < 2 * l.size;
+      let previous = line;
+      Object.assign(line, { captionId, format: "caption" });
+      for (let j = i + 1; j < pg.lines.length; j++) {
+        const next = pg.lines[j];
+        const gap = previous.y - next.y;
+        const sameFont = fontKey(previous) === fontKey(next) && Math.abs(previous.size - next.size) < 0.1 * previous.size;
+        const centeredWrap = centered(previous) && centered(next) && Math.abs((previous.x + previous.x2) / 2 - (next.x + next.x2) / 2) < 1.5 * next.size;
+        const leftWrap = Math.abs(previous.x - next.x) < 0.5 * next.size && !TERMINAL_RE.test(previous.text) && /^\p{Ll}/u.test(next.text);
+        if (next.column !== line.column || next.figureBreak || gap < 0 || gap > 1.8 * (pg.leading ?? stats.leading) ||
+            !sameFont || (!centeredWrap && !leftWrap) || /^(?:fig(?:ure)?\.?|table)\s*\d/i.test(next.text)) break;
+        Object.assign(next, { captionId, format: "caption" });
+        previous = next;
+      }
+    }
+  }
+}
+
+function insertFigures(blocks, pages) {
+  const out = [...blocks];
+  for (const pg of pages) {
+    const gutter = pg.lines.find((l) => l.gutter != null)?.gutter;
+    // Left-column figures are inserted first; original scans follow their recovered text.
+    const figures = [...(pg.figures ?? [])].sort((a, b) => {
+      const column = (f) => gutter == null || f.x < gutter ? 0 : 1;
+      return column(a) - column(b) || b.y - a.y;
+    });
+    for (const figure of figures) {
+      const column = gutter == null ? null : figure.x + figure.width <= gutter ? 0 : figure.x >= gutter ? 1 : null;
+      let insertion = -1;
+      let lastOnPage = -1;
+      for (let i = 0; i < out.length; i++) {
+        const block = out[i];
+        const ownLines = (block.lines ?? []).filter((l) => l.page === pg.num);
+        if (block.page === pg.num || ownLines.length) lastOnPage = i;
+        if (figure.scanned) continue;
+        const line = ownLines[0] ?? (block.page === pg.num ? block : null);
+        if (!line || line.kind === "image") continue;
+        if (column != null && line.column != null && line.column < column) continue;
+        if (line.y <= figure.y || (column === 0 && line.column === 1)) {
+          insertion = i;
+          break;
+        }
+      }
+      if (insertion < 0) insertion = lastOnPage >= 0 ? lastOnPage + 1 : out.findIndex((b) => b.page > pg.num);
+      if (insertion < 0) insertion = out.length;
+      const additions = [figure];
+      // Visual extraction already checks OCR labels against the native text. A native chart
+      // title does not mean its raster axis labels or legend were recovered from the text layer.
+      if (!figure.scanned && figure.image.ocrText) additions.push({
+        kind: "body", text: figure.image.ocrText.slice(0, 1000), format: "figure-text",
+        page: pg.num, y: figure.y - figure.height, nLines: 1,
+      });
+      out.splice(insertion, 0, ...additions);
+    }
+  }
+  for (const block of out) {
+    if (!/^(?:fig(?:ure)?\.?|table|plate|illustration)\s*(?:\d+|[IVX]+)\b/i.test(block.text)) continue;
+    const size = block.size ?? 12;
+    if (pages[block.page - 1]?.figures?.some((f) => !f.scanned && block.y <= f.y - f.height && f.y - f.height - block.y < 5 * size)) block.format = "caption";
+  }
+  return out;
+}
+
 function buildBlocks(pages, stats, starts, lex) {
   // headings without an outline match: level from size relative to body text
   const tierLevel = (size) => (size >= 1.6 * stats.bodySize ? 1 : size >= 1.12 * stats.bodySize ? 2 : 3);
@@ -1024,6 +1309,8 @@ function buildBlocks(pages, stats, starts, lex) {
   let carryDropCap = null;
   for (const [pi, pg] of pages.entries()) {
     const lines = pg.lines;
+    // An original scan belongs to this page, so its recovered text cannot straddle that figure.
+    if (pg.figures?.some((f) => f.scanned) || pages[pi - 1]?.figures?.some((f) => f.scanned)) flush();
     // a drop cap orphaned at the bottom of the previous page (its line starts the next page)
     if (carryDropCap && lines.length) {
       const first = lines.find((x) => stats.isBody(x));
@@ -1049,6 +1336,7 @@ function buildBlocks(pages, stats, starts, lex) {
         : -1;
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
+      const layout = l.layoutLeft != null ? { ...pg, leftEdge: l.layoutLeft, rightEdge: l.layoutRight } : pg;
       const prev = i > 0 ? lines[i - 1] : null;
       let forced = false;
       while (startIdx < starts.length && (starts[startIdx].page < pg.num || (starts[startIdx].page === pg.num && (starts[startIdx].y == null || l.y <= starts[startIdx].y + 1)))) {
@@ -1060,12 +1348,13 @@ function buildBlocks(pages, stats, starts, lex) {
         blocks.push(...deferred);
         deferred = [];
       }
-      const kind = l.headingLevel ? "heading" : l.size >= 1.1 * stats.bodySize && !l.mono ? "large" : l.size < 0.85 * stats.bodySize ? "small" : "body";
+      const kind = l.tableId ? "table" : l.headingLevel ? "heading" : l.size >= 1.1 * stats.bodySize && !l.mono ? "large" : l.size < 0.85 * stats.bodySize ? "small" : "body";
       const isFootnote = fnStart >= 0 && i >= fnStart && kind === "small";
 
       // a contents entry is a block of its own, whatever its spacing says
-      let startNew = !cur || forced || l.contentsRow || cur.lastLine.contentsRow;
-      if (!startNew) {
+      let startNew = !cur || forced || l.figureBreak || ((l.captionId || cur.captionId) && l.captionId !== cur.captionId) || l.contentsRow || cur.lastLine.contentsRow || (prev && prev.column !== l.column);
+      if (!startNew && (kind === "table" || cur.kind === "table")) startNew = kind !== cur.kind || cur.tableId !== l.tableId;
+      if (!startNew && kind !== "table" && !l.captionId) {
         const headingLike = (k) => k === "heading" || k === "large";
         if (headingLike(kind) && headingLike(cur.kind) && isLabel(cur.text) && prev && prev.y - l.y < 4.5 * Math.max(prev.size, l.size)) {
           startNew = false; // "CHAPTER 3" + "THEY DON'T SHY AWAY FROM CHANGE" -> one heading
@@ -1076,8 +1365,14 @@ function buildBlocks(pages, stats, starts, lex) {
           startNew = !(kind === "large" && prev && Math.abs(l.size - prev.size) <= 0.06 * prev.size && prev.y - l.y <= 2 * l.size);
         }
         else if (l.mono !== cur.mono) {
-          // an inline URL / identifier that happens to fill a whole line continues the sentence
-          startNew = !(l.mono && prev && !TERMINAL_RE.test(prev.text) && l.text.split(" ").length <= 3 && cur.kind === "body");
+          // A short inline URL/identifier may wrap onto a monospace line. A listing after
+          // a list item, a blank gap, or a line containing code syntax starts its own block.
+          const inlineUrl = /^(?:https?:\/\/|www\.)\S+$/i.test(l.text);
+          const codeSyntax = /[{};=]|^\s*(?:[$>] |# |\/\/)/.test(l.text);
+          const close = prev && prev.y - l.y >= 0 && prev.y - l.y < 1.6 * (pg.leading ?? stats.leading);
+          startNew = !(l.mono && close && !TERMINAL_RE.test(prev.text) &&
+            !BULLET_RE.test(cur.text) && !BARE_MARKER_RE.test(cur.text) &&
+            (inlineUrl || !codeSyntax) && l.text.split(" ").length <= 3 && cur.kind === "body");
         }
         else if (kind !== cur.kind) {
           // body <-> small (small caps, a smaller inline run): continue a sentence that obviously runs on
@@ -1095,7 +1390,7 @@ function buildBlocks(pages, stats, starts, lex) {
         }
         else if (kind === "large") startNew = !prev || prev.y - l.y > 2.6 * l.size || Math.abs(l.size - cur.size) > 0.08 * cur.size;
         else if (!prev) startNew = !continuesAcrossPage(cur, l, pg, stats);
-        else startNew = paragraphBreak(prev, l, pg, stats, cur);
+        else startNew = paragraphBreak(prev, l, layout, stats, cur);
       }
       if (isFootnote) {
         // hold footnotes so a body paragraph that continues on the next page is not cut in two
@@ -1106,13 +1401,13 @@ function buildBlocks(pages, stats, starts, lex) {
       }
       if (startNew) {
         if (cur) blocks.push(cur);
-        cur = { kind, text: l.text, page: pg.num, y: l.y, size: l.size, mono: l.mono, headingId: l.headingId, level: l.headingLevel ?? (kind === "large" ? tierLevel(l.size) : undefined), lastLine: l, nLines: 1, firstX: l.x, lines: [l] };
+        cur = { kind, text: l.text, tableId: l.tableId, captionId: l.captionId, format: l.format, page: pg.num, y: l.y, size: l.size, mono: l.mono, headingId: l.headingId, level: l.headingLevel ?? (kind === "large" ? tierLevel(l.size) : undefined), lastLine: l, nLines: 1, firstX: l.x, lines: [l] };
         if (deferred.length && deferred[0].page !== pg.num) {
           blocks.push(...deferred);
           deferred = [];
         }
       } else {
-        cur.text = cur.mono ? `${cur.text} ${l.text}` : joinLines(cur.text, l.text, lex);
+        cur.text = cur.mono ? `${cur.text}\n${l.text}` : joinLines(cur.text, l.text, lex);
         cur.lastLine = l;
         cur.lines.push(l);
         cur.nLines++;
@@ -1134,7 +1429,7 @@ function promoteStandaloneHeadings(blocks, stats) {
     const b = blocks[i];
     const next = blocks[i + 1];
     const prev = blocks[i - 1];
-    if ((b.kind !== "body" && b.kind !== "small") || b.mono || !b.lines || b.nLines > 2 || !next) continue;
+    if ((b.kind !== "body" && b.kind !== "small") || b.format === "caption" || b.mono || !b.lines || b.nLines > 2 || !next) continue;
     const text = b.text.trim();
     if (text.length > 60 || !/^\p{Lu}/u.test(text) || /[.,;:]$/.test(text) || /\d/.test(text)) continue;
     if (/^[\u2014\u2013-]/.test(next.text) || next.kind === "heading" || next.kind === "large") continue;
@@ -1159,6 +1454,8 @@ function paragraphBreak(prev, l, pg, stats, cur = null) {
   const gap = prev.y - l.y;
   const lead = (pg.leading ?? stats.leading) * (l.size / stats.bodySize);
   if (gap < 0) return true;
+  // Each printed list marker begins a separate item, even without terminal punctuation.
+  if (!l.mono && (BULLET_RE.test(l.text) || BARE_MARKER_RE.test(l.text))) return true;
   // a sentence that obviously runs on ("in the market" / "right now") is never split by spacing or indent
   if (!TERMINAL_RE.test(prev.text) && /^\p{Ll}/u.test(l.text) && gap < 2.5 * lead) return false;
   if (gap - lead > 0.3 * l.size) return true;
@@ -1239,7 +1536,62 @@ function assemble(blocks, starts, numPages) {
   return out.filter((c) => c.blocks.length);
 }
 
-function toBook(chapters, meta) {
+/** Project source glyph formatting onto the finalized selectable text. Repairs remove only
+ * whitespace and line-end hyphens, so ordered glyphs retain their exact final character offsets. */
+function typography(block, text, stats) {
+  const parts = (block.lines ?? []).flatMap((l) => l.parts ?? []);
+  if (!parts.length) return {};
+  const runs = [];
+  let cursor = 0;
+  for (const part of parts) {
+    for (const char of part.text.replace(/\u00AD/g, "")) {
+      if (/\s/u.test(char)) continue;
+      while (/\s/u.test(text[cursor] ?? "") && cursor < text.length) cursor++;
+      if (char !== text.slice(cursor, cursor + char.length)) {
+        // Dehyphenation and letter spacing leave the next source glyph at the same offset.
+        if (char === "-") continue;
+        const found = text.indexOf(char, cursor);
+        if (found < 0 || found - cursor > 4) continue;
+        cursor = found;
+      }
+      const style = part.style ?? { fontFamily: block.mono ? "monospace" : "sans-serif", bold: false, italic: false };
+      const prev = runs.at(-1);
+      if (prev && prev.bold === style.bold && prev.italic === style.italic && prev.fontFamily === style.fontFamily && /^\s*$/.test(text.slice(prev.end, cursor))) prev.end = cursor + char.length;
+      else runs.push({ start: cursor, end: cursor + char.length, ...style });
+      cursor += char.length;
+    }
+  }
+  const familyWeights = new Map();
+  for (const run of runs) familyWeights.set(run.fontFamily, (familyWeights.get(run.fontFamily) ?? 0) + run.end - run.start);
+  const fontFamily = [...familyWeights].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const lines = block.lines ?? [];
+  const alignments = lines.map((l) => {
+    const left = l.layoutLeft ?? l.pageLeft ?? l.view?.[0] ?? 0;
+    const right = l.layoutRight ?? l.pageRight ?? l.view?.[2] ?? l.x2;
+    const midpoint = l.column != null ? (left + right) / 2 : ((l.view?.[0] ?? left) + (l.view?.[2] ?? right)) / 2;
+    if (Math.abs((l.x + l.x2) / 2 - midpoint) < 1.5 * l.size && l.x2 - l.x < 0.7 * ((l.view?.[2] ?? right) - (l.view?.[0] ?? left))) return "center";
+    if (l.x - left > 2 * l.size && Math.abs(l.x2 - right) < 0.5 * l.size && l.x2 - l.x < 0.8 * (right - left)) return "right";
+    return "left";
+  });
+  let align = alignments.every((a) => a === "center") ? "center" : alignments.every((a) => a === "right") ? "right" : "left";
+  if (align === "left" && lines.length > 1 && stats.justified && lines.slice(0, -1).every((l) => (l.pageRight ?? l.x2) - l.x2 < 0.8 * l.size)) align = "justify";
+  const style = { align, fontFamily, fontSize: Math.round(block.size / stats.bodySize * 100) / 100 };
+  if (runs.length && runs.every((r) => r.bold)) style.bold = true;
+  if (runs.length && runs.every((r) => r.italic)) style.italic = true;
+  return { style, runs };
+}
+
+/** Preserve code line breaks and reconstruct leading spaces from monospace glyph positions. */
+function codeText(block) {
+  if (!block.lines?.length) return block.text.replace(/\u00AD/g, "").trimEnd();
+  const left = Math.min(...block.lines.map((l) => l.x));
+  return block.lines.map((l) => {
+    const indent = Math.max(0, Math.min(80, Math.round((l.x - left) / (0.6 * l.size))));
+    return " ".repeat(indent) + l.text.replace(/\u00AD/g, "").trimEnd();
+  }).join("\n");
+}
+
+function toBook(chapters, meta, stats) {
   return {
     title: meta.title,
     author: meta.author,
@@ -1255,12 +1607,21 @@ function toBook(chapters, meta) {
         endPage: c.endPage,
         blocks: c.blocks
           .map((b) => {
-            const text = finalText(b.text);
+            if (b.kind === "image") return { id: `${id}-b${++bi}`, type: "image", text: "", page: b.page, image: b.image };
+            if (b.kind === "table") {
+              const rows = b.lines.map((l) => l.cells.map((c) => c.text));
+              const text = rows.map((row) => row.join("\t")).join("\n");
+              return { id: `${id}-b${++bi}`, type: "table", text, page: b.page, rows, ...typography(b, text, stats) };
+            }
+            const isCode = b.mono && (b.nLines > 1 || /[{};=]|^\s*(?:[$>] |# |\/\/)/.test(b.text));
+            const text = isCode ? codeText(b) : finalText(b.text);
             if (!text) return null;
             const sentenceLike = BULLET_RE.test(text) || (text.length > 80 && /[.!?]["\u201D\u2019]?$/.test(text));
             const isHeading = (b.kind === "heading" || (b.kind === "large" && !sentenceLike)) && text.length <= 200 && b.nLines <= 4;
             /** @type {Block} */
-            const block = { id: `${id}-b${++bi}`, type: isHeading ? "heading" : "paragraph", text, page: b.page };
+            const block = { id: `${id}-b${++bi}`, type: isCode ? "code" : isHeading ? "heading" : "paragraph", text, page: b.page, ...typography(b, text, stats) };
+            if (b.format) block.format = b.format;
+            else if (!isHeading && !isCode && BULLET_RE.test(text)) block.format = "list-item";
             if (isHeading) block.level = /** @type {1|2|3} */ (Math.min(3, Math.max(1, b.level ?? 2)));
             return block;
           })
@@ -1295,25 +1656,22 @@ export async function parsePdf(filePath, options = {}) {
   if (textPages < Math.max(1, 0.15 * numPages)) {
     throw new PdfParseError(
       "scanned",
-      `This PDF has no usable text layer: only ${textPages} of ${numPages} pages contain text (${(totalChars / numPages).toFixed(1)} characters per page on average). It looks like a scanned book and needs OCR before it can be read.`,
+      `This PDF has no usable text layer: only ${textPages} of ${numPages} pages contain text (${(totalChars / numPages).toFixed(1)} characters per page on average). Local OCR could not recover enough readable text. Install Tesseract and the book’s language data (DEEPREAD_OCR_LANG), or import a PDF with a readable text layer.`,
     );
   }
   const allText = pages.map((p) => p.items.map((it) => it.s).join("")).join("");
-  const letters = (allText.match(/\p{L}/gu) ?? []).length;
-  const junk = (allText.match(/[\uE000-\uF8FF\uFFFD]/g) ?? []).length;
-  const visible = allText.replace(/\s/g, "").length;
-  if (letters / visible < 0.5 || junk / visible > 0.1) {
-    throw new PdfParseError("garbled", "This PDF's text layer is garbled (fonts without a character map). It needs OCR before it can be read.");
+  if (textQuality(allText).garbled) {
+    throw new PdfParseError("garbled", "This PDF's text layer is garbled and local OCR could not recover it. Install Tesseract and the book’s language data (DEEPREAD_OCR_LANG), or import a PDF with a readable text layer.");
   }
-  const emptyPages = numPages - textPages;
-  if (emptyPages > 0.25 * numPages) warnings.push(`${emptyPages} of ${numPages} pages have little or no text (images or scans); their content is missing.`);
+  const missingPages = pages.filter((pg, index) => perPage[index] < 40 && !pg.figures?.length && !pg.failed).length;
+  if (missingPages > 0.25 * numPages) warnings.push(`${missingPages} of ${numPages} pages have little or no text and no retained figures.`);
 
   for (const pg of pages) pg.lines = buildLines(pg);
   const hf = removeHeadersFooters(pages, warnings);
   if (hf.removed) warnings.push(`Removed ${hf.removed} running header/footer/page-number lines (${hf.patterns.length} patterns).`);
   repairFakeSpaces(pages, warnings);
   const stats = bookStats(pages);
-  for (const pg of pages) for (const l of pg.lines) Object.assign(l, { pageLeft: pg.leftEdge, pageRight: pg.rightEdge });
+  for (const pg of pages) for (const l of pg.lines) Object.assign(l, { pageLeft: l.layoutLeft ?? pg.leftEdge, pageRight: l.layoutRight ?? pg.rightEdge });
   const lex = buildLexicon(pages);
 
   let structure = o.useOutline && ex.outline.length ? structureFromOutline(ex.outline, pages, stats, numPages, warnings) : null;
@@ -1332,7 +1690,8 @@ export async function parsePdf(filePath, options = {}) {
   pullBackTitlePages(starts, pages, stats);
   markContentsRows(pages, starts, stats);
 
-  const blocks = buildBlocks(pages, stats, starts, lex);
+  prepareFigureBreaks(pages, stats);
+  const blocks = insertFigures(buildBlocks(pages, stats, starts, lex), pages);
   const chapters = assemble(blocks, starts, numPages);
   const keptAlnum = chapters.reduce((n, c) => n + c.blocks.reduce((m, b) => m + alnum(finalText(b.text)), 0), 0);
   checkCoverage(pages, keptAlnum, warnings);
@@ -1344,7 +1703,7 @@ export async function parsePdf(filePath, options = {}) {
       .replace(/\s*[-\u2013|(]\s*[\w.-]+\.(?:com|org|net|io|ru)\s*\)?$/i, "") || // "... - PDFDrive.com"
     basename(filePath).replace(/\.pdf$/i, "").replace(/[_]+/g, " ");
   const author = finalText(String(ex.info?.Author ?? "")) || null;
-  return toBook(chapters, { title, author, pageCount: numPages, warnings });
+  return toBook(chapters, { title, author, pageCount: numPages, warnings }, stats);
 }
 
 /**
@@ -1410,6 +1769,7 @@ function markContentsRows(pages, starts, stats) {
     if (new Set(rows.map((l) => normKey(l.text))).size < 3) continue;
     for (const l of rows) {
       l.contentsRow = true;
+      delete l.tableId;
       // an unnumbered entry keeps the link text of its empty number column: ". PREFACE"
       l.text = l.text.replace(/^\.+\s+/, "");
     }
