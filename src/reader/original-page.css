@@ -17,5 +17,12 @@
 .original-page-navigation input { width: 4.5rem; padding: 0.25rem; font: inherit; color: inherit; background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius); }
 .original-page-image { overflow: auto; text-align: center; }
 .original-page-image img { display: block; width: 100%; height: auto; background: white; }
-.original-page-image img[hidden] { display: none; }
-.original-page-image[data-zoom] img { width: 180%; max-width: none; }
+.original-page-frame { position: relative; width: 100%; }
+.original-page-frame[hidden] { display: none; }
+.original-page-image[data-zoom] .original-page-frame { width: 180%; }
+.original-page-text-status { margin-top: 0.75rem; font-size: 0.875rem; color: var(--ink-soft); }
+.source-page-text { position: absolute; inset: 0; overflow: hidden; color: transparent; text-align: left; user-select: text; -webkit-user-select: text; cursor: text; }
+.source-page-text [data-source-text-run] { position: absolute; white-space: pre; line-height: 1; font-size: 1px; transform-origin: 0 0; }
+.source-page-text [data-source-text-glyph] { display: inline-block; }
+.source-page-text-separator { display: inline-block; width: 0; height: 0; overflow: hidden; font-size: 0; line-height: 0; }
+.source-page-text ::selection { color: transparent; background: rgb(64 128 255 / 30%); }

@@ -19,6 +19,7 @@ import { createLocalStore } from "./storage.ts";
 const PASSKEY = "a long admin passkey for tests, ".repeat(3);
 vi.mock("./source-page.ts", () => ({ renderSourcePageIsolated: async () => ({
   data: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), type: "image/png", width: 600, height: 800,
+  text: { width: 600, height: 800, runs: [{ text: "Printed words", x: 0.1, y: 0.2, width: 0.4, height: 0.03, fontSize: 0.03, angle: 0, dir: "ltr" }] },
 }) }));
 
 const book = (title: string): ParsedBook => ({
@@ -174,11 +175,18 @@ describe("the PDF of a shared book", () => {
     const original = await call("GET", `/api/books/${sharedId}/pages/1`, minaCookie);
     expect(original.status).toBe(200);
     expect(original.headers.get("content-type")).toBe("image/png");
+    const selectable = await call("GET", `/api/books/${sharedId}/pages/1/text`, minaCookie);
+    expect(selectable.status).toBe(200);
+    expect(selectable.headers.get("cache-control")).toBe("private, no-cache");
+    expect(await selectable.json()).toMatchObject({ runs: [{ text: "Printed words" }] });
+    expect((await call("GET", `/api/books/${bookId}/pages/1/text`, minaCookie)).status).toBe(404);
+    expect((await call("GET", `/api/books/${sharedId}/pages/0/text`, minaCookie)).status).toBe(400);
     expect((await call("GET", `/api/books/${bookId}/pages/1`, minaCookie)).status).toBe(404);
     expect((await call("GET", `/api/books/${sharedId}/pages/2`, minaCookie)).status).toBe(404);
     expect((await call("GET", `/api/books/${sharedId}/pages/0`, minaCookie)).status).toBe(400);
     expect((await call("DELETE", `/api/books/${bookId}/shares/${mina.id}`, rafiCookie)).status).toBe(204);
     expect((await call("GET", `/api/books/${sharedId}/${src}`, minaCookie)).status).toBe(404);
     expect((await call("GET", `/api/books/${sharedId}/pages/1`, minaCookie)).status).toBe(404);
+    expect((await call("GET", `/api/books/${sharedId}/pages/1/text`, minaCookie)).status).toBe(404);
   });
 });

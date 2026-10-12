@@ -93,8 +93,30 @@ async (page) => {
   const originalImage = original.getByRole("img", { name: "Original printed page 1" });
   await originalImage.waitFor({ state: "visible" }); await originalImage.evaluate((img) => img.decode());
   assert(await originalImage.evaluate((img) => img.naturalHeight > 1000), "Original page must render with full source layout");
+  const sourceWord = original.locator("[data-source-text-run]").filter({ hasText: "Read the" }).first();
+  await sourceWord.waitFor({ state: "visible" });
+  const sourceGeometry = await sourceWord.evaluate((span) => {
+    const image = span.closest("dialog").querySelector("img");
+    const imageRect = image.getBoundingClientRect(), textRect = span.getBoundingClientRect();
+    const range = document.createRange(); range.selectNodeContents(span);
+    const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    return { text: selection.toString(), x: (textRect.left - imageRect.left) / imageRect.width, y: (textRect.top - imageRect.top) / imageRect.height, width: textRect.width / imageRect.width, color: getComputedStyle(span).color };
+  });
+  assert(sourceGeometry.text.trim() === "Read the", "Words must be selectable directly over the printed image");
+  assert(Math.abs(sourceGeometry.x - 50 / 612) < 0.005 && sourceGeometry.y > 0.02 && sourceGeometry.y < 0.05, "Selectable words must align with their source position");
+  assert(sourceGeometry.color === "rgba(0, 0, 0, 0)", "Text overlay must preserve the printed appearance");
+  assert(await sourceWord.evaluate((span) => {
+    const rect = span.getBoundingClientRect();
+    const caret = document.caretRangeFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return caret && span.contains(caret.startContainer);
+  }), "Pointer selection must reach the text over the image");
   await original.getByRole("button", { name: "Zoom original page" }).click();
-  assert(await originalImage.evaluate((img) => img.getBoundingClientRect().width > img.parentElement.clientWidth), "Original page zoom must allow detail inspection");
+  assert(await originalImage.evaluate((img) => img.getBoundingClientRect().width > img.closest(".original-page-image").clientWidth), "Original page zoom must allow detail inspection");
+  const zoomGeometry = await sourceWord.evaluate((span) => {
+    const imageRect = span.closest("dialog").querySelector("img").getBoundingClientRect(), textRect = span.getBoundingClientRect();
+    return { x: (textRect.left - imageRect.left) / imageRect.width, width: textRect.width / imageRect.width };
+  });
+  assert(Math.abs(zoomGeometry.x - sourceGeometry.x) < 0.002 && Math.abs(zoomGeometry.width - sourceGeometry.width) < 0.002, "Selectable text must stay aligned while zooming");
   await page.keyboard.press("Escape");
   assert(await page.getByRole("button", { name: "Original pages", exact: true }).evaluate((button) => button === document.activeElement), "Original page closes back to its trigger");
   for (const width of [390, 1440]) {
@@ -129,7 +151,13 @@ async (page) => {
   await page.getByRole("button", { name: "Original pages", exact: true }).click();
   const phoneOriginal = page.getByRole("dialog", { name: "Original page 1 of 1" });
   await phoneOriginal.getByRole("img", { name: "Original printed page 1" }).waitFor({ state: "visible" });
-  assert(await phoneOriginal.getByRole("img").evaluate((img) => img.getBoundingClientRect().width <= img.parentElement.clientWidth), "Reopened original pages must start fitted to the phone");
+  assert(await phoneOriginal.getByRole("img").evaluate((img) => img.getBoundingClientRect().width <= img.closest(".original-page-image").clientWidth), "Reopened original pages must start fitted to the phone");
+  const phoneWord = phoneOriginal.locator("[data-source-text-run]").filter({ hasText: "Read the" }).first();
+  await phoneWord.waitFor({ state: "visible" });
+  assert(await phoneWord.evaluate((span) => {
+    const imageRect = span.closest("dialog").querySelector("img").getBoundingClientRect(), textRect = span.getBoundingClientRect();
+    return Math.abs((textRect.left - imageRect.left) / imageRect.width - 50 / 612) < 0.005 && textRect.right <= imageRect.right;
+  }), "Selectable words must stay on the printed image on a phone");
   assert(await phoneOriginal.evaluate((dialog) => dialog.getBoundingClientRect().width <= innerWidth), "Original page controls must fit a phone");
   await page.screenshot({ path: ".playwright-cli/pdf-original-phone.png" });
   await page.keyboard.press("Escape");

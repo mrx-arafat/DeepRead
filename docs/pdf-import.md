@@ -22,6 +22,8 @@ The parser supplies PNGs temporarily. `library.add` deduplicates them by SHA-256
 
 Each chapter offers **Original pages**: an accessible modal with page navigation and zoom displays the actual source page, including its embedded fonts, underline rules, tables, equations and complex placement. `GET /api/books/:id/pages/:page` applies those same shelf permissions and private cache revalidation. Two concurrent source-page slots cover storage downloads, rendering and temporary cleanup across profiles. Render workers have hard time and image-size limits. A small memory cache avoids repeated rendering without storing more book assets or bypassing revocation.
 
+Original pages also places transparent selectable text directly over the printed words. Native PDF text uses transformed positions, font ascent, and rotation; scanned words use local OCR boxes. The image supplies the visible typography, while the overlay supports selection and copying at the same position. It scales with the image during zoom and mobile resizing. `GET /api/books/:id/pages/:page/text` shares the image renderer and its limits, cache, and permissions. Failed text extraction keeps the original image available. Selection in this view is for copying; annotations and reading tools remain in the reflowed reader, where their stable block offsets are stored.
+
 ## Local OCR and resource limits
 
 Install Tesseract on the server (`sudo apt-get install tesseract-ocr tesseract-ocr-eng` on Ubuntu/Debian, or `brew install tesseract` on macOS). English is the default. Install additional language data and set `DEEPREAD_OCR_LANG=eng+ben`, for example, for English and Bangla. OCR never uses the configured AI helpers or an external service.

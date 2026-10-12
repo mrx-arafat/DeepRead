@@ -323,6 +323,18 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     return pdf ? sendPdf(c, pdf) : bookNotFound(c);
   });
 
+  routes.get("/:id/pages/:page/text", async (c) => {
+    const id = c.req.param("id");
+    if (!isReadableBookId(id)) return invalidId(c);
+    const pageText = c.req.param("page");
+    if (!/^[1-9]\d{0,5}$/.test(pageText)) return apiError(c, 400, "invalid_page", "Choose a valid page number.");
+    const page = await c.var.library.sourcePage(id, Number(pageText));
+    if (!page) return apiError(c, 404, "page_not_found", "This original page could not be displayed. Try again shortly.");
+    c.header("Cache-Control", "private, no-cache");
+    c.header("X-Content-Type-Options", "nosniff");
+    return c.json(page.text ?? { width: page.width, height: page.height, runs: [] });
+  });
+
   routes.get("/:id/pages/:page", async (c) => {
     const id = c.req.param("id");
     if (!isReadableBookId(id)) return invalidId(c);
