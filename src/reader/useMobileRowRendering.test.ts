@@ -8,9 +8,11 @@ function harness() {
     return { getPropertyValue: (key: string) => values.get(key) ?? "", setProperty: (key: string, value: string) => values.set(key, value), removeProperty: (key: string) => values.delete(key) };
   };
   const rows = [120.5, 260, 380].map((height, index) => ({
-    height, style: style(), measured: false,
+    height, style: style(), measured: false, content: index === 2 ? "note" : "text",
     getBoundingClientRect() { events.push(`read-${index}`); return { height: this.height }; },
-    querySelector: () => index === 2 ? {} : null,
+    querySelector(selector: string) {
+      return this.content === "note" || this.content === "unknown-figure" || (this.content === "fixed-figure" && !selector.includes(":not([data-fixed-size])")) ? {} : null;
+    },
     setAttribute() { events.push(`enable-${index}`); this.measured = true; },
     removeAttribute() { this.measured = false; },
   }));
@@ -35,6 +37,14 @@ function harness() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("mobile retained row rendering", () => {
+  it("skips fixed-aspect-ratio figures while retaining ordinary layout for unknown-sized figures", () => {
+    const page = harness();
+    page.rows[0]!.content = "fixed-figure";
+    page.rows[1]!.content = "unknown-figure";
+    const stop = manageMobileRowRendering(page.container);
+    expect(page.rows.map(row => row.measured)).toEqual([true, false, false]);
+    stop();
+  });
   it("batches actual height reads before enabling static chunks and leaves dynamic content alone", () => {
     const page = harness();
     const stop = manageMobileRowRendering(page.container);

@@ -72,10 +72,18 @@ function spotAtEyeLine(): Spot | null {
   const chunks = chapter.querySelectorAll<HTMLElement>(".text-chunk");
   let candidates: ArrayLike<HTMLElement> = blocks;
   if (chunks.length && chunks[0]!.getBoundingClientRect().height > 0) {
-    const chunk = chunks[indexAtLine(chunks.length, bottomOf(chunks, (element) => element), eyeLine())];
+    const chunkAt = indexAtLine(chunks.length, bottomOf(chunks, (element) => element), eyeLine());
+    const chunk = chunks[chunkAt];
     candidates = chunk?.querySelectorAll<HTMLElement>("[data-block]") ?? [];
-    // A figure-only chunk has no logical source anchor; retain the next text block behavior.
-    if (!candidates.length) candidates = blocks;
+    // A figure-only chunk points to the following source text. Find it without probing
+    // distant descendant geometry, which would force skipped chunks to render.
+    if (!candidates.length) {
+      for (let next = chunkAt + 1; next < chunks.length; next++) {
+        const following = chunks[next]!.querySelectorAll<HTMLElement>("[data-block]");
+        if (following.length) return { chapter, block: following[0]!, blocks };
+      }
+      return { chapter, block: null, blocks };
+    }
   }
   let block = candidates[indexAtLine(candidates.length, bottomOf(candidates, blockRow), eyeLine())] ?? null;
   if (!block && candidates !== blocks && candidates.length) {

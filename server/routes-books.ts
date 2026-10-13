@@ -29,6 +29,7 @@ import type { StoredPdf } from "./library.ts";
 import { ParseError } from "./parser/errors.ts";
 import { isReadableBookId, parseSharedBookId } from "./shares.ts";
 import { titleFromFileName } from "./upload-name.ts";
+import { createFigureVariants, figureWidth } from "./figure-variants.ts";
 
 export const MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
 // Multipart framing adds a little to the file itself; the exact file size is checked after parsing.
@@ -173,6 +174,7 @@ async function sendPdf(c: Context, pdf: StoredPdf): Promise<Response> {
 
 /** The books of whoever is reading: every route works on c.var.library. */
 export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover }): Hono<AppEnv> {
+  const variant = createFigureVariants();
   const { parsePdf, renderCover } = deps;
   const routes = new Hono<AppEnv>();
 
@@ -348,9 +350,13 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
   routes.get("/:id/figures/:name", async (c) => {
     const id = c.req.param("id");
     if (!isReadableBookId(id)) return invalidId(c);
+    const widths = c.req.queries("width");
+    const width = widths?.length === 1 ? figureWidth(widths[0]!) : null;
+    if (widths && !width) return apiError(c, 400, "invalid_figure_width", "Choose a supported figure width.");
+    // Authorize through this profile's library before consulting any derived-image cache.
     const data = await c.var.library.figure(id, c.req.param("name"));
     if (!data) return apiError(c, 404, "figure_not_found", "This book figure could not be found.");
-    return c.body(data, 200, {
+    return c.body(width ? await variant(data, width) : data, 200, {
       "Content-Type": "image/png",
       "Cache-Control": "private, no-cache",
       "X-Content-Type-Options": "nosniff",

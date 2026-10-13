@@ -10,6 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = join(root, "e2e/fixtures/problems-of-philosophy.pdf");
 const journeys = {
+  "illustrated-mobile": {},
   "translation-mobile": {},
   "pdf-content": { illustrated: true },
   "profile-photo": { passkey: "profile-photo-test-code-2026" },
@@ -133,12 +134,12 @@ async function run(name, setup) {
     const output = await command("playwright-cli", [`-s=${session}`, "run-code", "--filename", `e2e/${name}.js`]);
     // run-code exits 0 even when the journey throws, and prints the error under "### Error" instead.
     if (output.includes("### Error")) throw new Error(`journey ${name} failed: ${output}`);
-    if (name === "translation-mobile") {
+    if (name === "translation-mobile" || name === "illustrated-mobile") {
       const result = output.match(/### Result\n([\s\S]*?)(?:\n###|$)/)?.[1];
-      if (!result) throw new Error(`Missing translation mobile result: ${output}`);
+      if (!result) throw new Error(`Missing ${name} result: ${output}`);
       if (result) {
         const report = JSON.parse(result);
-        console.log(`scroll_metrics: ${JSON.stringify(report.scrolling)}`);
+        console.log(name === "translation-mobile" ? `scroll_metrics: ${JSON.stringify(report.scrolling)}` : `illustrated_metrics: ${JSON.stringify(report)}`);
       }
     }
     if (name === "library-header") {

@@ -329,6 +329,8 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
 
   // A reader taps words constantly and each tap needs the whole book; parsing book.json every time adds up.
   const parsedBooks = new Map<string, ParsedBook>();
+  // Opening details and chapter text concurrently shares the same download and JSON parse.
+  const loadingBooks = new Map<string, Promise<ParsedBook | null>>();
   const sourcePages = new Map<string, SourcePageImage>();
   const drawingPages = new Map<string, Promise<SourcePageImage | null>>();
   function remember(id: string, book: ParsedBook): void {
@@ -490,9 +492,20 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
     await ready();
     const cached = parsedBooks.get(id);
     if (cached) return cached;
-    const book = (await readJson(keyOf(id, "book.json"))) as ParsedBook | null;
-    if (book) remember(id, book);
-    return book;
+    const loading = loadingBooks.get(id);
+    if (loading) return loading;
+    const run = readJson(keyOf(id, "book.json")).then((value) => {
+      // Removal invalidates this read, including when the same book was imported again meanwhile.
+      if (loadingBooks.get(id) !== run) return null;
+      const book = value as ParsedBook | null;
+      if (book) remember(id, book);
+      return book;
+    }).finally(() => {
+      // Failures can be retried, without clearing a newer read after removal and reimport.
+      if (loadingBooks.get(id) === run) loadingBooks.delete(id);
+    });
+    loadingBooks.set(id, run);
+    return run;
   }
 
   async function usage(): Promise<StorageUsage> {
@@ -759,6 +772,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
         // meta.json first: the book leaves the library in one step, and the rest of its files go after it.
         await changeMeta(id, null, () => store.remove([keyOf(id, "meta.json")]));
         parsedBooks.delete(id);
+        loadingBooks.delete(id);
         // After meta.json, so a pin made meanwhile either saw the book gone or is cleared here.
         await forgetPin(id).catch((error: unknown) => console.warn(`could not clear away the pin of removed book ${id}:`, error));
         try {

@@ -38,9 +38,9 @@ export function manageMobileRowRendering(container: HTMLElement): () => void {
     // Never measure a skipped subtree or reuse a height from a different font, width or translation.
     clear();
     if (desktop.matches || root.dataset.layout === "pages") return;
-    // Notes stream their own answers and figures may finish loading independently of ChapterText.
-    // Their chunks keep ordinary layout; other static chunks can still be skipped.
-    const measured = chunks.filter((chunk) => !chunk.querySelector(".note, .book-figure"))
+    // Notes stream their answers. Figures with declared CSS dimensions reserve their complete
+    // aspect ratio before decoding; legacy/invalid-size figures still need ordinary layout.
+    const measured = chunks.filter((chunk) => !chunk.querySelector(".note, .book-figure:not([data-fixed-size])"))
       .map((chunk) => ({ chunk, height: chunk.getBoundingClientRect().height }));
     // All layout reads precede writes, and placeholders use actual sizes rather than estimates.
     for (const { chunk, height } of measured) {
