@@ -150,6 +150,67 @@ describe("streamText", () => {
 });
 
 describe("api.saveProgress", () => {
+  it("should open another book immediately while waiting for saves to the book just left", async () => {
+    const calls: string[] = [];
+    const answerSaves: (() => void)[] = [];
+    vi.stubGlobal("fetch", (path: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${path}`);
+      if (init?.method === "PUT") return new Promise<Response>((resolve) => answerSaves.push(() => resolve(new Response("{}"))));
+      return Promise.resolve(new Response("{}"));
+    });
+
+    const firstSave = api.saveProgress("a-b", "c1", "c1-b1", 0);
+    const secondSave = api.saveProgress("a-b", "c1", "c1-b2", 0);
+    const reopened = api.getBook("a-b");
+    await api.getBook("other-book");
+    expect(calls).toEqual(["PUT /api/books/a-b/progress", "PUT /api/books/a-b/progress", "GET /api/books/other-book"]);
+
+    // A faster newer save must not hide an older request still being written.
+    answerSaves[1]!();
+    await secondSave;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).not.toContain("GET /api/books/a-b");
+    answerSaves[0]!();
+    await firstSave;
+    await reopened;
+    expect(calls.at(-1)).toBe("GET /api/books/a-b");
+  });
+
+  it("should wait for pending saves across books before refreshing the shelf", async () => {
+    const calls: string[] = [];
+    const answerSaves: (() => void)[] = [];
+    vi.stubGlobal("fetch", (path: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${path}`);
+      if (init?.method === "PUT") return new Promise<Response>((resolve) => answerSaves.push(() => resolve(new Response("{}"))));
+      return Promise.resolve(new Response("[]"));
+    });
+    const firstSave = api.saveProgress("a-b", "c1", "c1-b1", 0);
+    const secondSave = api.saveProgress("other-book", "c1", "c1-b1", 0);
+    const listed = api.listBooks();
+    answerSaves[1]!();
+    await secondSave;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).not.toContain("GET /api/books");
+    answerSaves[0]!();
+    await firstSave;
+    await listed;
+    expect(calls.at(-1)).toBe("GET /api/books");
+  });
+
+  it("should release a book waiting for a rejected save", async () => {
+    let rejectSave: (reason: Error) => void = () => {};
+    vi.stubGlobal("fetch", (_path: string, init?: RequestInit) =>
+      init?.method === "PUT"
+        ? new Promise<Response>((_resolve, reject) => (rejectSave = reject))
+        : Promise.resolve(new Response("{}")),
+    );
+    const saved = api.saveProgress("a-b", "c1", "c1-b1", 0).catch(() => {});
+    const reopened = api.getBook("a-b");
+    rejectSave(new TypeError("Failed to fetch"));
+    await saved;
+    await expect(reopened).resolves.toEqual({});
+  });
+
   it("should be on its way before the library asks for the books, so the shelf shows the place just left", async () => {
     const calls: string[] = [];
     let answerSave: () => void = () => {};

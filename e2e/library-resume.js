@@ -39,15 +39,15 @@ async (page) => {
     await dialog.waitFor({ state: 'hidden' });
     await focusReturned();
 
-    const chapterPath = `/api/books/${book.id}/chapters/${book.progress.chapterId}`;
+    const resumePath = `/api/books/${book.id}/resume?*`;
     let failedOnce = false;
-    const failChapter = async (route) => {
+    const failResume = async (route) => {
       if (!failedOnce) {
         failedOnce = true;
         await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'fixture_unavailable', message: 'Fixture connection interrupted.' }) });
       } else await route.continue();
     };
-    await page.route(`**${chapterPath}`, failChapter);
+    await page.route(`**${resumePath}`, failResume);
     await contextButton.click();
     await dialog.getByRole('alert').filter({ hasText: 'Fixture connection interrupted.' }).waitFor({ state: 'visible' });
     await page.screenshot({ path: '.playwright-cli/library-resume-error.png' });
@@ -55,7 +55,7 @@ async (page) => {
     await dialog.getByRole('region', { name: 'Before your saved place', exact: true }).waitFor({ state: 'visible' });
     require(await dialog.getByRole('alert').count() === 0, 'Retry must clear the context error');
     await page.screenshot({ path: '.playwright-cli/library-resume-retried.png' });
-    await page.unroute(`**${chapterPath}`, failChapter);
+    await page.unroute(`**${resumePath}`, failResume);
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden' });
 
@@ -92,7 +92,7 @@ async (page) => {
     await search.fill('no fixture matches this');
     await page.getByRole('status').filter({ hasText: 'No books match' }).waitFor({ state: 'visible' });
     require(await rows.count() === 0, 'Unmatched metadata must hide shelf rows');
-    await page.getByRole('button', { name: 'Clear search', exact: true }).click();
+    await page.getByRole('button', { name: 'Clear book search', exact: true }).click();
     require(await search.inputValue() === '' && await rows.count() === books.length + 1, 'Clear search must restore every row');
     await search.fill('Fixture Shelf Title');
     await page.getByRole('status').filter({ hasText: '1 book found' }).waitFor({ state: 'visible' });
@@ -111,6 +111,6 @@ async (page) => {
   } finally {
     page.off('request', observe);
     await page.unroute('**/api/books');
-    await page.unroute(`**/api/books/${book.id}/chapters/${book.progress.chapterId}`);
+    await page.unroute(`**/api/books/${book.id}/resume?*`);
   }
 }

@@ -1,50 +1,26 @@
 import { ArrowRight, RotateCcw, X } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { Link } from "wouter";
-import type { Chapter, Note } from "../../shared/types.ts";
-import { api, ApiFailure } from "../api.ts";
+import type { ResumeContextResponse } from "../../shared/types.ts";
+import { api } from "../api.ts";
 import type { StartedBook } from "./bookText.ts";
-import { resumeText } from "./resumeText.ts";
 
 interface Props {
   book: StartedBook;
   onClose: () => void;
 }
 
-interface Content {
-  chapter: Chapter | null;
-  notes: Note[];
-  noteError: string | null;
-}
-
-/** Read context only while both authorized endpoints still allow access to the book. */
-export async function loadResumeContext(book: StartedBook, signal: AbortSignal): Promise<Content> {
-  const [chapter, notes] = await Promise.allSettled([
-    api.getChapter(book.id, book.progress.chapterId, signal),
-    api.getNotes(book.id, signal),
-  ]);
-  if (notes.status === "rejected") {
-    const reason: unknown = notes.reason;
-    if (reason instanceof ApiFailure && [401, 403, 404].includes(reason.status)) throw reason;
-  }
-  if (chapter.status === "rejected") {
-    const reason: unknown = chapter.reason;
-    if (reason instanceof ApiFailure && reason.status === 404) return { chapter: null, notes: [], noteError: null };
-    throw reason;
-  }
-  return {
-    chapter: chapter.value,
-    notes: notes.status === "fulfilled" ? notes.value : [],
-    noteError: notes.status === "rejected" ? "Your highlights could not be loaded." : null,
-  };
+/** The server checks both book and highlight access before returning a bounded reminder. */
+export async function loadResumeContext(book: StartedBook, signal: AbortSignal): Promise<ResumeContextResponse> {
+  return api.getResumeContext(book.id, book.progress, signal);
 }
 
 /** A read-only reminder over the shelf; loading and dismissal never write reading progress. */
 export function ResumeContext({ book, onClose }: Props): ReactElement {
   const dialog = useRef<HTMLDialogElement>(null);
   const headingId = useId();
-  const [content, setContent] = useState<Content | null>(null);
+  const [content, setContent] = useState<ResumeContextResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
@@ -69,9 +45,9 @@ export function ResumeContext({ book, onClose }: Props): ReactElement {
       },
     );
     return () => controller.abort();
-  }, [book.id, book.progress.chapterId, attempt]);
+  }, [book.id, book.progress.chapterId, book.progress.blockId, book.progress.offset, attempt]);
 
-  const context = useMemo(() => content?.chapter ? resumeText(content.chapter, book.progress, content.notes) : null, [content, book.progress]);
+  const context = content?.context;
   const missing = content !== null && (!content.chapter || context?.state === "missing");
 
   return (

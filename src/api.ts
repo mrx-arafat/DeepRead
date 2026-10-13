@@ -26,6 +26,7 @@ import type {
   QuickTranslation,
   ReadingProgress,
   ReadingStatus,
+  ResumeContextResponse,
   Session,
   SessionInfo,
   SharingOverview,
@@ -126,14 +127,16 @@ const json = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-// The newest progress save still on its way. The shelf and a book wait for it (two seconds at most, and whatever its
-// outcome), so what they say of the reader's place is never the one before the place they have just left.
-let saving: Promise<unknown> = Promise.resolve();
+// Only wait for saves that can affect this read: all books for the shelf, this book for its detail. Keep every pending
+// save, since requests can finish out of order. An unrelated book should open without waiting for the one just left.
+const saving = new Map<string, Set<Promise<void>>>();
 const SAVE_WAIT_MS = 2000;
 
-async function afterSaving(): Promise<void> {
+async function afterSaving(bookId?: string): Promise<void> {
+  const pending = bookId === undefined ? [...saving.values()].flatMap((saves) => [...saves]) : [...(saving.get(bookId) ?? [])];
+  if (!pending.length) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  await Promise.race([saving, new Promise((resolve) => (timer = setTimeout(resolve, SAVE_WAIT_MS)))]);
+  await Promise.race([Promise.all(pending), new Promise((resolve) => (timer = setTimeout(resolve, SAVE_WAIT_MS)))]);
   clearTimeout(timer);
 }
 
@@ -143,7 +146,7 @@ export const api = {
     return request<BookSummary[]>("/api/books");
   },
   getBook: async (id: string) => {
-    await afterSaving();
+    await afterSaving(id);
     return request<BookDetail>(`/api/books/${id}`);
   },
   updateBook: (id: string, update: BookUpdate) => request<BookDetail>(`/api/books/${id}`, json("PATCH", update)),
@@ -155,6 +158,10 @@ export const api = {
     (await request<{ readingStatus: ReadingStatus }>(`/api/books/${id}/reading-status`, json("PUT", { status }))).readingStatus,
   getChapter: (bookId: string, chapterId: string, signal?: AbortSignal) =>
     request<Chapter>(`/api/books/${bookId}/chapters/${chapterId}`, { signal }),
+  getResumeContext: (bookId: string, progress: ReadingProgress, signal?: AbortSignal) => {
+    const query = new URLSearchParams({ chapterId: progress.chapterId, blockId: progress.blockId, offset: String(progress.offset ?? 0) });
+    return request<ResumeContextResponse>(`/api/books/${bookId}/resume?${query}`, { signal });
+  },
   uploadBook: async (file: File, watch: UploadWatch = {}): Promise<{ book: BookDetail; alreadyHad: boolean }> => {
     const form = new FormData();
     form.append("file", file);
@@ -171,7 +178,13 @@ export const api = {
         return progress;
       },
     );
-    saving = done.catch(() => {});
+    let saves = saving.get(bookId);
+    if (!saves) saving.set(bookId, (saves = new Set()));
+    const settled = done.then(() => {}, () => {}).finally(() => {
+      saves.delete(settled);
+      if (!saves.size) saving.delete(bookId);
+    });
+    saves.add(settled);
     return done;
   },
   getNotes: (bookId: string, signal?: AbortSignal) => request<Note[]>(`/api/books/${bookId}/notes`, { signal }),

@@ -10,6 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = join(root, "e2e/fixtures/problems-of-philosophy.pdf");
 const journeys = {
+  "illustrated-mobile": {},
   "translation-mobile": {},
   "pdf-content": { illustrated: true },
   "profile-photo": { passkey: "profile-photo-test-code-2026" },
@@ -21,6 +22,7 @@ const journeys = {
   "notebook-missing-source": { fixture: true },
   "notebook-shared": { passkey: "shared-notebook-test-code-2026" },
   "library-continue": { fixture: true },
+  "library-resume": { fixture: true, resume: true },
   "library-header": { passkey: "ux02-profile-test-code-2026" },
 };
 const children = new Set();
@@ -126,6 +128,14 @@ async function run(name, setup) {
       form.append("file", new Blob([setup.illustrated ? illustratedBookPdf() : await readFile(fixture)], { type: "application/pdf" }), setup.illustrated ? "illustrated-book.pdf" : "problems-of-philosophy.pdf");
       const response = await fetch(`http://127.0.0.1:${apiPort}/api/books`, { method: "POST", body: form });
       if (!response.ok) throw new Error(`fixture upload returned ${response.status}: ${(await response.text()).slice(0, 500)}`);
+      if (setup.resume) {
+        const book = await response.json();
+        const saved = await fetch(`http://127.0.0.1:${apiPort}/api/books/${book.id}/progress`, {
+          method: "PUT", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ chapterId: "c3", blockId: "c3-b3", offset: 120 }),
+        });
+        if (!saved.ok) throw new Error(`fixture progress returned ${saved.status}`);
+      }
     }
     web = start(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", String(webPort), "--strictPort"], env);
     await ready(`http://127.0.0.1:${webPort}/`, web, "Vite");
@@ -133,12 +143,12 @@ async function run(name, setup) {
     const output = await command("playwright-cli", [`-s=${session}`, "run-code", "--filename", `e2e/${name}.js`]);
     // run-code exits 0 even when the journey throws, and prints the error under "### Error" instead.
     if (output.includes("### Error")) throw new Error(`journey ${name} failed: ${output}`);
-    if (name === "translation-mobile") {
+    if (name === "translation-mobile" || name === "illustrated-mobile") {
       const result = output.match(/### Result\n([\s\S]*?)(?:\n###|$)/)?.[1];
-      if (!result) throw new Error(`Missing translation mobile result: ${output}`);
+      if (!result) throw new Error(`Missing ${name} result: ${output}`);
       if (result) {
         const report = JSON.parse(result);
-        console.log(`scroll_metrics: ${JSON.stringify(report.scrolling)}`);
+        console.log(name === "translation-mobile" ? `scroll_metrics: ${JSON.stringify(report.scrolling)}` : `illustrated_metrics: ${JSON.stringify(report)}`);
       }
     }
     if (name === "library-header") {

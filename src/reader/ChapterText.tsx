@@ -78,9 +78,15 @@ const BlockText = memo(function BlockText({ block, bookId, tag, tabbable }: { bl
     const image = block.image;
     // Figures are private book assets, never remote URLs or executable document content.
     if (!image || !/^figures\/[a-f0-9]{64}\.png$/.test(image.src)) return null;
+    const src = `/api/books/${encodeURIComponent(bookId)}/${image.src}`;
+    const sized = Number.isInteger(image.width) && image.width > 0 && Number.isInteger(image.height) && image.height > 0;
+    const widths = sized ? [480, 960, 1440].filter((width) => width < image.width) : [];
+    const srcSet = widths.length ? [...widths.map((width) => `${src}?width=${width} ${width}w`), `${src} ${image.width}w`].join(", ") : undefined;
     return (
-      <figure className="book-figure" data-book-figure={block.id}>
-        <img src={`/api/books/${encodeURIComponent(bookId)}/${image.src}`} width={image.width} height={image.height} alt={image.alt} loading="lazy" decoding="async" />
+      <figure className="book-figure" data-book-figure={block.id} data-fixed-size={sized ? "" : undefined}>
+        <img src={src} srcSet={srcSet} sizes={srcSet ? `auto, (max-width: 72rem) 100vw, ${image.width}px` : undefined}
+          style={sized ? { width: `min(100%, ${image.width}px)`, aspectRatio: `${image.width} / ${image.height}` } : undefined}
+          width={image.width} height={image.height} alt={image.alt} loading="lazy" decoding="async" />
       </figure>
     );
   }
@@ -139,10 +145,18 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions, transla
   useMobileRowRendering(container, blocks, notes, translation?.blocks, translation?.lang);
   const cursor = useWordCursor(blocks.find((block) => block.type !== "image" && block.text.trim())?.id, (word) => ask(word, "keyboard"));
   const tags = useMemo(() => headingTags(blocks), [blocks]);
-  const chunks = useMemo(() => Array.from(
-    { length: Math.ceil(blocks.length / TEXT_CHUNK_SIZE) },
-    (_, at) => blocks.slice(at * TEXT_CHUNK_SIZE, (at + 1) * TEXT_CHUNK_SIZE),
-  ), [blocks]);
+  const chunks = useMemo(() => {
+    const result: { blocks: Block[]; start: number }[] = [];
+    blocks.forEach((block, at) => {
+      const previous = result.at(-1);
+      // Images load independently. Keep them outside static prose containment so one figure
+      // cannot force dozens of surrounding paragraphs to render throughout a long scroll.
+      if (block.type === "image" || !previous || previous.blocks[0]?.type === "image" || previous.blocks.length === TEXT_CHUNK_SIZE) {
+        result.push({ blocks: [block], start: at });
+      } else previous.blocks.push(block);
+    });
+    return result;
+  }, [blocks]);
 
   /** Ask about the selected text if there is any, else about `word`; with neither, close what is open. */
   function ask(word: Range | null, via: "mouse" | "keyboard" | "touch") {
@@ -231,7 +245,7 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions, transla
       onFocus={cursor.onFocus}
       onBlur={cursor.onBlur}
     >
-      {chunks.map((chunk, chunkAt) => (
+      {chunks.map(({ blocks: chunk, start }) => (
         <div className="text-chunk" key={chunk[0]!.id}>
           {chunk.map((block, at) => {
             const translated = translation?.blocks[block.id];
@@ -242,7 +256,7 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions, transla
                   .map((note) => (
                     <NoteCard key={note.id} note={note} bookId={bookId} latest={note.id === notes.at(-1)?.id} onClose={onCloseNote} onSaveAnswer={onSaveAnswer} />
                   ))}
-                <BlockText block={block} bookId={bookId} tag={tags[chunkAt * TEXT_CHUNK_SIZE + at] ?? null} tabbable={block.id === cursor.tabbable} />
+                <BlockText block={block} bookId={bookId} tag={tags[start + at] ?? null} tabbable={block.id === cursor.tabbable} />
                 {/* Translations stay beside the block, so every source offset remains in the original book text. */}
                 {translation && translated ? (
                   <p className="block-translation" lang={translation.lang} dir="auto" data-translation-of={block.id}>

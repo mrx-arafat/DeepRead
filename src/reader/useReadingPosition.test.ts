@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BookDetail, Chapter } from "../../shared/types.ts";
 import { api } from "../api.ts";
-import { detourIn, keepingLine, placeIn, useReadingPosition } from "./useReadingPosition.ts";
+import { blockAtTop, detourIn, keepingLine, placeIn, useReadingPosition } from "./useReadingPosition.ts";
 
 const hooks = vi.hoisted(() => ({
   refs: [] as Array<{ current: unknown }>, states: [] as unknown[], effects: [] as Array<{ dependencies?: unknown[]; effect: () => void | (() => void); cleanup?: () => void; changed: boolean; layout: boolean }>,
@@ -201,6 +201,43 @@ describe("useReadingPosition detours", () => {
     page.scroll(1750);
     vi.advanceTimersByTime(300);
     expect(placeIn(history.state)).toEqual({ chapterId: "c1", blockId: "return", offset: 0 });
+  });
+
+  it("finds the next source after figure-only chunks without measuring distant text", () => {
+    const page = reader({ place: source });
+    page.render();
+    const chunks = page.enableChunks();
+    chunks.splice(1, 0, {
+      getBoundingClientRect: () => ({ height: 350, bottom: 1950 - window.scrollY }),
+      querySelectorAll: vi.fn(() => []),
+    });
+    const sourceGeometry = vi.spyOn(page.sourceBlock, "getBoundingClientRect");
+    const nextGeometry = vi.spyOn(page.returnBlock, "getBoundingClientRect");
+    page.scroll(1750);
+    expect(blockAtTop()).toBe(page.returnBlock);
+    expect(sourceGeometry).not.toHaveBeenCalled();
+    expect(nextGeometry).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(300);
+    expect(placeIn(history.state)).toEqual({ chapterId: "c1", blockId: "return", offset: 0 });
+    expect(sourceGeometry).not.toHaveBeenCalled();
+  });
+
+  it("does not fall back to distant text in trailing figures or beyond the final chunk", () => {
+    const page = reader({ place: source });
+    page.render();
+    const chunks = page.enableChunks();
+    chunks.push({
+      getBoundingClientRect: () => ({ height: 400, bottom: 3000 - window.scrollY }),
+      querySelectorAll: vi.fn(() => []),
+    });
+    const sourceGeometry = vi.spyOn(page.sourceBlock, "getBoundingClientRect");
+    const lastGeometry = vi.spyOn(page.returnBlock, "getBoundingClientRect");
+    page.scroll(2750);
+    expect(blockAtTop()).toBeNull();
+    page.scroll(3100);
+    expect(blockAtTop()).toBeNull();
+    expect(sourceGeometry).not.toHaveBeenCalled();
+    expect(lastGeometry).not.toHaveBeenCalled();
   });
 
   it("does not rescan distant source text on repeated progress updates", () => {

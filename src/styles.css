@@ -1398,6 +1398,10 @@ select {
   overflow: auto;
 }
 
+.resume-dialog .shelf-edit-actions {
+  margin-top: 1.25rem;
+}
+
 .resume-heading {
   display: flex;
   gap: 1rem;

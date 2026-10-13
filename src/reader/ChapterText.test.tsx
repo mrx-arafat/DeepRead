@@ -11,6 +11,29 @@ const figure: Block = { id: "c1-figure", type: "image", page: 1, text: "", image
 const render = (blocks: Block[]) => renderToStaticMarkup(<ChapterText blocks={blocks} notes={[]} bookId="shared-book" chapterId="c1" actions={actions} />);
 
 describe("preserved book content", () => {
+  it("isolates figures so illustrated prose remains skippable without changing order or heading levels", () => {
+    const html = render([
+      { id: "before", type: "paragraph", page: 1, text: "Before" }, figure,
+      { id: "after", type: "heading", level: 1, page: 1, text: "After" },
+    ]);
+    expect(html.match(/class="text-chunk"/g)).toHaveLength(3);
+    expect(html).toContain('<h3 data-block="after"');
+    expect(html.indexOf('data-block="before"')).toBeLessThan(html.indexOf("<figure"));
+    expect(html.indexOf("<figure")).toBeLessThan(html.indexOf('data-block="after"'));
+  });
+
+  it("offers downsampled figure sources with an original fallback and stable printed dimensions", () => {
+    const html = render([{ ...figure, image: { ...figure.image!, width: 2000, height: 1500 } }]);
+    expect(html).toContain(`${asset}?width=480 480w`);
+    expect(html).toContain(`${asset}?width=960 960w`);
+    expect(html).toContain(`${asset}?width=1440 1440w`);
+    expect(html).toContain(`${asset} 2000w`);
+    expect(html).toContain('sizes="auto,');
+    expect(html).toContain('width="2000" height="1500"');
+    expect(html).toContain('width:min(100%, 2000px)');
+    expect(render([{ ...figure, image: { ...figure.image!, width: 320 } }])).not.toContain("srcSet=");
+  });
+
   it("groups retained rows into bounded rendering chunks and preserves headings at their boundaries", () => {
     const blocks: Block[] = Array.from({ length: 97 }, (_, at) => ({ id: `b${at}`, type: at === 48 ? "heading" : "paragraph", page: 1, text: `Source ${at}`, ...(at === 48 ? { level: 1 } : {}) }));
     const html = render(blocks);
