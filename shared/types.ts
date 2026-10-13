@@ -79,6 +79,17 @@ export type ReadingProgress = {
 /** A reader's manual shelf state, independent of how far they have scrolled. */
 export type ReadingStatus = "saved" | "reading" | "finished";
 
+/** A bounded reminder of the exact saved position shown on the shelf. */
+export type ResumeContextResponse = {
+  chapter: { id: string; title: string } | null;
+  context: {
+    state: "ready" | "start" | "missing";
+    excerpt: string;
+    highlight: { quote: string; page: number; blockId: string; offset: number } | null;
+  } | null;
+  noteError: string | null;
+};
+
 export type BookSummary = {
   id: string;
   title: string;

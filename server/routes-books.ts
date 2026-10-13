@@ -7,7 +7,8 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { isHighlightColor, MAX_REFLECTION_CHARS, MAX_SAVED_ANSWER_CHARS } from "../shared/types.ts";
-import type { BookUpdate, Note, ParsedBook, ReadingProgress } from "../shared/types.ts";
+import type { BookUpdate, Note, ParsedBook, ReadingProgress, ResumeContextResponse } from "../shared/types.ts";
+import { resumeText } from "../shared/resumeText.ts";
 import type { AppEnv } from "./app-env.ts";
 import type { ParsePdf, RenderCover } from "./deps.ts";
 import {
@@ -24,7 +25,7 @@ import {
   readString,
   sharedReadOnly,
 } from "./http.ts";
-import { StorageFullError } from "./library.ts";
+import { LibraryClosedError, StorageFullError } from "./library.ts";
 import type { StoredPdf } from "./library.ts";
 import { ParseError } from "./parser/errors.ts";
 import { isReadableBookId, parseSharedBookId } from "./shares.ts";
@@ -310,6 +311,36 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     if (!book) return bookNotFound(c);
     const chapter = book.chapters.find((candidate) => candidate.id === c.req.param("chapterId"));
     return chapter ? c.json(chapter) : chapterNotFound(c);
+  });
+
+  routes.get("/:id/resume", async (c) => {
+    const id = c.req.param("id");
+    if (!isReadableBookId(id)) return invalidId(c);
+    const chapterIds = c.req.queries("chapterId");
+    const blockIds = c.req.queries("blockId");
+    const offsets = c.req.queries("offset");
+    const chapterId = chapterIds?.length === 1 ? chapterIds[0] : undefined;
+    const blockId = blockIds?.length === 1 ? blockIds[0] : undefined;
+    const offsetText = offsets?.length === 1 ? offsets[0] : undefined;
+    const offset = Number(offsetText);
+    if (!chapterId || chapterId.length > MAX_ID_FIELD || !chapterId.trim() || !blockId || blockId.length > MAX_ID_FIELD || !blockId.trim()
+      || offsetText === undefined || !/^(0|[1-9]\d*)$/.test(offsetText) || !Number.isSafeInteger(offset)) {
+      return apiError(c, 400, "invalid_position", "Choose a valid saved reading position.");
+    }
+    // Both reads recheck access, including ended shares. Never send text after either denied the book.
+    const [book, notes] = await Promise.allSettled([c.var.library.book(id), c.var.library.notes(id)]);
+    if ((book.status === "fulfilled" && !book.value) || (notes.status === "fulfilled" && !notes.value)) return bookNotFound(c);
+    if (notes.status === "rejected" && notes.reason instanceof LibraryClosedError) throw notes.reason;
+    if (notes.status === "rejected" && isRecord(notes.reason) && [401, 403, 404].includes(Number(notes.reason.status))) return bookNotFound(c);
+    if (book.status === "rejected") throw book.reason;
+    const chapter = book.value!.chapters.find((candidate) => candidate.id === chapterId);
+    const response: ResumeContextResponse = {
+      chapter: chapter ? { id: chapter.id, title: chapter.title } : null,
+      context: chapter ? resumeText(chapter, { chapterId, blockId, offset, chapterTitle: chapter.title, updatedAt: "", percent: 0 }, notes.status === "fulfilled" ? notes.value! : []) : null,
+      noteError: notes.status === "rejected" ? "Your highlights could not be loaded." : null,
+    };
+    c.header("Cache-Control", "private, no-store");
+    return c.json(response);
   });
 
   routes.get("/:id/pdf", async (c) => {

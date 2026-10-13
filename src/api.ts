@@ -26,6 +26,7 @@ import type {
   QuickTranslation,
   ReadingProgress,
   ReadingStatus,
+  ResumeContextResponse,
   Session,
   SessionInfo,
   SharingOverview,
@@ -157,6 +158,10 @@ export const api = {
     (await request<{ readingStatus: ReadingStatus }>(`/api/books/${id}/reading-status`, json("PUT", { status }))).readingStatus,
   getChapter: (bookId: string, chapterId: string, signal?: AbortSignal) =>
     request<Chapter>(`/api/books/${bookId}/chapters/${chapterId}`, { signal }),
+  getResumeContext: (bookId: string, progress: ReadingProgress, signal?: AbortSignal) => {
+    const query = new URLSearchParams({ chapterId: progress.chapterId, blockId: progress.blockId, offset: String(progress.offset ?? 0) });
+    return request<ResumeContextResponse>(`/api/books/${bookId}/resume?${query}`, { signal });
+  },
   uploadBook: async (file: File, watch: UploadWatch = {}): Promise<{ book: BookDetail; alreadyHad: boolean }> => {
     const form = new FormData();
     form.append("file", file);

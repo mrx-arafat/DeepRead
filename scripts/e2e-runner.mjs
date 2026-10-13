@@ -22,6 +22,7 @@ const journeys = {
   "notebook-missing-source": { fixture: true },
   "notebook-shared": { passkey: "shared-notebook-test-code-2026" },
   "library-continue": { fixture: true },
+  "library-resume": { fixture: true, resume: true },
   "library-header": { passkey: "ux02-profile-test-code-2026" },
 };
 const children = new Set();
@@ -127,6 +128,14 @@ async function run(name, setup) {
       form.append("file", new Blob([setup.illustrated ? illustratedBookPdf() : await readFile(fixture)], { type: "application/pdf" }), setup.illustrated ? "illustrated-book.pdf" : "problems-of-philosophy.pdf");
       const response = await fetch(`http://127.0.0.1:${apiPort}/api/books`, { method: "POST", body: form });
       if (!response.ok) throw new Error(`fixture upload returned ${response.status}: ${(await response.text()).slice(0, 500)}`);
+      if (setup.resume) {
+        const book = await response.json();
+        const saved = await fetch(`http://127.0.0.1:${apiPort}/api/books/${book.id}/progress`, {
+          method: "PUT", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ chapterId: "c3", blockId: "c3-b3", offset: 120 }),
+        });
+        if (!saved.ok) throw new Error(`fixture progress returned ${saved.status}`);
+      }
     }
     web = start(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", String(webPort), "--strictPort"], env);
     await ready(`http://127.0.0.1:${webPort}/`, web, "Vite");
