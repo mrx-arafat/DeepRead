@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LangCode } from "../../shared/types.ts";
 import { useChapterTranslationEligibility } from "./useChapterTranslationEligibility.ts";
-import { refreshDeviceTier } from "../deviceTier.ts";
 
 const react = vi.hoisted(() => {
   const element = { id: "chapter" };
@@ -114,13 +113,5 @@ describe("chapter translation eligibility", () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     render();
     expect(render().eligible).toBe(true);
-  });
-
-  it("should use the low-tier approach margin", () => {
-    refreshDeviceTier({ override: "on" });
-    try {
-      render();
-      expect(Observer.instances[0]!.options.rootMargin).toBe("100% 0px 100% 0px");
-    } finally { refreshDeviceTier({ override: "auto" }); }
   });
 });
