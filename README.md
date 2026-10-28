@@ -179,6 +179,8 @@ When a provider behind OpenRouter is briefly busy, DeepRead tries again before t
 The API Model does not have to be OpenRouter.
 Any service with an OpenAI-compatible API works: choose it on the admin page under **Service**, or set its address with `OPENROUTER_BASE_URL` in `.env`, for example `https://api.openai.com/v1`, `https://api.deepseek.com/v1` or `https://api.groq.com/openai/v1`.
 That includes a free model on a computer of your own through [Ollama](https://ollama.com) (`http://127.0.0.1:11434/v1`) or [LM Studio](https://lmstudio.ai) (`http://127.0.0.1:1234/v1`), which needs no key.
+**Anthropic** (`https://api.anthropic.com/v1`) takes a key from the [Anthropic Console](https://platform.claude.com) and a Claude model such as `claude-haiku-5-5` (quickest and cheapest) or `claude-opus-5-5` (most thorough).
+DeepRead asks Claude through Anthropic's own API at low effort, so the thinking Claude does before every answer stays short; when a Claude model declines a question, the API can hand it to another model in the same call.
 The address must be reachable from the computer DeepRead runs on: `127.0.0.1` means that same computer.
 Only OpenRouter reports how much of the key's credit has gone.
 
@@ -846,7 +848,7 @@ From there you can:
   Under the profiles, one card shows whether it works (**Ready** or what it still needs), a **Test it** button, the model, how much credit the key has used, and how many requests were made today.
   Below that are the key, the model and the daily limit, each with a button to change it, and a list of readers with a switch to give or take back the API Model, and a bar for how much of the day's limit each has used.
   A reader who asked for it shows **Approve** and **Not now** in place of the switch.
-  **Service** at the top of its settings chooses where the model is asked: OpenRouter, another OpenAI-compatible API such as OpenAI, DeepSeek or Groq, or Ollama and LM Studio on a computer of your own.
+  **Service** at the top of its settings chooses where the model is asked: OpenRouter, Anthropic, another OpenAI-compatible API such as OpenAI, DeepSeek or Groq, or Ollama and LM Studio on a computer of your own.
 - **Turn chapter translation on or off.**
   The **Chapter translation** card under the API Model lets readers show chapters in their language or not, chooses the service (**Automatic**, which tries Microsoft and then Google, **Microsoft Translator** or **Google Translate**), and has a **Try it** button that translates a sample sentence.
   The admin can always translate.

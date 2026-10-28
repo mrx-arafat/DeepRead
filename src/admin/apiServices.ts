@@ -1,6 +1,6 @@
 import { OPENROUTER_BASE_URL } from "../../shared/types.ts";
 
-export type ServiceId = "openrouter" | "openai" | "deepseek" | "groq" | "ollama" | "lmstudio";
+export type ServiceId = "openrouter" | "anthropic" | "openai" | "deepseek" | "groq" | "ollama" | "lmstudio";
 
 export type ApiService = {
   id: ServiceId;
@@ -18,6 +18,14 @@ export type ApiService = {
 /** The services the admin can pick by name, OpenRouter first as the default. Any other address is a custom one. */
 export const API_SERVICES: readonly ApiService[] = [
   { id: "openrouter", name: "OpenRouter", url: OPENROUTER_BASE_URL, about: "Hundreds of models from many makers, on one key.", needsKey: true, local: false },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    url: "https://api.anthropic.com/v1",
+    about: "Claude models on an Anthropic API key: Haiku is the quickest and cheapest, Opus the most thorough.",
+    needsKey: true,
+    local: false,
+  },
   { id: "openai", name: "OpenAI", url: "https://api.openai.com/v1", about: "OpenAI's own models, on an OpenAI key.", needsKey: true, local: false },
   { id: "deepseek", name: "DeepSeek", url: "https://api.deepseek.com/v1", about: "DeepSeek's models, on a DeepSeek key.", needsKey: true, local: false },
   { id: "groq", name: "Groq", url: "https://api.groq.com/openai/v1", about: "Open models that answer quickly, on a Groq key.", needsKey: true, local: false },

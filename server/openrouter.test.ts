@@ -105,6 +105,47 @@ describe("createOpenRouter", () => {
     expect(bodyOf(call!).max_tokens).toBeGreaterThan(0);
   });
 
+  it("should ask Claude through the Messages API at Anthropic's address, at low effort, showing only the answer", async () => {
+    const event = (body: Record<string, unknown> & { type: string }) => `event: ${body.type}\ndata: ${JSON.stringify(body)}\n\n`;
+    respond = () => {
+      const encoder = new TextEncoder();
+      const events = [
+        { type: "message_start", message: { id: "msg_1", type: "message", role: "assistant", model: "claude-haiku-5-5", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 9, output_tokens: 0 } } },
+        { type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "", signature: "" } },
+        { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "hmm" } },
+        { type: "content_block_stop", index: 0 },
+        { type: "content_block_start", index: 1, content_block: { type: "text", text: "" } },
+        { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Every" } },
+        { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "where" } },
+        { type: "content_block_stop", index: 1 },
+        { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 4 } },
+        { type: "message_stop" },
+      ];
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const one of events) controller.enqueue(encoder.encode(event(one)));
+          controller.close();
+        },
+      });
+      return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+    };
+    const anthropicKey = "sk-ant-api03-0123456789abcdef0123456789abcdef";
+    const llm = make({ OPENROUTER_BASE_URL: "https://api.anthropic.com/v1", OPENROUTER_API_KEY: anthropicKey, OPENROUTER_MODEL: "claude-haiku-5-5" });
+
+    expect(await completeText(llm, ask)).toBe("Everywhere");
+    const [call] = calls;
+    expect(call?.url).toBe("https://api.anthropic.com/v1/messages");
+    expect(new Headers(call?.init.headers).get("authorization")).toBe(`Bearer ${anthropicKey}`);
+    expect(bodyOf(call!)).toMatchObject({
+      model: "claude-haiku-5-5",
+      system: "You are a tutor.",
+      messages: [{ role: "user", content: "ubiquitous" }],
+      output_config: { effort: "low" },
+      // The word card's 900 tokens, plus room for the thinking that Claude does before every answer.
+      max_tokens: 2_900,
+    });
+  });
+
   it("should name the model that answers, so a saved answer is only reused from the same one", async () => {
     const llm = make({ OPENROUTER_API_KEY: KEY, OPENROUTER_MODEL: MODEL });
     expect(llm.model("word")).toBe(`openrouter:${MODEL}`);
@@ -396,7 +437,7 @@ describe("createOpenRouter", () => {
     const llm = createOpenRouter({ dataDir, env: { OPENROUTER_API_KEY: KEY, OPENROUTER_MODEL: MODEL, OPENROUTER_DAILY_LIMIT: "2" }, fetch: fetcher, now: () => now });
     llm.admit("mina");
     llm.admit("mina");
-    expect(() => llm.admit("mina")).toThrowError(expect.objectContaining({ kind: "failed", message: expect.stringContaining("2 requests") }));
+    expect(() => llm.admit("mina")).toThrow(expect.objectContaining({ kind: "failed", message: expect.stringContaining("2 requests") }));
     llm.admit("sam");
     expect((await llm.describe()).usedToday).toEqual({ mina: 2, sam: 1 });
 
@@ -430,7 +471,7 @@ describe("createOpenRouter", () => {
 
       const restarted = open();
       expect((await restarted.describe()).usedToday).toEqual({ mina: 2, sam: 1 });
-      expect(() => restarted.admit("mina")).toThrowError(expect.objectContaining({ kind: "failed", message: expect.stringContaining("2 requests") }));
+      expect(() => restarted.admit("mina")).toThrow(expect.objectContaining({ kind: "failed", message: expect.stringContaining("2 requests") }));
       expect(() => restarted.admit("sam")).not.toThrow();
       await usageOnDisk({ day: "2026-10-07", counts: { mina: 2, sam: 2 } });
     });
