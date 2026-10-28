@@ -381,8 +381,10 @@ export function createEncryptedStore(inner: ObjectStore, master: Buffer): Object
       return true;
     },
 
-    async list(prefix) {
+    async list(prefix, options) {
       const objects = await inner.list(prefix);
+      // Keys only, as ObjectStore.list describes: nothing is read per object, and an object removed since it was listed stays.
+      if (options?.sized === false) return objects;
       const sized: Array<StoredObject | null> = new Array(objects.length).fill(null);
       let next = 0;
       const worker = async (): Promise<void> => {

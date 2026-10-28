@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { checkEncryptionKey, CHUNK_BYTES, createEncryptedStore, encryptInPlace, refuseEncryptedObjects } from "./encrypted-store.ts";
-import { createLocalStore } from "./storage.ts";
+import { createLocalStore, scopedStore } from "./storage.ts";
 import type { ObjectStore, StoredObject } from "./storage.ts";
 
 const KEY = Buffer.from("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff", "hex");
@@ -60,6 +60,23 @@ describe("createEncryptedStore", () => {
     const fresh = createEncryptedStore(raw, KEY);
     expect(sorted(await fresh.list("books/"))).toEqual(expected);
     expect(await fresh.size(`books/a/${CHUNK_BYTES}.bin`)).toBe(CHUNK_BYTES);
+  });
+
+  it("should list only keys, reading no object, when sizes are not asked for, and keep scopes passing that through", async () => {
+    const names = ["books/a/one.bin", "books/a/two.bin", "books/b/three.bin"];
+    for (const name of names) await store.write(name, content(CHUNK_BYTES + 3));
+    await store.write("profiles/p/books/x.bin", content(10));
+    const reads: string[] = [];
+    const counting: ObjectStore = {
+      ...raw,
+      read: (key) => (reads.push(key), raw.read(key)),
+      size: (key) => (reads.push(key), raw.size(key)),
+      stream: (key, range) => (reads.push(key), raw.stream(key, range)),
+    };
+    const fresh = createEncryptedStore(counting, KEY);
+    expect(sorted(await fresh.list("books/", { sized: false })).map((object) => object.key)).toEqual(names);
+    expect((await scopedStore(fresh, "profiles/p/").list("books/", { sized: false })).map((object) => object.key)).toEqual(["books/x.bin"]);
+    expect(reads).toEqual([]);
   });
 
   it("should stream any byte range, fetching only the chunks it touches", async () => {
