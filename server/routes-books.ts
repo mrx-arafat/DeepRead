@@ -173,6 +173,21 @@ async function sendPdf(c: Context, pdf: StoredPdf): Promise<Response> {
   return c.body(body, status, partial);
 }
 
+/** A strong validator for exactly these bytes: the same bytes always give the same tag. */
+const strongTag = (source: string | Uint8Array): string => `"${createHash("sha256").update(source).digest("base64url").slice(0, 27)}"`;
+
+/** Whether If-None-Match names `tag`. A weak tag matches too, since revalidation is a weak comparison. */
+function notModified(c: Context, tag: string): boolean {
+  const header = c.req.header("if-none-match");
+  return header !== undefined && header.split(",").some((candidate) => candidate.trim().replace(/^W\//, "") === tag);
+}
+
+/** JSON that revalidates: the tag is the hash of the bytes sent, so an unchanged body answers 304 without one. */
+function revalidatedJson(c: Context, text: string): Response {
+  const headers = { "Content-Type": "application/json", "Cache-Control": "private, no-cache", ETag: strongTag(text) };
+  return notModified(c, headers.ETag) ? c.body(null, 304, headers) : c.body(text, 200, headers);
+}
+
 /** The books of whoever is reading: every route works on c.var.library. */
 export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover }): Hono<AppEnv> {
   const variant = createFigureVariants();
@@ -252,7 +267,7 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     const id = c.req.param("id");
     if (!isReadableBookId(id)) return invalidId(c);
     const detail = await library.detail(id);
-    return detail ? c.json(detail) : bookNotFound(c);
+    return detail ? revalidatedJson(c, JSON.stringify(detail)) : bookNotFound(c);
   });
 
   routes.patch(
@@ -310,7 +325,7 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     const book = await library.book(id);
     if (!book) return bookNotFound(c);
     const chapter = book.chapters.find((candidate) => candidate.id === c.req.param("chapterId"));
-    return chapter ? c.json(chapter) : chapterNotFound(c);
+    return chapter ? revalidatedJson(c, JSON.stringify(chapter)) : chapterNotFound(c);
   });
 
   routes.get("/:id/resume", async (c) => {
@@ -385,13 +400,18 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     const width = widths?.length === 1 ? figureWidth(widths[0]!) : null;
     if (widths && !width) return apiError(c, 400, "invalid_figure_width", "Choose a supported figure width.");
     // Authorize through this profile's library before consulting any derived-image cache.
-    const data = await c.var.library.figure(id, c.req.param("name"));
+    const name = c.req.param("name");
+    const data = await c.var.library.figure(id, name);
     if (!data) return apiError(c, 404, "figure_not_found", "This book figure could not be found.");
-    return c.body(width ? await variant(data, width) : data, 200, {
+    // The name is the hash of the figure's bytes, so the name with its width says exactly which image this response is.
+    const headers = {
       "Content-Type": "image/png",
-      "Cache-Control": "private, no-cache",
+      "Cache-Control": "private, max-age=86400",
+      ETag: strongTag(`${name}:${width ?? "original"}`),
       "X-Content-Type-Options": "nosniff",
-    });
+    };
+    if (notModified(c, headers.ETag)) return c.body(null, 304, headers);
+    return c.body(width ? await variant(data, width) : data, 200, headers);
   });
 
   routes.get("/:id/cover", async (c) => {
