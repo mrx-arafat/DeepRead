@@ -204,7 +204,8 @@ function refresh(next: { override?: TierOverride; measured?: boolean }, arming: 
   if (resolved !== current) {
     current = resolved;
     // The stylesheet reads this attribute, so a change made after the first paint (a measurement, a window crossing a breakpoint) must reach it too.
-    if (typeof document !== "undefined") document.documentElement.dataset.tier = resolved;
+    const root = typeof document === "undefined" ? undefined : document.documentElement;
+    if (root?.dataset) root.dataset.tier = resolved;
     for (const listener of listeners) listener();
   }
   return resolved;
