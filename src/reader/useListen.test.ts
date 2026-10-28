@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { showOnPage } from "./paging.ts";
 import { useListen } from "./useListen.ts";
+import { ensureMounted, pin } from "./mountRegistry.ts";
 
 const hook = vi.hoisted(() => ({
   effects: [] as Array<() => void | (() => void)>,
@@ -20,8 +21,17 @@ vi.mock("react", () => ({
   useState: (initial: unknown) => [hook.states++ === 0 ? { blockId: "b1", start: 0 } : initial, vi.fn()],
 }));
 vi.mock("./paging.ts", () => ({ inPages: () => true, showOnPage: vi.fn() }));
+vi.mock("./mountRegistry.ts", () => ({
+  useMountVersion: () => 0,
+  blockElement: () => ({ closest: () => ({ dataset: { chapter: "c1" } }) }),
+  ensureMounted: vi.fn(),
+  pin: vi.fn(),
+}));
 vi.mock("./textRanges.ts", () => ({
-  sentencesOf: () => [{ blockId: "b1", start: 0, end: 11, text: "First line." }],
+  sentencesOf: () => [
+    { blockId: "b1", start: 0, end: 11, text: "First line." },
+    { blockId: "b2", start: 0, end: 12, text: "Second line." },
+  ],
   sentenceIndex: () => 0,
   rangeInBlock: () => ({ getBoundingClientRect: () => ({ top: 100, bottom: 120 }) }),
   setHighlight: vi.fn(),
@@ -49,5 +59,25 @@ describe("useListen", () => {
       expect(pageTurn).toHaveBeenCalled();
       expect(hook.refs[1]?.current).toBe(turned ? 1234 : -Infinity);
     }
+  });
+
+  it("should pin listening blocks until the player is released and mount before revealing", () => {
+    hook.effects = [];
+    hook.refs = [];
+    hook.states = 0;
+    vi.stubGlobal("window", { innerHeight: 720 });
+    const blocks = ["chapter-title-c1", "b1", "chapter-title-c2", "b2"].map((id) => ({ id, type: "heading" as const, text: id, page: 1 }));
+    const listen = useListen(blocks, 1, { coming: false, error: null, open: vi.fn() });
+    hook.effects[3]?.();
+    expect(ensureMounted).toHaveBeenCalledWith("c1", "b1");
+    const release = hook.effects[5]?.();
+    expect(pin).toHaveBeenLastCalledWith("listen", [
+      { chapterId: "c1", blockId: "b1" },
+      { chapterId: "c2", blockId: "b2" },
+    ]);
+    if (release) release();
+    expect(pin).toHaveBeenLastCalledWith("listen", []);
+    listen.stop();
+    expect(pin).toHaveBeenLastCalledWith("listen", []);
   });
 });
