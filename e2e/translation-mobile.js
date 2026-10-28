@@ -139,12 +139,15 @@ async (page) => {
     const text = selection.toString(); selection.removeAllRanges(); return text;
   });
   assert(selected.includes('Paragraph 47.') && selected.includes('Paragraph 48.'), 'Source selection must survive across chunks');
-  // Width changes must discard old intrinsic heights; returning to the same width restores the same geometry.
-  const heightBeforeResize = await page.locator('[data-chapter="c2"]').evaluate(el => el.getBoundingClientRect().height);
+  // Width changes must discard old heights; returning to the same width restores the text the reader is at. Far chunks
+  // are placeholders with estimated heights, so the whole chapter's height is not exact; the rows being read are.
+  const anchorGeometry = () => page.locator('#c2-b48').evaluate(el => { const box = el.getBoundingClientRect(); return { top: box.top, height: box.height }; });
+  const beforeResize = await anchorGeometry();
   await page.setViewportSize({ width: 320, height: 844 }); await page.waitForTimeout(400);
   await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(400);
-  const heightAfterResize = await page.locator('[data-chapter="c2"]').evaluate(el => el.getBoundingClientRect().height);
-  assert(Math.abs(heightAfterResize - heightBeforeResize) < 3, `Resizing must restore exact translated chapter height: ${heightBeforeResize} -> ${heightAfterResize}`);
+  const afterResize = await anchorGeometry();
+  assert(Math.abs(afterResize.top - beforeResize.top) < 3 && Math.abs(afterResize.height - beforeResize.height) < 1,
+    `Resizing must restore the translated text being read: ${JSON.stringify(beforeResize)} -> ${JSON.stringify(afterResize)}`);
   // Keyboard focus pins its chunk: the row stays on the page however far the reader scrolls, and goes once focus leaves.
   await reach('c2-b20');
   await page.locator('[data-block="c2-b20"]').evaluate(el => el.focus({ preventScroll: true }));
