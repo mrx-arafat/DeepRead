@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useWordCursor } from "./useWordCursor.ts";
+import { ensureMounted } from "./mountRegistry.ts";
 
 vi.mock("react", () => ({
   useRef: (current: unknown) => ({ current }),
   useState: (value: unknown) => [value, vi.fn()],
 }));
 vi.mock("./paging.ts", () => ({ inPages: () => false, showOnPage: vi.fn() }));
+vi.mock("./mountRegistry.ts", () => ({ ensureMounted: vi.fn() }));
 vi.mock("./textRanges.ts", () => ({
   setHighlight: vi.fn(),
   stepWord: () => ({ start: 0, end: 4 }),
@@ -57,5 +59,25 @@ describe("useWordCursor", () => {
     wordBottom = 700;
     cursor.onKeyDown(key);
     expect(scrollBy).toHaveBeenCalledWith(0, 76);
+  });
+
+  it("should mount and focus adjacent blocks in data order in both directions", () => {
+    class FakeText { data = "word"; }
+    vi.stubGlobal("Text", FakeText);
+    const range = { setStart: vi.fn(), setEnd: vi.fn(), getBoundingClientRect: () => ({ top: 100, bottom: 120 }) };
+    vi.stubGlobal("document", { createRange: () => range, documentElement: {}, querySelector: () => null });
+    vi.stubGlobal("window", { innerHeight: 720 });
+    vi.stubGlobal("getComputedStyle", () => ({ scrollPaddingTop: "52px" }));
+    const makeBlock = (id: string) => ({ dataset: { block: id }, firstChild: new FakeText(), focus: vi.fn(), matches: () => true });
+    const first = makeBlock("first");
+    const second = makeBlock("second");
+    vi.mocked(ensureMounted).mockImplementation((_chapter, id) => (id === "second" ? second : first) as unknown as HTMLElement);
+    const cursor = useWordCursor("first", vi.fn(), { chapterId: "c1", blockIds: ["first", "second"] });
+    cursor.onFocus({ target: first } as unknown as Parameters<typeof cursor.onFocus>[0]);
+    for (const [target, key, expected] of [[first, "ArrowDown", second], [second, "ArrowUp", first]] as const) {
+      cursor.onKeyDown({ target, currentTarget: {}, key, preventDefault: vi.fn() } as unknown as Parameters<typeof cursor.onKeyDown>[0]);
+      expect(ensureMounted).toHaveBeenLastCalledWith("c1", expected.dataset.block);
+      expect(expected.focus).toHaveBeenCalledOnce();
+    }
   });
 });

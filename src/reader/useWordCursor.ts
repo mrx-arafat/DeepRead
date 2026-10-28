@@ -2,6 +2,7 @@ import { useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import { inPages, showOnPage } from "./paging.ts";
 import { setHighlight, stepWord, type Span } from "./textRanges.ts";
 import { blockText, offsetInBlock, rangeWithin } from "./domText.ts";
+import { ensureMounted } from "./mountRegistry.ts";
 
 export type WordCursor = {
   /** The one block in this chapter that Tab stops on: the text is a single stop, the arrows move inside it. */
@@ -41,7 +42,11 @@ function reveal(range: Range) {
  * Reading by keyboard: Tab reaches the text, Up and Down move between paragraphs, Left and Right move a word
  * cursor, Shift with Left or Right selects word by word, and Enter asks about the word or the selection.
  */
-export function useWordCursor(firstBlockId: string | undefined, onAsk: (word: Range) => void): WordCursor {
+export function useWordCursor(
+  firstBlockId: string | undefined,
+  onAsk: (word: Range) => void,
+  order?: { chapterId: string; blockIds: readonly string[] },
+): WordCursor {
   const [entry, setEntry] = useState<string | null>(null);
   // Kept in refs: moving the cursor must not re-render the chapter.
   const at = useRef<At | null>(null);
@@ -74,8 +79,15 @@ export function useWordCursor(firstBlockId: string | undefined, onAsk: (word: Ra
 
   // `end` picks where the cursor lands: the first word (1) or, when stepping back past a paragraph start, the last (-1).
   function moveBlock(block: HTMLElement, step: 1 | -1, end: 1 | -1, container: HTMLElement) {
-    const all = [...container.querySelectorAll<HTMLElement>("[data-block]")];
-    const target = all[all.indexOf(block) + step];
+    // Older chapter renderers have no data order yet; retain their fully mounted navigation.
+    const all = order ? null : [...container.querySelectorAll<HTMLElement>("[data-block]")];
+    const ids = order?.blockIds ?? all!.map((item) => item.dataset.block!);
+    const index = ids.indexOf(block.dataset.block!);
+    if (index === -1) return;
+    const nextId = ids[index + step];
+    if (!nextId) return;
+    const chapterId = order?.chapterId ?? block.closest<HTMLElement>("[data-chapter]")?.dataset.chapter;
+    const target = chapterId ? ensureMounted(chapterId, nextId) : all?.[index + step];
     const text = target && textOf(target);
     if (!target || !text) return;
     dropSelection();
