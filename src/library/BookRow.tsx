@@ -18,7 +18,7 @@ type Props = {
   /** The book whose save or removal is in flight. Every other row waits, so only one request runs at a time. */
   pending: string | null;
   deleteError: string | null;
-  /** True once, right after the book next to this one was removed: focus lands on this book's link. */
+  /** True once, right after the book next to this one was removed: focus lands on this book's title link. */
   focusLink: boolean;
   /** True once, right after this book moved between the Pinned and Your books lists: focus lands on its "More actions" button. */
   focusMenu: boolean;
@@ -74,8 +74,10 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
   const { sharedBy } = book;
   return (
     <li className="shelf-item" data-state={note.state} data-new={(book.progress === null && book.readingStatus === "reading") || undefined} onKeyDown={handleKeyDown}>
-      {/* The tooltip carries the whole title: a long one is cut short on the cover. */}
-      <Link ref={link} href={`/book/${book.id}`} className="shelf-link" title={book.title}>
+      {/* The tooltip carries the whole title: a long one is cut short on the cover. The cover opens the book for a
+          pointer only: the title under it is the book's one link for the keyboard and for a screen reader, which
+          would otherwise meet the same link twice in a row, under the same name. */}
+      <Link href={`/book/${book.id}`} className="shelf-link" title={book.title} aria-hidden="true" tabIndex={-1}>
         <Cover book={book} />
         {/* Who shared it, as a small picture in the cover's corner: a line of words under it would push the book's
             status menu out of line with its neighbours'. The sentence for a screen reader is with the book's words. */}
@@ -87,7 +89,7 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
       </Link>
       <div className="shelf-description">
         {/* BookTitle carries the tooltip with the whole title, so the link has none of its own. */}
-        <h3><Link href={`/book/${book.id}`}><BookTitle title={book.title} /></Link></h3>
+        <h3><Link ref={link} href={`/book/${book.id}`}><BookTitle title={book.title} /></Link></h3>
         {book.author && <p>{book.author}</p>}
       </div>
       {/* Always there, so books that have not been started line up with the ones that have. */}
