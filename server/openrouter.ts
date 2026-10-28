@@ -8,9 +8,12 @@
 // characters. Beside it, openrouter-usage.json holds each reader's count of requests today (reader ids and numbers
 // only), so the daily limit survives a restart.
 // Like the command-line helpers it gives the model no tools, so text in a book cannot make it act on anything.
+// Anthropic's API (an address at api.anthropic.com) is asked through Anthropic's own SDK rather than Chat Completions:
+// its models think before every answer, which only the Messages API lets DeepRead keep short.
 import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import Anthropic from "@anthropic-ai/sdk";
 import { OPENROUTER_BASE_URL } from "../shared/types.ts";
 import type { OpenRouterModel, OpenRouterPatch, OpenRouterTest, OpenRouterView } from "../shared/types.ts";
 import { writeFileAtomic } from "./atomic-write.ts";
@@ -28,6 +31,14 @@ const KEY_IN_TEXT = /sk-or-[A-Za-z0-9_-]{8,}/g;
 
 /** The longest each kind of answer may run to: a word card is short, a quiz is the longest. It also caps what a runaway model can cost. */
 const MAX_TOKENS: Record<LlmTask, number> = { word: 900, explain: 1800, ask: 1800, preview: 2600, recap: 2600, quiz: 3400, closing: 300 };
+
+const ANTHROPIC_HOST = "api.anthropic.com";
+/** Claude's thinking counts against max_tokens, so an answer gets this much more room; at low effort it is rarely used up. */
+const ANTHROPIC_THINKING_ROOM = 2_000;
+/** Claude models that take an effort level; older ones answer 400 when sent one. */
+const TAKES_EFFORT = /^claude-(fable-5|mythos-5|opus-5|opus-4-[5-8]|sonnet-5|sonnet-4-6|haiku-5)/;
+/** Claude models whose declines the API can hand to another model in the same call (server-side fallback). */
+const TAKES_FALLBACK = /^claude-(fable-5-1|opus-5|sonnet-5-5)/;
 
 export type OpenRouterErrorCode = "invalid_key" | "invalid_model" | "unknown_model" | "invalid_limit" | "invalid_url" | "models_unavailable";
 
@@ -261,12 +272,70 @@ export function createOpenRouter(options: OpenRouterOptions): OpenRouter {
       baseUrlSource: from.baseUrl ? ("admin" as const) : envBaseUrl ? ("env" as const) : null,
       // OpenRouter alone gets the extras that only it takes, and asks for a key made the way it makes them.
       isOpenRouter: address.toLowerCase() === OPENROUTER_BASE_URL,
+      isAnthropic: hostOf(address).toLowerCase() === ANTHROPIC_HOST,
     };
   }
   type Resolved = ReturnType<typeof resolved>;
 
-  /** How the admin would name the service: OpenRouter, or the host of the address. */
-  const serviceOf = ({ isOpenRouter, baseUrl }: Resolved): string => (isOpenRouter ? "OpenRouter" : hostOf(baseUrl));
+  /** How the admin would name the service: OpenRouter, Anthropic, or the host of the address. */
+  const serviceOf = ({ isOpenRouter, isAnthropic, baseUrl }: Resolved): string => (isOpenRouter ? "OpenRouter" : isAnthropic ? "Anthropic" : hostOf(baseUrl));
+
+  /** Anthropic's SDK at the origin of the saved address (it adds /v1 itself), through the same fetch as everything else. */
+  const anthropicClient = ({ apiKey, baseUrl }: Resolved): Anthropic =>
+    new Anthropic({ apiKey: apiKey ?? "", baseURL: new URL(baseUrl).origin, fetch: doFetch, maxRetries: 2 });
+
+  /** An Anthropic SDK error in the words the reader and the admin see elsewhere on this helper. */
+  function anthropicFailure(error: unknown, request: LlmRequest, timeout: AbortSignal, config: Resolved): LlmError {
+    if (error instanceof LlmError) return error;
+    if (request.signal?.aborted || error instanceof Anthropic.APIUserAbortError) {
+      return timeout.aborted ? new LlmError("timeout", "The AI took too long to answer. Please try again.") : new LlmError("aborted", "The request was cancelled.");
+    }
+    if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
+      return new LlmError("not_logged_in", "The API key was refused. The admin can replace it on the admin page.");
+    }
+    if (error instanceof Anthropic.RateLimitError) return new LlmError("failed", "The API is busy or its rate limit was reached. Please try again in a moment.");
+    if (error instanceof Anthropic.APIError && error.status !== undefined) {
+      const detail = redact(error.message, config.apiKey);
+      if (/credit/i.test(detail)) return new LlmError("failed", "The API account is out of credit. The admin can add credit in the Anthropic Console, or choose another model.");
+      if ((error.status === 400 || error.status === 404) && /model/i.test(detail)) {
+        return new LlmError("failed", `The API does not know the model ${config.model}. The admin can choose another on the admin page.`);
+      }
+      return new LlmError("failed", `The API could not answer (HTTP ${error.status}): ${detail}`);
+    }
+    return failure(error, request, timeout, false);
+  }
+
+  /** One answer from Claude through the Messages API, streamed a piece of text at a time. Thinking is kept short and never shown. */
+  async function* anthropicAnswer(request: LlmRequest, config: Resolved, timeout: AbortSignal, signal: AbortSignal): AsyncGenerator<string, void, undefined> {
+    const model = config.model ?? "";
+    let wrote = false;
+    try {
+      const stream = anthropicClient(config).beta.messages.stream(
+        {
+          model,
+          max_tokens: (request.maxTokens ?? MAX_TOKENS[request.task]) + ANTHROPIC_THINKING_ROOM,
+          system: request.system,
+          messages: [{ role: "user", content: request.user }],
+          // As the command-line helpers switch thinking off for speed: the shortest a model that always thinks can do.
+          ...(TAKES_EFFORT.test(model) && { output_config: { effort: "low" as const } }),
+          // A safety decline is answered by another model in the same call instead of ending the reader's question.
+          ...(TAKES_FALLBACK.test(model) && { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }),
+        },
+        { signal },
+      );
+      for await (const event of stream) {
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta" && event.delta.text !== "") {
+          wrote = true;
+          yield event.delta.text;
+        } else if (event.type === "message_delta" && event.delta.stop_reason === "refusal" && !wrote) {
+          throw new LlmError("failed", "The model declined to answer this. Try other words, or ask about another passage.");
+        }
+      }
+    } catch (error) {
+      throw anthropicFailure(error, request, timeout, config);
+    }
+    if (!wrote) throw new LlmError("failed", "The AI helper ended without giving an answer. Please try again.");
+  }
 
   async function describe(): Promise<OpenRouterView> {
     const { apiKey, keySource, model, modelSource, dailyLimit, baseUrl, baseUrlSource } = resolved();
@@ -287,6 +356,15 @@ export function createOpenRouter(options: OpenRouterOptions): OpenRouter {
     const { baseUrl, apiKey, isOpenRouter } = config;
     if (listing && listing.baseUrl === baseUrl && Date.now() - listing.at < MODELS_KEPT_MS) return listing.models;
     try {
+      if (config.isAnthropic) {
+        // Anthropic's list wants its own headers and has no prices, so it comes through the SDK.
+        const found: OpenRouterModel[] = [];
+        for await (const model of anthropicClient(config).models.list()) {
+          found.push({ id: model.id, name: model.display_name, free: false, promptPerMillion: null, completionPerMillion: null });
+        }
+        listing = { at: Date.now(), baseUrl, models: found };
+        return found;
+      }
       // OpenRouter's list is public, so no key goes with the request; other services may want one even for this.
       const headers: Record<string, string> = { Accept: "application/json", ...(apiKey !== null && !isOpenRouter && { Authorization: `Bearer ${apiKey}` }) };
       const response = await doFetch(`${baseUrl}/models`, { headers, signal: AbortSignal.timeout(15_000) });
@@ -427,13 +505,17 @@ export function createOpenRouter(options: OpenRouterOptions): OpenRouter {
   async function* answer(request: LlmRequest): AsyncGenerator<string, void, undefined> {
     if (request.signal?.aborted) throw new LlmError("aborted", "The request was cancelled.");
     const config = resolved();
-    const { apiKey, model, baseUrl, isOpenRouter } = config;
-    // A service on the admin's own computer may want no key; OpenRouter always does.
-    if (!apiKey && isOpenRouter) throw new LlmError("cli_missing", "The API model has no API key yet. The admin sets one on the admin page.");
+    const { apiKey, model, baseUrl, isOpenRouter, isAnthropic } = config;
+    // A service on the admin's own computer may want no key; OpenRouter and Anthropic always do.
+    if (!apiKey && (isOpenRouter || isAnthropic)) throw new LlmError("cli_missing", "The API model has no API key yet. The admin sets one on the admin page.");
     if (!model) throw new LlmError("cli_missing", "The API model has no model chosen yet. The admin chooses one on the admin page.");
 
     const timeout = AbortSignal.timeout(TASK_PROFILES[request.task].timeoutMs);
     const signal = request.signal ? AbortSignal.any([request.signal, timeout]) : timeout;
+    if (isAnthropic) {
+      yield* anthropicAnswer(request, config, timeout, signal);
+      return;
+    }
     const init: RequestInit = {
       method: "POST",
       headers: {
@@ -581,8 +663,8 @@ export function createOpenRouter(options: OpenRouterOptions): OpenRouter {
     },
     describe,
     available: async () => {
-      const { apiKey, model, isOpenRouter } = resolved();
-      return model !== null && (apiKey !== null || !isOpenRouter);
+      const { apiKey, model, isOpenRouter, isAnthropic } = resolved();
+      return model !== null && (apiKey !== null || !(isOpenRouter || isAnthropic));
     },
     save,
     models: () => listModels(resolved()),
