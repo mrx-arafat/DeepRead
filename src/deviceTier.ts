@@ -199,6 +199,8 @@ export function refreshDeviceTier(next: { override?: TierOverride; measured?: bo
   const resolved = resolveTier(readSignals(), override, measured);
   if (resolved !== current) {
     current = resolved;
+    // The stylesheet reads this attribute, so a change made after the first paint (a measurement, a resize) must reach it too.
+    if (typeof document !== "undefined") document.documentElement.dataset.tier = resolved;
     for (const listener of listeners) listener();
   }
   return resolved;

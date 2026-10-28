@@ -2,7 +2,7 @@ import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } fro
 import { isHighlight, isQuestion, isReflection, sameQuestion } from "../../shared/notes.ts";
 import type { NoteChange } from "../../shared/notes.ts";
 import type { HighlightNote, LangCode, Note, QuestionNote, ReflectionNote } from "../../shared/types.ts";
-import { refreshDeviceTier, TIER_PARAMS, useDeviceTier } from "../deviceTier.ts";
+import { TIER_PARAMS, useDeviceTier } from "../deviceTier.ts";
 import { useSession } from "../profiles/session.tsx";
 import { createNoteSync, noteOwner } from "./noteSync.ts";
 import type { NoteSync, NoteSyncState } from "./noteSync.ts";
@@ -72,11 +72,6 @@ export function useNotes(bookId: string, lang: LangCode): Notes {
       window.removeEventListener("storage", storageChanged);
     };
   }, [bookId, profileId, inheritsOldNotes, key]);
-
-  // Opening the reader re-resolves the tier, which starts the long-frame measurement once a chapter is on the page.
-  useEffect(() => {
-    refreshDeviceTier();
-  }, []);
 
   // The poll period comes from the tier: 0 means no poll, only the events above.
   const tier = useDeviceTier();

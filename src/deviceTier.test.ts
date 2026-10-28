@@ -43,4 +43,17 @@ describe("deviceTier storage", () => {
   it("should forget a measurement older than 30 days", async () => {
     expect(await tierWith(JSON.stringify({ measuredLow: true, at: Date.now() - 31 * 24 * 60 * 60 * 1000 }))).toBe("normal");
   });
+
+  it("should write the new tier to data-tier when a measurement promotes the device", async () => {
+    vi.resetModules();
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
+    vi.stubGlobal("navigator", { deviceMemory: 8, hardwareConcurrency: 8 });
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {}, removeItem: () => {} });
+    const root = { dataset: { tier: "normal" } as Record<string, string> };
+    vi.stubGlobal("document", { documentElement: root });
+    const { deviceTier, refreshDeviceTier } = await import("./deviceTier.ts");
+    expect(deviceTier()).toBe("normal");
+    refreshDeviceTier({ measured: true });
+    expect(root.dataset.tier).toBe("low");
+  });
 });
