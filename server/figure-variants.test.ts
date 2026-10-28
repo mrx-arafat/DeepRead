@@ -133,4 +133,47 @@ describe("responsive private figure variants", () => {
     expect((await app.request(`${url}?width=480`)).status).toBe(404);
     expect(figure).toHaveBeenCalledTimes(2);
   });
+
+  it("revalidates a figure by its name and width, and never answers 304 once the library stops authorizing it", async () => {
+    const figure = vi.fn().mockResolvedValue(new Uint8Array(await createCanvas(600, 300).encode("png")));
+    const app = new Hono<AppEnv>();
+    app.use("*", async (c, next) => {
+      c.set("library", { figure } as unknown as AppEnv["Variables"]["library"]);
+      await next();
+    });
+    app.route("/api/books", booksRoutes({ parsePdf: vi.fn() as unknown as ParsePdf, renderCover: vi.fn() as unknown as RenderCover }));
+    const url = `/api/books/example-book/figures/${"a".repeat(64)}.png?width=480`;
+    const first = await app.request(url);
+    const etag = first.headers.get("etag") ?? "";
+    expect(first.status).toBe(200);
+    expect(etag).toMatch(/^"[^"]+"$/);
+    expect(first.headers.get("cache-control")).toBe("private, no-cache");
+    const same = await app.request(url, { headers: { "if-none-match": etag } });
+    expect([same.status, await same.text()]).toEqual([304, ""]);
+    expect((await app.request(url, { headers: { "if-none-match": '"stale"' } })).status).toBe(200);
+    figure.mockResolvedValue(null);
+    expect((await app.request(url, { headers: { "if-none-match": etag } })).status).toBe(404);
+  });
+
+  it("gives a width the fallback answers with the original's tag and no-cache, never the resized tag", async () => {
+    const original = new Uint8Array(await createCanvas(600, 300).encode("png"));
+    const figure = vi.fn().mockResolvedValue(original);
+    const app = new Hono<AppEnv>();
+    app.use("*", async (c, next) => {
+      c.set("library", { figure } as unknown as AppEnv["Variables"]["library"]);
+      await next();
+    });
+    app.route("/api/books", booksRoutes({
+      parsePdf: vi.fn() as unknown as ParsePdf,
+      renderCover: vi.fn() as unknown as RenderCover,
+      variant: createFigureVariants({ maxConcurrent: 0 }),
+    }));
+    const url = `/api/books/example-book/figures/${"a".repeat(64)}.png`;
+    const full = await app.request(url);
+    const fallback = await app.request(`${url}?width=480`);
+    expect(fallback.status).toBe(200);
+    expect(fallback.headers.get("etag")).toBe(full.headers.get("etag"));
+    expect(fallback.headers.get("cache-control")).toBe("private, no-cache");
+    expect(new Uint8Array(await fallback.arrayBuffer())).toEqual(original);
+  });
 });
