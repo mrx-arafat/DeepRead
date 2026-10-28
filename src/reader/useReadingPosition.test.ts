@@ -324,6 +324,22 @@ describe("useReadingPosition detours", () => {
     expect(page.currentOffset()).toBe(80);
   });
 
+  it.each([0, 300])("keeps the logical offset across text-size taps with a %s px placeholder correction", (correction) => {
+    const page = reader({ place: source });
+    page.scroll(2000 + 4 * 20 - 96);
+    keepingLine(() => page.resize(13));
+    // A placeholder grows above the reader; its scroll correction keeps the visible line still.
+    page.sourceBlock.top += correction;
+    page.returnBlock.top += correction;
+    page.scroll(window.scrollY + correction);
+    keepingLine(() => page.resize(10));
+    expect(page.currentOffset()).toBe(80);
+    // Actual reader scrolling must invalidate the remembered offset.
+    page.scroll(window.scrollY + 40);
+    keepingLine(() => page.resize(20));
+    expect(page.currentOffset()).toBe(100);
+  });
+
   it("should suppress debounced, hidden, pagehide, cleanup and reload progress saves during a detour", () => {
     const page = reader();
     expect(page.render().detour).toEqual({ bookId: "book", returnTo });
