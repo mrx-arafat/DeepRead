@@ -116,13 +116,25 @@ export const TIER_PARAMS: Record<Tier, TierParams> = {
 
 /**
  * The tier for these signals, the reader's override and whether long frames were measured on this device.
- * Pure, so it is tested without a browser. The device rules (memory, cores, Save-Data, measurement) are filled in by
- * the device tier slice; until then a wide screen with a fine pointer is the desktop and everything else a phone.
+ * Pure, so it is tested without a browser. A fine pointer on a wide screen is the desktop, whatever its memory, and takes
+ * no measured promotion. Override On is low everywhere; Off keeps the desktop as it is and makes every other device normal.
  */
 export function resolveTier(signals: TierSignals, override: TierOverride, measured: boolean): Tier {
-  void measured;
+  const desktop = signals.finePointer && signals.wideViewport;
   if (override === "on") return "low";
-  return signals.finePointer && signals.wideViewport ? "desktop" : "normal";
+  if (override === "off") return desktop ? "desktop" : "normal";
+  if (desktop) return "desktop";
+  return measured || lowFromDevice(signals) ? "low" : "normal";
+}
+
+/**
+ * Low-end by what the device reports: Save-Data, 2 GiB of memory or less, or four cores or fewer on a touch screen when
+ * no memory figure exists. "Touch screen" is read as no fine pointer, since TierSignals carries no coarse flag.
+ */
+function lowFromDevice(signals: TierSignals): boolean {
+  if (signals.saveData) return true;
+  if (typeof signals.deviceMemory === "number") return signals.deviceMemory <= 2;
+  return !signals.finePointer && typeof signals.hardwareConcurrency === "number" && signals.hardwareConcurrency <= 4;
 }
 
 /** The signals as this browser reports them; safe where there is no window (tests, the server build). */
@@ -130,7 +142,7 @@ export function readSignals(): TierSignals {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return { finePointer: true, wideViewport: true, saveData: false };
   }
-  const nav = navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
+  const nav = (typeof navigator === "undefined" ? {} : navigator) as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
   return {
     finePointer: window.matchMedia("(pointer: fine)").matches,
     wideViewport: window.matchMedia("(min-width: 72rem)").matches,
@@ -140,13 +152,27 @@ export function readSignals(): TierSignals {
   };
 }
 
+const STORE_KEY = "deepread.deviceTier";
+// The long-frame measurement: frames of FRAME_MS or more that start more than SETTLE_MS after the chapter appears, counted
+// for MEASURE_MS. FRAMES_TO_MEASURE of them promote a device to low for EXPIRY_MS. These describe the measurement, not the
+// reader, so they stay here rather than in TIER_PARAMS.
+const MEASURE_MS = 20_000;
+const SETTLE_MS = 2_000;
+const FRAME_MS = 100;
+const FRAMES_TO_MEASURE = 5;
+const EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
+const WAIT_FOR_CHAPTER_MS = 60_000;
+
 let override: TierOverride = "auto";
 let measured = false;
 let current: Tier | null = null;
+let wired = false;
+let armed = false;
 const listeners = new Set<() => void>();
 
 /** The tier now, resolved on first use. */
 export function deviceTier(): Tier {
+  wire();
   current ??= resolveTier(readSignals(), override, measured);
   return current;
 }
@@ -161,14 +187,104 @@ export function tierParams(): TierParams {
  * `useDeviceTier` readers when it changed. The device tier slice calls this from the setting and from its measurement.
  */
 export function refreshDeviceTier(next: { override?: TierOverride; measured?: boolean } = {}): Tier {
-  if (next.override !== undefined) override = next.override;
+  wire();
+  if (next.override !== undefined && next.override !== override) {
+    override = next.override;
+    // A measurement belongs to the override it was made under, so a new choice forgets it.
+    measured = false;
+    forget();
+  }
   if (next.measured !== undefined) measured = next.measured;
+  arm();
   const resolved = resolveTier(readSignals(), override, measured);
   if (resolved !== current) {
     current = resolved;
     for (const listener of listeners) listener();
   }
   return resolved;
+}
+
+/** Reads the stored measurement and re-resolves on resize, once per page. Storage and window may be missing. */
+function wire(): void {
+  if (wired || typeof window === "undefined") return;
+  wired = true;
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORE_KEY) ?? "null") as { measuredLow?: unknown; at?: unknown } | null;
+    if (stored?.measuredLow === true && typeof stored.at === "number" && Date.now() - stored.at < EXPIRY_MS) measured = true;
+    else if (stored !== null) forget();
+  } catch {
+    // Storage blocked or damaged: no earlier measurement is remembered.
+  }
+  if (typeof window.addEventListener === "function") window.addEventListener("resize", () => refreshDeviceTier());
+}
+
+function forget(): void {
+  try {
+    localStorage.removeItem(STORE_KEY);
+  } catch {
+    // Nothing to forget where storage is blocked.
+  }
+}
+
+function remember(): void {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({ measuredLow: true, at: Date.now() }));
+  } catch {
+    // The promotion still holds for this page.
+  }
+}
+
+/**
+ * Starts the measurement once per page, on a book page in Auto mode, for a phone that is neither desktop nor low by its
+ * signals. It waits for the first chapter to appear, for up to WAIT_FOR_CHAPTER_MS, and then measures.
+ */
+function arm(): void {
+  if (armed || typeof window === "undefined" || typeof document === "undefined" || typeof MutationObserver === "undefined") return;
+  if (override !== "auto" || measured || window.location?.pathname?.startsWith("/book/") !== true) return;
+  const signals = readSignals();
+  if ((signals.finePointer && signals.wideViewport) || lowFromDevice(signals)) return;
+  armed = true;
+  if (document.querySelector("[data-chapter]") !== null) {
+    measure(performance.now());
+    return;
+  }
+  const watch = new MutationObserver(() => {
+    if (document.querySelector("[data-chapter]") === null) return;
+    watch.disconnect();
+    clearTimeout(giveUp);
+    measure(performance.now());
+  });
+  const giveUp = setTimeout(() => watch.disconnect(), WAIT_FOR_CHAPTER_MS);
+  watch.observe(document.body ?? document.documentElement, { childList: true, subtree: true });
+}
+
+/** Counts long frames for MEASURE_MS after the chapter appeared; enough of them promote this device to low. */
+function measure(chapterAt: number): void {
+  if (typeof PerformanceObserver === "undefined") return;
+  const type = PerformanceObserver.supportedEntryTypes?.includes("long-animation-frame") ? "long-animation-frame" : "longtask";
+  let frames = 0;
+  let observer: PerformanceObserver | undefined;
+  const timer = setTimeout(() => done(), MEASURE_MS);
+  const done = () => {
+    observer?.disconnect();
+    clearTimeout(timer);
+  };
+  try {
+    observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.duration >= FRAME_MS && entry.startTime - chapterAt > SETTLE_MS) frames += 1;
+      }
+      if (frames < FRAMES_TO_MEASURE) return;
+      done();
+      if (override !== "auto") return;
+      remember();
+      refreshDeviceTier({ measured: true });
+    });
+    observer.observe({ type, buffered: false });
+  } catch {
+    // Not supported on this browser: the tier stays what the other signals gave.
+    done();
+  }
 }
 
 function subscribe(listener: () => void): () => void {
