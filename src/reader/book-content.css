@@ -75,27 +75,18 @@
   text-align: start;
 }
 
+/* On the desktop a chunk is only a grouping: its rows lay out as if it were not there. */
 .chapter-text > .text-chunk {
   display: contents;
 }
 
-/* Below the margin-note breakpoint, static chunks retain their measured height while distant
-   text skips rendering. Auto preserves browser find, selection and accessibility. Pages
-   and desktop floats use ordinary layout; unsupported browsers do so automatically. */
-@supports (content-visibility: auto) and (contain-intrinsic-block-size: 1px) {
-  @media (width < 72rem) {
-    :root:not([data-layout="pages"]) .chapter-text > .text-chunk {
-      display: block;
-    }
+/* On a phone the chunks near the reader hold their rows and the rest hold their place as empty boxes of the same
+   height (useChunkWindow), so a long chapter costs what is near the reader. Each is a block, so it can have a height. */
+.chapter-text > .text-chunk[data-window] {
+  display: block;
+}
 
-    :root:not([data-layout="pages"]) .chapter-text > .text-chunk[data-mobile-rendering] {
-      content-visibility: auto;
-      contain-intrinsic-block-size: var(--text-chunk-size);
-    }
-
-    /* Keyboard and source-navigation focus rings extend beyond their row. */
-    :root:not([data-layout="pages"]) .chapter-text > .text-chunk[data-mobile-rendering]:focus-within {
-      content-visibility: visible;
-    }
-  }
+.chapter-text > .text-chunk[data-placeholder] {
+  box-sizing: border-box;
+  contain: strict;
 }

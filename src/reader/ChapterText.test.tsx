@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Block } from "../../shared/types.ts";
+import { refreshDeviceTier } from "../deviceTier.ts";
 import { ChapterText, type TextActions } from "./ChapterText.tsx";
 
 const actions: TextActions = {
@@ -66,7 +67,7 @@ describe("preserved book content", () => {
 
   it("ignores invalid style ranges without dropping or rewriting book text", () => {
     expect(render([{ id: "bad", type: "paragraph", page: 1, text: "Exact words", runs: [{ start: -1, end: 4, bold: true }, { start: 0, end: 200, italic: true }] }]))
-      .toContain('data-block="bad" tabindex="0">Exact words</p>');
+      .toContain('data-block="bad" tabindex="0" id="bad" data-chars-before="0">Exact words</p>');
   });
   it("renders a private figure in reading order without making it a selectable text block", () => {
     const html = render([figure, { id: "c1-b1", type: "paragraph", text: "The caption follows.", page: 1 }]);
@@ -81,14 +82,66 @@ describe("preserved book content", () => {
 
   it("preserves code whitespace and escapes markup in one text node", () => {
     const html = render([{ id: "c1-code", type: "code", page: 1, text: "if (x < 2) {\n  return '<script>';\n}" }]);
-    expect(html).toContain('<pre class="book-code" data-block="c1-code" tabindex="0">if (x &lt; 2) {\n  return &#x27;&lt;script&gt;&#x27;;\n}</pre>');
+    expect(html).toContain('<pre class="book-code" data-block="c1-code" tabindex="0" id="c1-code" data-chars-before="0">if (x &lt; 2) {\n  return &#x27;&lt;script&gt;&#x27;;\n}</pre>');
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<span");
   });
 
   it("retains a list's printed marker and selectable offsets", () => {
     expect(render([{ id: "c1-item", type: "paragraph", format: "list-item", page: 1, text: "2. Follow the path." }]))
-      .toContain('<p class="book-list-item" data-block="c1-item" tabindex="0">2. Follow the path.</p>');
+      .toContain('<p class="book-list-item" data-block="c1-item" tabindex="0" id="c1-item" data-chars-before="0">2. Follow the path.</p>');
+  });
+
+  it("counts the chapter text before each block, skipping figures, so progress needs no walk over the rows", () => {
+    const html = render([{ id: "a", type: "paragraph", page: 1, text: "Twelve chars" }, figure, { id: "b", type: "heading", level: 1, page: 1, text: "Head" }, { id: "c", type: "paragraph", page: 1, text: "Last" }]);
+    expect(html).toContain('data-block="a" tabindex="0" id="a" data-chars-before="0"');
+    expect(html).toContain('data-block="b" tabindex="-1" id="b" data-chars-before="12"');
+    expect(html).toContain('data-block="c" tabindex="-1" id="c" data-chars-before="16"');
+    expect(html).toContain('data-book-figure="c1-figure" data-fixed-size="" id="c1-figure"');
+  });
+});
+
+describe("chunk window", () => {
+  afterEach(() => {
+    refreshDeviceTier({ override: "auto" });
+  });
+  const many = (count: number): Block[] => Array.from({ length: count }, (_, at) => ({ id: `b${at}`, type: "paragraph", page: 1, text: `Source ${at}` }));
+  const renderAt = (blocks: Block[], openAt?: string) =>
+    renderToStaticMarkup(<ChapterText blocks={blocks} notes={[]} bookId="shared-book" chapterId="c1" actions={actions} openAt={openAt} />);
+
+  it("keeps every row on the page on the desktop tier, with chunks out of the layout", () => {
+    const html = renderAt(many(100));
+    expect(html.match(/class="row"/g)).toHaveLength(100);
+    expect(html.match(/class="text-chunk" data-chunk="b\d+"/g)).toHaveLength(3);
+    expect(html).not.toContain("data-window");
+    expect(html).not.toContain("data-placeholder");
+  });
+
+  it("opens a phone with the first chunks as rows and the rest as placeholders of a height", () => {
+    refreshDeviceTier({ override: "on" });
+    const html = renderAt(many(100));
+    expect(html.match(/class="row"/g)).toHaveLength(48);
+    expect(html.match(/data-chunk="b\d+" data-window=""/g)).toHaveLength(5);
+    expect(html.match(/data-placeholder="" style="height:\d+px"/g)).toHaveLength(3);
+    expect(html).toContain('data-chunk="b0" data-window=""><div class="row">');
+    expect(html).toContain('data-chunk="b48" data-window="" data-placeholder=""');
+  });
+
+  it("opens a phone with the rows around the saved place as well", () => {
+    refreshDeviceTier({ override: "on" });
+    const html = renderAt(many(100), "b70");
+    expect(html).toContain('data-chunk="b48" data-window=""><div class="row">');
+    expect(html).toContain('data-chunk="b72" data-window=""><div class="row">');
+    expect(html).toContain('data-chunk="b96" data-window="" data-placeholder=""');
+    expect(html.match(/class="row"/g)).toHaveLength(96);
+  });
+
+  it("never leaves a chunk with a note card as a placeholder", () => {
+    refreshDeviceTier({ override: "on" });
+    const note = { id: "n1", chapterId: "c1", blockId: "b90", quote: "Source 90", mode: "simple" as const, lang: "bn" as const };
+    const html = renderToStaticMarkup(<ChapterText blocks={many(100)} notes={[note]} bookId="shared-book" chapterId="c1" actions={actions} />);
+    expect(html).toContain('data-chunk="b72" data-window=""><div class="row">');
+    expect(html).toContain('data-note="n1"');
   });
 
   it.each(["https://example.com/tracker.png", "../source.pdf", "figures/../../secret.png", "data:image/svg+xml,<svg/>", "javascript:alert(1)"])("refuses untrusted figure source %s", (src) => {

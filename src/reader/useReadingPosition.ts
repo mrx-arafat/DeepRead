@@ -6,7 +6,6 @@ import { api } from "../api.ts";
 import { bookPercent, chapterMinutesLeft, indexAtLine } from "./book.ts";
 import { inPages, pageFrame } from "./paging.ts";
 import { blockText, rangeWithin } from "./domText.ts";
-import { releaseMobileRowRendering } from "./useMobileRowRendering.ts";
 
 type Position = {
   /** The chapter at the top of the window. */
@@ -139,7 +138,6 @@ export function keepingLine(change: () => void): void {
   const offset = again?.offset ?? offsetAtLine(block, eyeLine());
   const top = lineTop(block, offset);
   const beforeEye = eyeLine();
-  releaseMobileRowRendering();
   change();
   const afterEye = eyeLine();
   window.scrollBy(0, lineTop(block, offset) - (beforeEye === afterEye ? top : afterEye));

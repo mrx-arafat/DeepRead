@@ -49,9 +49,17 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
   const headingId = titleId(chapter.id);
   // A title page or a licence needs no preview or summary, and neither does a one-page preface.
   const aids = kind === "body" && (summary?.wordCount ?? 0) >= AID_MIN_WORDS;
+  // The chapter's text as counted for progress, and its last block, so a reading place needs no walk over the rows,
+  // which may be off the page (ChapterText keeps only the rows near the reader on a phone).
+  const text = useMemo(() => {
+    const readable = blocks.filter((block) => block.type !== "image");
+    return { chars: readable.reduce((sum, block) => sum + block.text.length, 0), last: readable.at(-1)?.id };
+  }, [blocks]);
+  // The reader's saved place in this chapter, so its rows are on the page before the opening scroll looks for them.
+  const openAt = book.progress?.chapterId === chapter.id ? book.progress.blockId : undefined;
 
   return (
-    <article ref={translationEligibility.ref} className="chapter" data-chapter={chapter.id} aria-labelledby={headingId}>
+    <article ref={translationEligibility.ref} className="chapter" data-chapter={chapter.id} data-chars={text.chars} data-last-block={text.last} aria-labelledby={headingId}>
       <header className="chapter-head">
         <p className="chapter-meta">
           {kind === "front"
@@ -94,6 +102,7 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
         chapterId={chapter.id}
         actions={actions}
         translation={translated ? { lang, blocks: translated } : undefined}
+        openAt={openAt}
       />
       {aids && <ChapterAid kind="recap" bookId={book.id} chapterId={chapter.id} lang={lang} />}
       {aids && (
