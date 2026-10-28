@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Block } from "../../shared/types.ts";
-import { calibrate, ChunkHeights, chunkKeys, chunksOf, defaultCalibration, estimateHeight, initialMounted, sameSet, windowOf } from "./chunkWindow.ts";
+import { calibrate, carriedMounted, ChunkHeights, chunkKeys, chunksOf, defaultCalibration, estimateHeight, initialMounted, sameSet, windowOf } from "./chunkWindow.ts";
 
 const paragraphs = (count: number, prefix = "b"): Block[] =>
   Array.from({ length: count }, (_, at) => ({ id: `${prefix}${at}`, type: "paragraph", page: 1, text: `Paragraph ${at} `.repeat(8) }));
@@ -19,12 +19,23 @@ describe("windowOf", () => {
   const chunks = chunksOf(paragraphs(120), 24);
 
   it("mounts near or pinned chunks, keeps a mounted chunk inside the keep margin, and drops the rest", () => {
-    const next = windowOf(chunks, { mounted: set("b0", "b24", "b96"), near: set("b48"), kept: set("b24", "b48", "b72"), pinned: set("b96") });
+    const reported = set("b0", "b24", "b48", "b72", "b96");
+    const next = windowOf(chunks, { mounted: set("b0", "b24", "b96"), near: set("b48"), kept: set("b24", "b48", "b72"), pinned: set("b96"), reported });
     expect([...next]).toEqual(["b24", "b48", "b96"]);
   });
 
   it("never mounts a chunk that is only inside the keep margin", () => {
-    expect([...windowOf(chunks, { mounted: set(), near: set(), kept: set("b48"), pinned: set() })]).toEqual([]);
+    expect([...windowOf(chunks, { mounted: set(), near: set(), kept: set("b48"), pinned: set(), reported: set("b48") })]).toEqual([]);
+  });
+
+  it("keeps a mounted chunk until the keep observer has reported it, and drops one it reported outside", () => {
+    expect([...windowOf(chunks, { mounted: set("b0", "b24"), near: set(), kept: set(), pinned: set(), reported: set("b0") })]).toEqual(["b24"]);
+  });
+
+  it("carries the mounted rows into a new chunking by block id", () => {
+    const wide = chunksOf(paragraphs(120), 48);
+    expect([...carriedMounted(wide, set("b48"), chunkKeys(chunks))]).toEqual(["b48", "b72"]);
+    expect([...carriedMounted(chunks, set("b24"), chunkKeys(wide))]).toEqual(["b0"]);
   });
 
   it("compares sets by members", () => {

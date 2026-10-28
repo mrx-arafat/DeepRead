@@ -97,7 +97,7 @@ export const TIER_PARAMS: Record<Tier, TierParams> = {
   low: {
     windowing: true,
     rowsPerChunk: 24,
-    mountRootMargin: "125% 0px 125% 0px",
+    mountRootMargin: "150% 0px 150% 0px",
     keepRootMargin: "250% 0px 250% 0px",
     initialChunks: 2,
     chapterCacheEntries: 12,

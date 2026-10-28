@@ -10,6 +10,7 @@ import type { TierParams } from "../deviceTier.ts";
 import { indexAtLine } from "./book.ts";
 import {
   calibrate,
+  carriedMounted,
   charsOf,
   type Chunk,
   ChunkHeights,
@@ -91,24 +92,41 @@ function rowAtEyeLine(): HTMLElement | null {
   return rows[Math.min(rowAt, rows.length - 1)] ?? section;
 }
 
+/** The block at the eye line (found again by id when a rechunking rebuilds its element), where it was, and the anchoring setting to give back. */
+type HeldRow = { element: HTMLElement; id: string; top: number; previous: string } | null;
+
 /**
- * Runs `change`, which moves things above the reader (placeholders changing size, chunks mounting), and scrolls by what
- * it moved the row at the eye line, so the line being read stays where it is. The browser's own anchoring is off
- * meanwhile, as in keepInPlace (useChapterFlow.ts): where it acts it would move the text a second time.
+ * Notes where the row at the reader's eye line is and turns the browser's own anchoring off, as in keepInPlace
+ * (useChapterFlow.ts): where it acts it would move the text a second time. `releaseRow` scrolls by what moved the row.
  */
-function keepingRow(change: () => void): void {
-  const anchor = rowAtEyeLine();
-  const before = anchor?.getBoundingClientRect().top;
+function holdRow(): HeldRow {
+  const row = rowAtEyeLine();
+  if (!row) return null;
+  const element = row.querySelector<HTMLElement>("[data-block]") ?? row;
   const root = document.documentElement;
   const previous = root.style.overflowAnchor;
   root.style.overflowAnchor = "none";
-  change();
-  if (anchor?.isConnected && before !== undefined) window.scrollBy({ top: anchor.getBoundingClientRect().top - before, behavior: "instant" });
-  if (previous !== "none") {
+  return { element, id: element.id, top: element.getBoundingClientRect().top, previous };
+}
+
+/** Scrolls by what moved the held row since `holdRow`, so the line being read stays where it is, and gives anchoring back. */
+function releaseRow(held: HeldRow): void {
+  if (!held) return;
+  const element = held.element.isConnected ? held.element : held.id ? document.getElementById(held.id) : null;
+  if (element) window.scrollBy({ top: element.getBoundingClientRect().top - held.top, behavior: "instant" });
+  const root = document.documentElement;
+  if (held.previous !== "none") {
     requestAnimationFrame(() => {
-      if (root.style.overflowAnchor === "none") root.style.overflowAnchor = previous;
+      if (root.style.overflowAnchor === "none") root.style.overflowAnchor = held.previous;
     });
   }
+}
+
+/** Runs `change`, which moves things above the reader (placeholders changing size, chunks mounting), with the row at the eye line held still. */
+function keepingRow(change: () => void): void {
+  const held = holdRow();
+  change();
+  releaseRow(held);
 }
 
 /** Whether the browser keeps the text in view still by itself when something above it changes size. */
@@ -119,9 +137,9 @@ const typographySignature = (): string => {
   return epochOf([...TYPOGRAPHY_ATTRIBUTES.map((attribute) => root.getAttribute(attribute)), root.style.getPropertyValue("--book-size")]);
 };
 
-type Layout = { signature: string; width: number; fontSize: number; lineHeight: number; fonts: number };
+type Layout = { signature: string; width: number; fontSize: number; lineHeight: number };
 
-const DEFAULT_LAYOUT: Layout = { signature: "", width: 360, fontSize: 19, lineHeight: 30, fonts: 0 };
+const DEFAULT_LAYOUT: Layout = { signature: "", width: 360, fontSize: 19, lineHeight: 30 };
 
 /** The column as the page already has it (another chapter's text), so a chapter arriving above the reader starts with real estimates. */
 function initialLayout(): Layout {
@@ -130,7 +148,7 @@ function initialLayout(): Layout {
   if (!column) return { ...DEFAULT_LAYOUT, signature: typographySignature() };
   const style = getComputedStyle(column);
   const fontSize = parseFloat(style.fontSize) || DEFAULT_LAYOUT.fontSize;
-  return { signature: typographySignature(), width: column.getBoundingClientRect().width || DEFAULT_LAYOUT.width, fontSize, lineHeight: parseFloat(style.lineHeight) || fontSize * 1.6, fonts: 0 };
+  return { signature: typographySignature(), width: column.getBoundingClientRect().width || DEFAULT_LAYOUT.width, fontSize, lineHeight: parseFloat(style.lineHeight) || fontSize * 1.6 };
 }
 
 export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunks, params, openAt, translated }: Options): ChunkWindow {
@@ -145,7 +163,7 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
   };
   const [mounted, setMounted] = useState<Set<string>>(opening);
   const [layout, setLayout] = useState<Layout>(() => (windowing ? initialLayout() : DEFAULT_LAYOUT));
-  const epoch = epochOf([layout.signature, layout.width, layout.fonts, translated, params.rowsPerChunk]);
+  const epoch = epochOf([layout.signature, layout.width, translated, params.rowsPerChunk]);
 
   // Read by observer callbacks, which must see the latest without being recreated.
   const mountedRef = useRef(mounted);
@@ -158,6 +176,11 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
   noteChunksRef.current = noteChunks;
   const near = useRef(new Set<string>());
   const kept = useRef(new Set<string>());
+  // Chunks the keep observer has reported at all: one mounted before it has (the opening set, a mount on request, a
+  // rechunking) counts as kept until it says otherwise, so nothing is evicted before the observers have spoken.
+  const reported = useRef(new Set<string>());
+  // The row at the eye line across a rechunking: held while rendering, released in a layout effect after the commit.
+  const held = useRef<HeldRow>(null);
   // Pins of this chapter's own: the selection's ends and the focused row, besides what the registry pins.
   const local = useRef(new Set<string>());
   const grace = useRef(new Map<string, number>());
@@ -166,6 +189,12 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
   // Measured in this epoch, for calibrating the estimates of chunks not measured yet.
   const samples = useRef<{ epoch: string; byKey: Map<string, HeightSample> }>({ epoch: "", byKey: new Map() });
   if (samples.current.epoch !== epoch) samples.current = { epoch, byKey: samplesFor(chapterKey, epoch) };
+
+  /** Takes `next` as the mounted set. A chunk mounting gets a new element, which the keep observer has not reported yet. */
+  const adopt = useCallback((next: Set<string>): void => {
+    for (const key of next) if (!mountedRef.current.has(key)) reported.current.delete(key);
+    mountedRef.current = next;
+  }, []);
 
   /** The chunks that should show rows now, and the commit that gets there, with the eye line held where needed. */
   const recompute = useCallback(() => {
@@ -178,7 +207,7 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
       if (key) pinned.add(key);
     }
     const previous = mountedRef.current;
-    const next = windowOf(chunksRef.current, { mounted: previous, near: near.current, kept: kept.current, pinned });
+    const next = windowOf(chunksRef.current, { mounted: previous, near: near.current, kept: kept.current, pinned, reported: reported.current });
     if (sameSet(next, previous)) return;
     const mounting = [...next].filter((key) => !previous.has(key));
     // Where the browser does not anchor the scroll itself, a chunk growing from a placeholder above the reader is
@@ -187,11 +216,11 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
       const element = container.current?.querySelector<HTMLElement>(`[data-chunk="${CSS.escape(key)}"]`);
       return element !== null && element !== undefined && element.getBoundingClientRect().bottom < eyeLine();
     });
-    mountedRef.current = next;
+    adopt(next);
     if (mountsAbove) keepingRow(() => flushSync(() => setMounted(next)));
     else if (mounting.length === 0) startTransition(() => setMounted(next));
     else setMounted(next);
-  }, [windowing, chapterId, keyOf, container]);
+  }, [windowing, chapterId, keyOf, container, adopt]);
   const recomputeRef = useRef(recompute);
   recomputeRef.current = recompute;
   const alive = useRef(true);
@@ -212,10 +241,11 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
   const observe = useCallback((): NonNullable<typeof observers.current> | null => {
     if (!windowing || typeof IntersectionObserver === "undefined" || typeof ResizeObserver === "undefined") return null;
     observers.current ??= (() => {
-      const track = (set: Set<string>) => (entries: IntersectionObserverEntry[]) => {
+      const track = (set: Set<string>, seen?: Set<string>) => (entries: IntersectionObserverEntry[]) => {
         for (const entry of entries) {
           const key = (entry.target as HTMLElement).dataset.chunk;
           if (!key) continue;
+          seen?.add(key);
           if (entry.isIntersecting) set.add(key);
           else set.delete(key);
         }
@@ -236,7 +266,7 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
       });
       return {
         near: new IntersectionObserver(track(near.current), { rootMargin: params.mountRootMargin }),
-        keep: new IntersectionObserver(track(kept.current), { rootMargin: params.keepRootMargin }),
+        keep: new IntersectionObserver(track(kept.current, reported.current), { rootMargin: params.keepRootMargin }),
         size,
       };
     })();
@@ -260,8 +290,12 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
             set.near.unobserve(element);
             set.keep.unobserve(element);
             set.size.unobserve(element);
+            // A placeholder becoming rows (or back) passes here too, its element replaced: while the key stays mounted
+            // its reports stay with it, so the swap never reads as the observers having dropped the chunk.
+            if (mountedRef.current.has(key)) return;
             near.current.delete(key);
             kept.current.delete(key);
+            reported.current.delete(key);
           };
         };
         refs.current.set(key, ref);
@@ -271,11 +305,13 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
     [observe],
   );
 
-  // The tier or the chapter changed its chunking: start over with what opens mounted.
+  // A tier or chapter change rechunks the rows. Handled while rendering, before the commit: the rows around the reader
+  // are carried over by block id, so the commit shows them as rows, and the row at the eye line is held where the reader
+  // saw it, so the commit can be corrected for the far placeholders changing height. The observers start over on the
+  // new elements, which they report before anything is evicted.
   const chunkingRef = useRef({ chunks, rowsPerChunk: params.rowsPerChunk, windowing });
-  useLayoutEffect(() => {
-    const previous = chunkingRef.current;
-    if (previous.chunks === chunks && previous.rowsPerChunk === params.rowsPerChunk && previous.windowing === windowing) return;
+  const chunking = chunkingRef.current;
+  if (chunking.chunks !== chunks || chunking.rowsPerChunk !== params.rowsPerChunk || chunking.windowing !== windowing) {
     chunkingRef.current = { chunks, rowsPerChunk: params.rowsPerChunk, windowing };
     observers.current?.near.disconnect();
     observers.current?.keep.disconnect();
@@ -284,9 +320,26 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
     refs.current.clear();
     near.current.clear();
     kept.current.clear();
-    const next = opening();
+    reported.current.clear();
+    let next = new Set<string>();
+    if (windowing) {
+      held.current ??= holdRow();
+      // Without windowing every chunk was rows.
+      const was = chunking.windowing ? mountedRef.current : new Set(chunking.chunks.map((chunk) => chunk.key));
+      next = carriedMounted(chunking.chunks, was, keyOf);
+      for (const key of noteChunks) next.add(key);
+      if (next.size === 0) next = opening();
+    }
     mountedRef.current = next;
     setMounted(next);
+  }
+
+  // The correction for a rechunking, once its rows are on the page: flushSync is not allowed inside a layout effect,
+  // so the hold spans the commit instead of wrapping a flush.
+  useLayoutEffect(() => {
+    if (!held.current) return;
+    releaseRow(held.current);
+    held.current = null;
   });
 
   useEffect(
@@ -310,12 +363,12 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
       if (!mountedRef.current.has(key)) {
         const next = new Set(mountedRef.current);
         next.add(key);
-        mountedRef.current = next;
+        adopt(next);
         setMounted(next);
       }
       return true;
     });
-  }, [windowing, chapterId, keyOf]);
+  }, [windowing, chapterId, keyOf, adopt]);
 
   useEffect(() => (windowing ? subscribePins(() => recomputeRef.current()) : undefined), [windowing]);
 
@@ -361,8 +414,10 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
     };
   }, [windowing, container]);
 
-  // The column's width, the typography and the fonts: each change starts a new epoch of heights. Applied with the row at
-  // the eye line held still, since placeholders above it change size.
+  // The column's width and the typography: each change starts a new epoch of heights, applied with the row at the eye
+  // line held still, since placeholders above it change size. A font arriving (the book's, a translation's script) keeps
+  // the epoch: the size observer re-measures the mounted chunks under it, so only the placeholders are re-estimated and
+  // the eye line corrected.
   useLayoutEffect(() => {
     const element = container.current;
     if (!windowing || !element || typeof ResizeObserver === "undefined") return;
@@ -377,7 +432,6 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
     };
     let width = element.getBoundingClientRect().width;
     let signature = typographySignature();
-    let fonts = 0;
     // Synchronous, inside the commit: a chapter put above the reader (keepInPlace) is measured before its correction.
     const measured = measureLayout();
     setLayout((current) =>
@@ -399,10 +453,7 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
       update({ signature, ...measureLayout() });
     });
     changed.observe(document.documentElement, { attributes: true, attributeFilter: [...TYPOGRAPHY_ATTRIBUTES, "style"] });
-    const loaded = () => {
-      fonts += 1;
-      update({ fonts, ...measureLayout() });
-    };
+    const loaded = () => update(measureLayout());
     document.fonts?.addEventListener("loadingdone", loaded);
     return () => {
       resized.disconnect();
@@ -410,6 +461,21 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
       document.fonts?.removeEventListener("loadingdone", loaded);
     };
   }, [windowing, container]);
+
+  // A new epoch measures every mounted chunk again: the size observer reports changes only, and a chunk whose size the
+  // change left alone would otherwise have no height in the epoch, and get an estimate when it unmounts.
+  const measuredEpoch = useRef(epoch);
+  useLayoutEffect(() => {
+    if (measuredEpoch.current === epoch) return;
+    measuredEpoch.current = epoch;
+    const size = observers.current?.size;
+    const element = container.current;
+    if (!size || !element) return;
+    for (const chunk of element.querySelectorAll<HTMLElement>(".text-chunk[data-chunk]:not([data-placeholder])")) {
+      size.unobserve(chunk);
+      size.observe(chunk);
+    }
+  }, [epoch, container]);
 
   // Marks and highlights painted on rows repaint once the rows have come or gone.
   useEffect(() => {
