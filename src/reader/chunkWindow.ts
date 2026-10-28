@@ -33,13 +33,19 @@ export type WindowState = {
   kept: ReadonlySet<string>;
   /** Chunks something is using (a card, the voice, the keyboard, a selection) and chunks with a note card. */
   pinned: ReadonlySet<string>;
+  /** Chunks the keep observer has reported at all: a mounted chunk it has not seen yet (it opened, or was mounted on request) counts as kept. */
+  reported: ReadonlySet<string>;
 };
 
-/** The chunks that should show their rows: near or pinned ones mount, and a mounted one stays while it is still kept. */
+/**
+ * The chunks that should show their rows: near or pinned ones mount, and a mounted one stays while it is still kept, or
+ * until the keep observer has reported it at all (so nothing is evicted before the observers have spoken).
+ */
 export function windowOf(chunks: readonly Chunk[], state: WindowState): Set<string> {
   const next = new Set<string>();
   for (const { key } of chunks) {
-    if (state.near.has(key) || state.pinned.has(key) || (state.mounted.has(key) && state.kept.has(key))) next.add(key);
+    const stays = state.mounted.has(key) && (state.kept.has(key) || !state.reported.has(key));
+    if (state.near.has(key) || state.pinned.has(key) || stays) next.add(key);
   }
   return next;
 }
@@ -59,6 +65,19 @@ export function initialMounted(chunks: readonly Chunk[], initialChunks: number, 
     for (const chunk of at === -1 ? [] : chunks.slice(Math.max(0, at - 1), at + 2)) mounted.add(chunk.key);
   }
   return mounted;
+}
+
+/** The chunks of a new chunking that hold the rows mounted in the old one, so a tier change keeps the rows around the reader. */
+export function carriedMounted(previous: readonly Chunk[], mounted: ReadonlySet<string>, keyOf: ReadonlyMap<string, string>): Set<string> {
+  const next = new Set<string>();
+  for (const chunk of previous) {
+    if (!mounted.has(chunk.key)) continue;
+    for (const block of chunk.blocks) {
+      const key = keyOf.get(block.id);
+      if (key) next.add(key);
+    }
+  }
+  return next;
 }
 
 /** A placeholder's height is guessed from its text: so many pixels a character, plus so many a block (its margins and the part of its last line left empty). */
