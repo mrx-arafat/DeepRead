@@ -154,4 +154,26 @@ describe("responsive private figure variants", () => {
     figure.mockResolvedValue(null);
     expect((await app.request(url, { headers: { "if-none-match": etag } })).status).toBe(404);
   });
+
+  it("gives a width the fallback answers with the original's tag and no-cache, never the resized tag", async () => {
+    const original = new Uint8Array(await createCanvas(600, 300).encode("png"));
+    const figure = vi.fn().mockResolvedValue(original);
+    const app = new Hono<AppEnv>();
+    app.use("*", async (c, next) => {
+      c.set("library", { figure } as unknown as AppEnv["Variables"]["library"]);
+      await next();
+    });
+    app.route("/api/books", booksRoutes({
+      parsePdf: vi.fn() as unknown as ParsePdf,
+      renderCover: vi.fn() as unknown as RenderCover,
+      variant: createFigureVariants({ maxConcurrent: 0 }),
+    }));
+    const url = `/api/books/example-book/figures/${"a".repeat(64)}.png`;
+    const full = await app.request(url);
+    const fallback = await app.request(`${url}?width=480`);
+    expect(fallback.status).toBe(200);
+    expect(fallback.headers.get("etag")).toBe(full.headers.get("etag"));
+    expect(fallback.headers.get("cache-control")).toBe("private, no-cache");
+    expect(new Uint8Array(await fallback.arrayBuffer())).toEqual(original);
+  });
 });

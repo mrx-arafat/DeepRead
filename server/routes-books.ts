@@ -182,6 +182,13 @@ function notModified(c: Context, tag: string): boolean {
   return header !== undefined && header.split(",").some((candidate) => candidate.trim().replace(/^W\//, "") === tag);
 }
 
+const figureHeaders = (etag: string, cacheControl: string): Record<string, string> => ({
+  "Content-Type": "image/png",
+  "Cache-Control": cacheControl,
+  ETag: etag,
+  "X-Content-Type-Options": "nosniff",
+});
+
 /** JSON that revalidates: the tag is the hash of the bytes sent, so an unchanged body answers 304 without one. */
 function revalidatedJson(c: Context, text: string): Response {
   const headers = { "Content-Type": "application/json", "Cache-Control": "private, no-cache", ETag: strongTag(text) };
@@ -189,8 +196,8 @@ function revalidatedJson(c: Context, text: string): Response {
 }
 
 /** The books of whoever is reading: every route works on c.var.library. */
-export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover }): Hono<AppEnv> {
-  const variant = createFigureVariants();
+export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover; variant?: ReturnType<typeof createFigureVariants> }): Hono<AppEnv> {
+  const variant = deps.variant ?? createFigureVariants();
   const { parsePdf, renderCover } = deps;
   const routes = new Hono<AppEnv>();
 
@@ -403,15 +410,19 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     const name = c.req.param("name");
     const data = await c.var.library.figure(id, name);
     if (!data) return apiError(c, 404, "figure_not_found", "This book figure could not be found.");
-    // The name is the hash of the figure's bytes, so the name with its width says exactly which image this response is.
-    const headers = {
-      "Content-Type": "image/png",
-      "Cache-Control": "private, max-age=86400",
-      ETag: strongTag(`${name}:${width ?? "original"}`),
-      "X-Content-Type-Options": "nosniff",
-    };
-    if (notModified(c, headers.ETag)) return c.body(null, 304, headers);
-    return c.body(width ? await variant(data, width) : data, 200, headers);
+    // The name is the hash of the figure's bytes, so a width names exactly one resized variant of it.
+    const variantTag = width ? strongTag(`${name}:${width}`) : null;
+    // Only a real resize is ever tagged with its width, so a tag the phone already holds needs no resize at all.
+    if (variantTag && notModified(c, variantTag)) return c.body(null, 304, figureHeaders(variantTag, "private, max-age=86400"));
+    const body = width ? await variant(data, width) : data;
+    // Anything that is not a resize (the figure is no wider than the width, the image is not a PNG, the resize queue is full,
+    // or a resize failed) comes back as the original bytes. Those answer under the original's tag, with no-cache for a width
+    // request, so the full-size bytes are never kept under a resized tag and a later request still gets the real variant.
+    const resized = variantTag !== null && body !== data;
+    const etag = variantTag && resized ? variantTag : strongTag(`${name}:original`);
+    const cacheControl = width && !resized ? "private, no-cache" : "private, max-age=86400";
+    if (notModified(c, etag)) return c.body(null, 304, figureHeaders(etag, cacheControl));
+    return c.body(body, 200, figureHeaders(etag, cacheControl));
   });
 
   routes.get("/:id/cover", async (c) => {
