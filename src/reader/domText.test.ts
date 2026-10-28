@@ -33,6 +33,7 @@ describe("logical offsets through inline styles", () => {
     vi.stubGlobal("CSS", { escape: (value: string) => value });
     const ranges: Array<{ start?: [unknown, number]; end?: [unknown, number] }> = [];
     vi.stubGlobal("document", {
+      getElementById: () => null,
       querySelector: () => block,
       caretPositionFromPoint: () => ({ offsetNode: styled, offset: 2 }),
       createRange: () => {

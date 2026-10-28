@@ -5,6 +5,7 @@ import { HIGHLIGHT_COLORS } from "../../shared/types.ts";
 import type { Block, HighlightColor } from "../../shared/types.ts";
 import { matchQuoteAt } from "./quoteSource.ts";
 import { blockText, offsetInBlock, rangeWithin } from "./domText.ts";
+import { blockElement } from "./mountRegistry.ts";
 
 export type Span = { start: number; end: number };
 
@@ -249,8 +250,7 @@ export function wordRangeAtPoint(x: number, y: number): Range | null {
 
 /** A range over part of a rendered block (or chapter title), or null if it is not on the page. */
 export function rangeInBlock(blockId: string, span: Span): Range | null {
-  // A chapter's title is read like a block but is not one: it is found by its id.
-  const element = document.querySelector(`[data-block="${CSS.escape(blockId)}"]`) ?? document.getElementById(blockId);
+  const element = blockElement(blockId);
   return element ? rangeWithin(element, span.start, span.end) : null;
 }
 
