@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { LangCode } from "../../shared/types.ts";
+import { tierParams, useDeviceTier } from "../deviceTier.ts";
+import { registerTranslationPriority, setTranslationPriority } from "./translationCache.ts";
 
 /** The opening chapter starts immediately; other loaded chapters translate when approached.
  * Once approached, a chapter keeps its translation while the reader scrolls away from it. */
@@ -14,6 +16,15 @@ export function useChapterTranslationEligibility(
   const key = JSON.stringify([bookId, chapterId, lang]);
   const [activation, setActivation] = useState({ key, active: false });
   const active = activation.key === key && activation.active;
+  const tier = useDeviceTier();
+
+  useEffect(() => {
+    if (on) return registerTranslationPriority(key, JSON.stringify([bookId, lang]), false);
+  }, [on, key, bookId, lang]);
+
+  useEffect(() => {
+    if (on) setTranslationPriority(key, translateNow);
+  }, [on, key, translateNow]);
 
   useEffect(() => {
     if (!on) {
@@ -43,13 +54,13 @@ export function useChapterTranslationEligibility(
         setActivation({ key, active: true });
         observer.disconnect();
       }
-    }, { rootMargin: "600px 0px 600px 0px" });
+    }, { rootMargin: tierParams().translationRootMargin });
     observer.observe(element);
     return () => {
       live = false;
       observer.disconnect();
     };
-  }, [on, translateNow, key, active, activation.key]);
+  }, [on, translateNow, key, active, activation.key, tier]);
 
   return { ref, eligible: on && (translateNow || active) };
 }
