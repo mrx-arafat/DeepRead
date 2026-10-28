@@ -412,6 +412,17 @@ select {
   }
 }
 
+/* Light reading (slower phones): no transitions or streaming animations. The page-turn slide stays, it is composited. */
+:root[data-tier="low"] .reading-progress > span,
+:root[data-tier="low"] .chapter {
+  transition: none;
+}
+
+:root[data-tier="low"] .skeleton,
+:root[data-tier="low"] .writing {
+  animation: none;
+}
+
 /* Library */
 
 .library {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } fro
 import { isHighlight, isQuestion, isReflection, sameQuestion } from "../../shared/notes.ts";
 import type { NoteChange } from "../../shared/notes.ts";
 import type { HighlightNote, LangCode, Note, QuestionNote, ReflectionNote } from "../../shared/types.ts";
+import { TIER_PARAMS, useDeviceTier } from "../deviceTier.ts";
 import { useSession } from "../profiles/session.tsx";
 import { createNoteSync, noteOwner } from "./noteSync.ts";
 import type { NoteSync, NoteSyncState } from "./noteSync.ts";
@@ -31,9 +32,6 @@ export type Notes = {
   discardRejectedNotes: () => void;
 };
 
-/** How often a page in view looks for notes added on another device. */
-const REFRESH_MS = 30_000;
-
 /** The reader's notes for the whole book, kept with the book (see noteSync.ts). New questions are asked in `lang`. */
 export function useNotes(bookId: string, lang: LangCode): Notes {
   const [snapshot, setSnapshot] = useState<{ key: string; notes: Note[]; status: NoteSyncState } | null>(null);
@@ -53,8 +51,8 @@ export function useNotes(bookId: string, lang: LangCode): Notes {
     });
     sync.current = { key, opened };
     void opened.load();
-    // Notes added on another device show up without a reload: look again when the reader comes back to the page, and now
-    // and then while it is in view. A hidden tab does not poll.
+    // Notes added on another device show up without a reload: look again when the reader comes back to the page, and, on
+    // tiers that poll, now and then while it is in view. A hidden tab does not poll.
     const refresh = () => void opened.refresh();
     const refreshIfVisible = () => {
       if (document.visibilityState === "visible") refresh();
@@ -66,16 +64,25 @@ export function useNotes(bookId: string, lang: LangCode): Notes {
       if (event.key === null || event.key.startsWith(`deepread.pendingNotes.${profileId ?? "single"}.${bookId}`)) refresh();
     };
     window.addEventListener("storage", storageChanged);
-    const timer = setInterval(refreshIfVisible, REFRESH_MS);
     return () => {
       opened.close();
       document.removeEventListener("visibilitychange", refreshIfVisible);
       window.removeEventListener("focus", refresh);
       window.removeEventListener("online", refresh);
       window.removeEventListener("storage", storageChanged);
-      clearInterval(timer);
     };
   }, [bookId, profileId, inheritsOldNotes, key]);
+
+  // The poll period comes from the tier: 0 means no poll, only the events above.
+  const tier = useDeviceTier();
+  useEffect(() => {
+    const every = TIER_PARAMS[tier].notesPollMs;
+    if (every <= 0) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void sync.current?.opened.refresh();
+    }, every);
+    return () => clearInterval(timer);
+  }, [tier]);
 
   // Kept apart, so a highlight never shows as a card nor changes which card is the newest. A note of a kind this
   // version does not know (kept by a newer DeepRead on another device) is neither, and is left as it is.

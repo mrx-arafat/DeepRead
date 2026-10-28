@@ -1,6 +1,7 @@
 import { BookmarkCheck, BookmarkPlus, X } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { LANGUAGES, MAX_SAVED_ANSWER_CHARS, type ExplainMode, type ExplainRequest, type LangCode, type QuestionNote } from "../../shared/types.ts";
+import { useDeviceTier } from "../deviceTier.ts";
 import { parseSections, RichText } from "./RichText.tsx";
 import { useAiStream } from "./useAiStream.ts";
 
@@ -43,24 +44,32 @@ export function NoteCard({ note, bookId, latest, onClose, onSaveAnswer }: Props)
   const canSave = !saved && answer.status === "done" && Boolean(answer.text.trim()) && answer.text.length <= MAX_SAVED_ANSWER_CHARS;
   const panelRef = useRef<HTMLElement>(null);
 
+  const tier = useDeviceTier();
   useLayoutEffect(() => {
     if (!open) return;
     const panel = panelRef.current;
     if (!panel) return;
+    let frame: number | undefined;
     const setPanelHeight = () => {
+      frame = undefined;
       const top = panel.getBoundingClientRect().top;
       const footerTop = document.querySelector(".reading-footer")?.getBoundingClientRect().top ?? window.innerHeight;
       const bottom = Math.min(window.innerHeight, footerTop) - 12;
       panel.style.setProperty("--panel-max", `${Math.max(48, bottom - top)}px`);
     };
-    setPanelHeight();
-    window.addEventListener("resize", setPanelHeight);
-    window.addEventListener("scroll", setPanelHeight, { passive: true });
-    return () => {
-      window.removeEventListener("resize", setPanelHeight);
-      window.removeEventListener("scroll", setPanelHeight);
+    // One write per frame however many scroll events arrive. The light tier follows the window size alone.
+    const schedule = () => {
+      frame ??= requestAnimationFrame(setPanelHeight);
     };
-  }, [open]);
+    setPanelHeight();
+    window.addEventListener("resize", schedule);
+    if (tier !== "low") window.addEventListener("scroll", schedule, { passive: true });
+    return () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule);
+    };
+  }, [open, tier]);
 
   return (
     <aside

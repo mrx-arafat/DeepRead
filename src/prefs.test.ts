@@ -32,6 +32,7 @@ describe("readPrefs", () => {
       highlight: "yellow",
       chapterNotes: true,
       translation: false,
+      lightReading: "auto",
     });
     expect(readPrefs({ highlight: "pink" }, false).highlight).toBe("pink");
   });
@@ -74,6 +75,13 @@ describe("readPrefs", () => {
     expect(readPrefs(null, false).translation).toBe(false);
     expect(readPrefs({ translation: true }, false).translation).toBe(true);
     expect(readPrefs({ translation: "yes" }, false).translation).toBe(false);
+  });
+
+  it("should keep the light reading choice that was made, and fall back to auto for anything else", () => {
+    expect(readPrefs(null, false).lightReading).toBe("auto");
+    expect(readPrefs({ lightReading: "on" }, false).lightReading).toBe("on");
+    expect(readPrefs({ lightReading: "off" }, false).lightReading).toBe("off");
+    expect(readPrefs({ lightReading: "always" }, false).lightReading).toBe("auto");
   });
 
   it("should start a first-time reader on the system's light or dark", () => {
