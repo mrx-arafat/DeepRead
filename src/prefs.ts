@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { DEFAULT_LANG, HIGHLIGHT_COLORS, LANGUAGES, type HighlightColor, type LangCode } from "../shared/types.ts";
+import { deviceTier, refreshDeviceTier } from "./deviceTier.ts";
 
 /** The page colours, as on an e-reader: white paper, warm sepia paper, or light text on black. */
 export const THEMES = ["light", "sepia", "dark"] as const;
@@ -14,6 +15,8 @@ export const ALIGNS = ["left", "justify"] as const;
 export const LAYOUTS = ["scroll", "pages"] as const;
 /** Who reads aloud: the voice built into this computer, or the natural one DeepRead runs itself once it is downloaded. */
 export const VOICES = ["device", "natural"] as const;
+/** Lighter reading for slower phones: Auto follows the device, On and Off force it. */
+export const LIGHT_READING = ["auto", "on", "off"] as const;
 
 export type Prefs = {
   lang: LangCode;
@@ -34,6 +37,8 @@ export type Prefs = {
   chapterNotes: boolean;
   /** Each paragraph in the reader's own language, under the English. Off until the reader turns it on. */
   translation: boolean;
+  /** Lighter reading for slower phones: Auto follows the device, On and Off force it. Kept per device. */
+  lightReading: (typeof LIGHT_READING)[number];
 };
 
 export const FONT_SIZES = { min: 15, max: 26 } as const;
@@ -63,6 +68,7 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
     highlight: "yellow",
     chapterNotes: true,
     translation: false,
+    lightReading: "auto",
   };
   const merged = { ...defaults, ...(typeof saved === "object" && saved !== null ? saved : {}) } as Prefs;
   // Own keys only: `in` would take an inherited name such as "toString" for a language.
@@ -82,6 +88,7 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
   merged.highlight = oneOf(HIGHLIGHT_COLORS, merged.highlight, defaults.highlight);
   merged.chapterNotes = typeof merged.chapterNotes === "boolean" ? merged.chapterNotes : defaults.chapterNotes;
   merged.translation = typeof merged.translation === "boolean" ? merged.translation : defaults.translation;
+  merged.lightReading = oneOf(LIGHT_READING, merged.lightReading, defaults.lightReading);
   return merged;
 }
 
@@ -103,10 +110,12 @@ function apply(prefs: Prefs) {
   root.dataset.margins = prefs.margins;
   root.dataset.align = prefs.align;
   root.dataset.layout = prefs.layout;
+  root.dataset.tier = deviceTier();
   root.style.setProperty("--book-size", `${prefs.fontSize}px`);
 }
 
 let current = load();
+refreshDeviceTier({ override: current.lightReading });
 apply(current);
 const listeners = new Set<() => void>();
 
