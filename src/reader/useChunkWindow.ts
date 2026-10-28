@@ -397,11 +397,16 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
       if (keyOfNode(event.relatedTarget as Node | null) === undefined) focused = undefined;
       apply();
     };
+    // A selection handle being dragged fires an event per movement; the pins follow it once a frame.
+    let frame: number | undefined;
     const onSelectionChange = () => {
-      const selection = document.getSelection();
-      const keys = selection && !selection.isCollapsed ? [keyOfNode(selection.anchorNode), keyOfNode(selection.focusNode)] : [];
-      selected = keys.filter((key): key is string => key !== undefined);
-      apply();
+      frame ??= requestAnimationFrame(() => {
+        frame = undefined;
+        const selection = document.getSelection();
+        const keys = selection && !selection.isCollapsed ? [keyOfNode(selection.anchorNode), keyOfNode(selection.focusNode)] : [];
+        selected = keys.filter((key): key is string => key !== undefined);
+        apply();
+      });
     };
     element.addEventListener("focusin", onFocusIn);
     element.addEventListener("focusout", onFocusOut);
@@ -410,6 +415,7 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
       element.removeEventListener("focusin", onFocusIn);
       element.removeEventListener("focusout", onFocusOut);
       document.removeEventListener("selectionchange", onSelectionChange);
+      if (frame !== undefined) cancelAnimationFrame(frame);
       local.current = new Set();
     };
   }, [windowing, container]);

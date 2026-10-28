@@ -89,13 +89,25 @@ describe("long-frame measurement", () => {
     vi.stubGlobal("navigator", { deviceMemory: 8, hardwareConcurrency: 8 });
     vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {}, removeItem: () => {} });
     const root = { dataset: {} as Record<string, string> };
-    vi.stubGlobal("document", { documentElement: root, querySelector: () => ({}), body: {} });
+    const selection = { isCollapsed: true };
+    vi.stubGlobal("document", { documentElement: root, querySelector: () => ({}), body: {}, getSelection: () => selection });
     const { refreshDeviceTier } = await import("./deviceTier.ts");
     refreshDeviceTier();
     vi.advanceTimersByTime(60_000);
     // Far past the settle and past the first 20 seconds, so the frames count whenever they come.
-    return { root, later: performance.now() + 60_000, send: (entries: { duration: number; startTime: number }[]) => deliver(entries) };
+    return { root, selection, later: performance.now() + 60_000, send: (entries: { duration: number; startTime: number }[]) => deliver(entries) };
   }
+
+  it("should hold a promotion while text is selected, and apply it once the selection ends", async () => {
+    const { root, selection, later, send } = await measuringPhone();
+    selection.isCollapsed = false;
+    send([{ duration: 450, startTime: later }]);
+    vi.advanceTimersByTime(5_000);
+    expect(root.dataset.tier).toBe("normal");
+    selection.isCollapsed = true;
+    vi.advanceTimersByTime(1_000);
+    expect(root.dataset.tier).toBe("low");
+  });
 
   it("should promote a phone at once on a single frame of 400 ms that starts after the settle", async () => {
     const { root, later, send } = await measuringPhone();

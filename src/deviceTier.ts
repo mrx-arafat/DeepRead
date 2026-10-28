@@ -162,12 +162,15 @@ const FRAME_MS = 100;
 const BIG_FRAME_MS = 400;
 const FRAMES_TO_MEASURE = 5;
 const WAIT_FOR_CHAPTER_MS = 10_000;
+/** How long the page must have been still before a measured promotion is applied. */
+const CALM_MS = 1_000;
 
 let override: TierOverride = "auto";
 let measured = false;
 let current: Tier | null = null;
 let wired = false;
 let armed = false;
+let lastScroll = Number.NEGATIVE_INFINITY;
 const listeners = new Set<() => void>();
 
 /** The tier now, resolved on first use. */
@@ -263,8 +266,27 @@ function arm(): void {
  * promotes the device at once; FRAMES_TO_MEASURE frames of FRAME_MS or more promote it too. Frames in the first
  * SETTLE_MS are loading noise and are not counted.
  */
+/**
+ * A promotion rebuilds every mounted chunk at the low tier's size in one commit, replacing the rows under the reader. Mid-fling
+ * or under a selection's handles that is the heaviest moment a slow phone can meet, so it waits until the page has been
+ * still for CALM_MS and nothing is selected.
+ */
+function promoteWhenCalm(): void {
+  if (override !== "auto") return;
+  const selection = typeof document.getSelection === "function" ? document.getSelection() : null;
+  const selecting = selection !== null && !selection.isCollapsed;
+  if (selecting || performance.now() - lastScroll < CALM_MS) {
+    setTimeout(promoteWhenCalm, CALM_MS);
+    return;
+  }
+  refreshDeviceTier({ measured: true });
+}
+
 function measure(chapterAt: number): void {
   if (typeof PerformanceObserver === "undefined") return;
+  if (typeof window.addEventListener === "function") {
+    window.addEventListener("scroll", () => void (lastScroll = performance.now()), { passive: true });
+  }
   const type = PerformanceObserver.supportedEntryTypes?.includes("long-animation-frame") ? "long-animation-frame" : "longtask";
   let frames = 0;
   let observer: PerformanceObserver | undefined;
@@ -279,7 +301,7 @@ function measure(chapterAt: number): void {
       }
       if (!promote && frames < FRAMES_TO_MEASURE) return;
       observer?.disconnect();
-      refreshDeviceTier({ measured: true });
+      promoteWhenCalm();
     });
     observer.observe({ type, buffered: false });
   } catch {
