@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { HIGHLIGHT_COLORS } from "../../shared/types.ts";
 import type { Chapter, HighlightNote, Note, QuestionNote } from "../../shared/types.ts";
 import { readableBlocks } from "./book.ts";
+import { useMountVersion } from "./mountRegistry.ts";
 import { highlightMark, quoteSpans, rangeInBlock, setHighlight } from "./textRanges.ts";
 
 /** The note a pointer or focus event is about: the card it happened in, if any. */
@@ -23,6 +24,7 @@ function rangesOf(note: Note, chapters: Chapter[]): Range[] {
  * Highlights are painted in their own colours, each under a mark of its own.
  */
 export function useNoteMarks(notes: QuestionNote[], highlights: HighlightNote[], chapters: Chapter[]): void {
+  const mountVersion = useMountVersion();
   const [hovered, setHovered] = useState<string | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
 
@@ -52,10 +54,10 @@ export function useNoteMarks(notes: QuestionNote[], highlights: HighlightNote[],
       setHighlight("dr-note", null);
       setHighlight("dr-note-active", null);
     };
-  }, [notes, chapters, hovered, focused]);
+  }, [notes, chapters, hovered, focused, mountVersion]);
 
   // Apart from the note marks, so pointing at a card does not paint every highlight again. Painted again whenever a
-  // chapter comes onto the page or goes, so a highlight in it shows.
+  // chapter or chunk comes onto the page or goes, so a highlight in it shows.
   useEffect(() => {
     for (const color of HIGHLIGHT_COLORS) {
       const ranges = highlights.filter((highlight) => highlight.color === color).flatMap((highlight) => rangesOf(highlight, chapters));
@@ -64,5 +66,5 @@ export function useNoteMarks(notes: QuestionNote[], highlights: HighlightNote[],
     return () => {
       for (const color of HIGHLIGHT_COLORS) setHighlight(highlightMark(color), null);
     };
-  }, [highlights, chapters]);
+  }, [highlights, chapters, mountVersion]);
 }
