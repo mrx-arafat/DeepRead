@@ -190,18 +190,19 @@ const LIGHT_READING_OPTIONS: Option<Prefs["lightReading"]>[] = [
 ];
 
 /** Lighter reading for slower phones; Auto says what it chose for this device. Changed through reflow, so the line stays put. */
+// Said on the low tier: the browser's find sees only the text that is mounted, so the book's own search covers the rest.
+const FIND_HINT = "Your browser's find only searches the text near you; use Find in this book.";
+
 function LightReadingChoice({ value }: { value: Prefs["lightReading"] }) {
   const tier = useDeviceTier();
   const hint =
-    value === "on"
-      ? "Lighter reading is on."
-      : value === "off"
-        ? "Lighter reading is off."
-        : tier === "low"
-          ? "Auto: lighter reading is on for this phone"
-          : tier === "desktop"
-            ? "Auto: this computer reads at full detail"
-            : "Auto: this phone reads at full detail";
+    value === "off"
+      ? "Lighter reading is off."
+      : tier === "low"
+        ? `${value === "on" ? "Lighter reading is on." : "Auto: lighter reading is on for this phone"} ${FIND_HINT}`
+        : tier === "desktop"
+          ? "Auto: this computer reads at full detail"
+          : "Auto: this phone reads at full detail";
   return (
     <div className="settings-group">
       <Choice
@@ -209,10 +210,13 @@ function LightReadingChoice({ value }: { value: Prefs["lightReading"] }) {
         legend="Light reading for slower phones"
         value={value}
         options={LIGHT_READING_OPTIONS}
-        onChange={(next) => {
-          refreshDeviceTier({ override: next });
-          reflow({ lightReading: next });
-        }}
+        // The tier and the preference change together inside the line-keeping change, so the line is measured before either.
+        onChange={(next) =>
+          keepingLine(() => {
+            refreshDeviceTier({ override: next });
+            setPrefs({ lightReading: next });
+          })
+        }
       />
       <p className="settings-hint" aria-live="polite">
         {hint}

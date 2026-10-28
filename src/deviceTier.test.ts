@@ -36,12 +36,8 @@ describe("deviceTier storage", () => {
     return deviceTier();
   }
 
-  it("should keep a measurement from the last 30 days", async () => {
-    expect(await tierWith(JSON.stringify({ measuredLow: true, at: Date.now() - 24 * 60 * 60 * 1000 }))).toBe("low");
-  });
-
-  it("should forget a measurement older than 30 days", async () => {
-    expect(await tierWith(JSON.stringify({ measuredLow: true, at: Date.now() - 31 * 24 * 60 * 60 * 1000 }))).toBe("normal");
+  it("should not carry a measurement from an earlier visit into this page session", async () => {
+    expect(await tierWith(JSON.stringify({ measuredLow: true, at: Date.now() }))).toBe("normal");
   });
 
   it("should write the new tier to data-tier when a measurement promotes the device", async () => {

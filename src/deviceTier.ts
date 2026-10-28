@@ -152,16 +152,16 @@ export function readSignals(): TierSignals {
   };
 }
 
+// The key an earlier build kept a measurement under. It is removed once per page and never written again.
 const STORE_KEY = "deepread.deviceTier";
 // The long-frame measurement, counted over the whole session on a book page: frames of FRAME_MS or more that start more
-// than SETTLE_MS after the chapter appears. FRAMES_TO_MEASURE of them, or one frame of BIG_FRAME_MS or more, promote a
-// device to low for EXPIRY_MS. These describe the measurement, not the reader, so they stay here rather than in TIER_PARAMS.
+// than SETTLE_MS after the chapter appears. FRAMES_TO_MEASURE of them, or one frame of BIG_FRAME_MS or more, promote the
+// device to low for this page session only. These describe the measurement, not the reader, so they stay here, not in TIER_PARAMS.
 const SETTLE_MS = 2_000;
 const FRAME_MS = 100;
 const BIG_FRAME_MS = 400;
 const FRAMES_TO_MEASURE = 5;
-const EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
-const WAIT_FOR_CHAPTER_MS = 60_000;
+const WAIT_FOR_CHAPTER_MS = 10_000;
 
 let override: TierOverride = "auto";
 let measured = false;
@@ -183,41 +183,46 @@ export function tierParams(): TierParams {
 }
 
 /**
- * Resolves the tier again with a new override or measurement (a window resize counts too, with neither given), and tells
- * `useDeviceTier` readers when it changed. The device tier slice calls this from the setting and from its measurement.
+ * Resolves the tier again with a new override or measurement, and tells `useDeviceTier` readers when it changed. The reader
+ * calls this from the setting, from its page on mount, and from the measurement. A change of the media queries re-resolves
+ * the tier too, but never arms the measurement.
  */
 export function refreshDeviceTier(next: { override?: TierOverride; measured?: boolean } = {}): Tier {
+  return refresh(next, true);
+}
+
+function refresh(next: { override?: TierOverride; measured?: boolean }, arming: boolean): Tier {
   wire();
   if (next.override !== undefined && next.override !== override) {
     override = next.override;
     // A measurement belongs to the override it was made under, so a new choice forgets it.
     measured = false;
-    forget();
   }
   if (next.measured !== undefined) measured = next.measured;
-  arm();
+  if (arming) arm();
   const resolved = resolveTier(readSignals(), override, measured);
   if (resolved !== current) {
     current = resolved;
-    // The stylesheet reads this attribute, so a change made after the first paint (a measurement, a resize) must reach it too.
+    // The stylesheet reads this attribute, so a change made after the first paint (a measurement, a window crossing a breakpoint) must reach it too.
     if (typeof document !== "undefined") document.documentElement.dataset.tier = resolved;
     for (const listener of listeners) listener();
   }
   return resolved;
 }
 
-/** Reads the stored measurement and re-resolves on resize, once per page. Storage and window may be missing. */
+/**
+ * Once per page: removes a record an earlier build kept (a measurement lasts this page session only), and re-resolves
+ * when the two media queries the tier depends on change. Storage and window may be missing.
+ */
 function wire(): void {
   if (wired || typeof window === "undefined") return;
   wired = true;
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORE_KEY) ?? "null") as { measuredLow?: unknown; at?: unknown } | null;
-    if (stored?.measuredLow === true && typeof stored.at === "number" && Date.now() - stored.at < EXPIRY_MS) measured = true;
-    else if (stored !== null) forget();
-  } catch {
-    // Storage blocked or damaged: no earlier measurement is remembered.
+  forget();
+  if (typeof window.matchMedia !== "function") return;
+  for (const query of ["(pointer: fine)", "(min-width: 72rem)"]) {
+    const list = window.matchMedia(query);
+    if (typeof list.addEventListener === "function") list.addEventListener("change", () => refresh({}, false));
   }
-  if (typeof window.addEventListener === "function") window.addEventListener("resize", () => refreshDeviceTier());
 }
 
 function forget(): void {
@@ -225,14 +230,6 @@ function forget(): void {
     localStorage.removeItem(STORE_KEY);
   } catch {
     // Nothing to forget where storage is blocked.
-  }
-}
-
-function remember(): void {
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ measuredLow: true, at: Date.now() }));
-  } catch {
-    // The promotion still holds for this page.
   }
 }
 
@@ -281,7 +278,6 @@ function measure(chapterAt: number): void {
       }
       if (!promote && frames < FRAMES_TO_MEASURE) return;
       observer?.disconnect();
-      remember();
       refreshDeviceTier({ measured: true });
     });
     observer.observe({ type, buffered: false });
