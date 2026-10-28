@@ -4,7 +4,7 @@ import type { LangCode } from "../../shared/types.ts";
 import { api, ApiFailure } from "../api.ts";
 import { indexAtLine } from "./book.ts";
 import { eyeLine } from "./useReadingPosition.ts";
-import { TranslationCache } from "./translationCache.ts";
+import { TranslationCache, queueTranslationRequest, translationApplied } from "./translationCache.ts";
 
 export type ChapterTranslationState =
   | { status: "off" }
@@ -117,6 +117,10 @@ export function useChapterTranslation(
   const refuse = useEffectEvent(onRefused);
   const blocks = published?.key === key && published.activation === activation.current ? published.blocks : undefined;
 
+  useEffect(() => {
+    if (on && blocks) translationApplied(key);
+  }, [on, key, blocks]);
+
   // Each time translation is turned on it starts afresh: off forgets a failure, and on forgets a refusal.
   if (!on && failure) setFailure(null);
   if (on && refused !== null) setRefused(null);
@@ -140,7 +144,7 @@ export function useChapterTranslation(
       publish(cached);
       return () => { controller.abort(); cancelCommit?.(); };
     }
-    api.chapterTranslation(bookId, chapterId, lang, controller.signal).then(
+    queueTranslationRequest(key, JSON.stringify([bookId, lang]), controller.signal, () => api.chapterTranslation(bookId, chapterId, lang, controller.signal).then(
       (translation) => {
         if (controller.signal.aborted) return;
         publish(translation.blocks);
@@ -159,7 +163,7 @@ export function useChapterTranslation(
           if (!controller.signal.aborted) setFailure({ key, message: error.message });
         });
       },
-    );
+    ));
     return () => { controller.abort(); cancelCommit?.(); };
   }, [on, key, attempt, bookId, chapterId, lang]);
 

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LangCode } from "../../shared/types.ts";
 import { useChapterTranslationEligibility } from "./useChapterTranslationEligibility.ts";
+import { refreshDeviceTier } from "../deviceTier.ts";
 
 const react = vi.hoisted(() => {
   const element = { id: "chapter" };
@@ -26,7 +27,10 @@ const react = vi.hoisted(() => {
     },
   };
 });
-vi.mock("react", () => ({ useState: react.useState, useRef: react.useRef, useEffect: react.useEffect }));
+vi.mock("react", () => ({
+  useState: react.useState, useRef: react.useRef, useEffect: react.useEffect,
+  useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) => snapshot(),
+}));
 
 class Observer {
   static instances: Observer[] = [];
@@ -55,7 +59,10 @@ describe("chapter translation eligibility", () => {
     Observer.instances = [];
     vi.stubGlobal("IntersectionObserver", Observer);
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    react.state.effects.forEach((effect) => effect.cleanup?.());
+    vi.unstubAllGlobals();
+  });
 
   it("keeps offscreen chapters inactive until near the viewport, then stays active after scrolling away", () => {
     expect(render().eligible).toBe(false);
@@ -107,5 +114,13 @@ describe("chapter translation eligibility", () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     render();
     expect(render().eligible).toBe(true);
+  });
+
+  it("should use the low-tier approach margin", () => {
+    refreshDeviceTier({ override: "on" });
+    try {
+      render();
+      expect(Observer.instances[0]!.options.rootMargin).toBe("100% 0px 100% 0px");
+    } finally { refreshDeviceTier({ override: "auto" }); }
   });
 });
