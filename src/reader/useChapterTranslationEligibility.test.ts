@@ -26,7 +26,10 @@ const react = vi.hoisted(() => {
     },
   };
 });
-vi.mock("react", () => ({ useState: react.useState, useRef: react.useRef, useEffect: react.useEffect }));
+vi.mock("react", () => ({
+  useState: react.useState, useRef: react.useRef, useEffect: react.useEffect,
+  useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) => snapshot(),
+}));
 
 class Observer {
   static instances: Observer[] = [];
@@ -55,7 +58,10 @@ describe("chapter translation eligibility", () => {
     Observer.instances = [];
     vi.stubGlobal("IntersectionObserver", Observer);
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    react.state.effects.forEach((effect) => effect.cleanup?.());
+    vi.unstubAllGlobals();
+  });
 
   it("keeps offscreen chapters inactive until near the viewport, then stays active after scrolling away", () => {
     expect(render().eligible).toBe(false);

@@ -294,7 +294,8 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
     (initialized ??= (async () => {
       await rm(tempDir, { recursive: true, force: true });
       await mkdir(tempDir, { recursive: true });
-      const objects = await store.list("books/");
+      // Keys only: no size is used here, and a read per object would make the first open of a library wait on all of them.
+      const objects = await store.list("books/", { sized: false });
       const complete = bookIdsIn(objects);
       // Only folders named like a book: anything else in there was not put there by DeepRead.
       const folders = objects.map((object) => /^books\/([^/]+)\//.exec(object.key)?.[1]).filter((id) => id !== undefined);
@@ -482,7 +483,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
     await ready();
     if (ids) return [...ids];
     const seen = changes;
-    const listed = bookIdsIn(await store.list("books/"));
+    const listed = bookIdsIn(await store.list("books/", { sized: false }));
     // A book added or removed while this was listed may be missing from it, or still in it.
     if (changes === seen) ids = listed;
     return [...listed];

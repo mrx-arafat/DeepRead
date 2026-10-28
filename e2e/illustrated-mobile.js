@@ -2,6 +2,20 @@ async (page) => {
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
   const origin = await page.evaluate(() => location.origin);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
+  // On a phone only the rows near the reader are on the page (the chunk window); a far block is reached by scrolling
+  // its chunk's placeholder into view, which mounts its rows.
+  const reach = async (blockId) => {
+    await page.evaluate(async (id) => {
+      if (document.getElementById(id)) return;
+      const number = Number(id.match(/(\d+)$/)?.[1]);
+      const prefix = id.replace(/\d+$/, '');
+      const chunk = [...document.querySelectorAll('[data-chunk]')].filter(el => el.dataset.chunk.startsWith(prefix) && Number(el.dataset.chunk.slice(prefix.length)) <= number).at(-1);
+      if (!chunk) throw new Error(`no chunk holds ${id}`);
+      chunk.scrollIntoView({ block: 'start' });
+      for (let tick = 0; tick < 100 && !document.getElementById(id); tick++) await new Promise(resolve => setTimeout(resolve, 50));
+      if (!document.getElementById(id)) throw new Error(`${id} did not mount`);
+    }, blockId);
+  };
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => localStorage.setItem('deepread.prefs', JSON.stringify({ translation: true, lang: 'bn', layout: 'scroll', chapterNotes: false })));
   const cdp = await page.context().newCDPSession(page);
@@ -58,11 +72,14 @@ async (page) => {
   assert(after.src.includes('width=480'), `Phone should request a downsampled image: ${after.src}`);
   assert(requests.length < 15 && !requests.includes('original'), `Opening must defer distant originals: ${JSON.stringify(requests)}`);
   assert(!requestedFigures.some(url => url.endsWith(blocks.filter(block => block.type === 'image').at(-1).image.src)), 'Opening must not fetch the final distant figure');
+  // Far chunks are placeholders without rows; a far figure is not even an <img>, so nothing of it loads or decodes.
   const managed = await page.evaluate(() => {
     const chunks = [...document.querySelectorAll('.text-chunk')];
-    return { all: chunks.length, contained: chunks.filter(c => c.hasAttribute('data-mobile-rendering')).length, skippedFigures: chunks.filter(c => c.querySelector('.book-figure') && !c.firstElementChild.checkVisibility({ contentVisibilityAuto: true })).length };
+    const placeholders = chunks.filter(c => c.hasAttribute('data-placeholder'));
+    return { all: chunks.length, placeholders: placeholders.length, placeholderFigures: placeholders.filter(c => c.dataset.chunk.startsWith('figure')).length, rows: document.querySelectorAll('.chapter-text .row').length };
   });
-  assert(managed.contained === managed.all && managed.skippedFigures > 40, `Figure-rich chapters must retain distant rendering skips: ${JSON.stringify(managed)}`);
+  assert(managed.placeholders > managed.all / 2 && managed.placeholderFigures > 40, `Figure-rich chapters must keep distant chunks as placeholders: ${JSON.stringify(managed)}`);
+  await reach('b300');
   const anchor = page.locator('[data-block="b300"]');
   await anchor.evaluate(el => scrollBy({ top: el.getBoundingClientRect().top - 95, behavior: 'instant' }));
   await page.waitForTimeout(250);
@@ -79,12 +96,18 @@ async (page) => {
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Illustrated reading must fit phone width');
     assert(await image.evaluate(img => Math.abs(img.getBoundingClientRect().width / img.getBoundingClientRect().height - 4 / 3) < 0.01), 'Responsive figures must preserve source aspect ratio');
   }
-  await page.getByRole('button', { name: 'Reading settings', exact: true }).click();
-  await page.locator('#reading-settings input[value="pages"]').check(); await page.keyboard.press('Escape');
-  assert(await page.locator('[data-mobile-rendering]').count() === 0, 'Pages layout must release scroll containment');
-  await page.getByRole('button', { name: 'Reading settings', exact: true }).click();
-  await page.locator('#reading-settings input[value="scroll"]').check(); await page.keyboard.press('Escape');
-  assert(await page.locator('[data-mobile-rendering]').count() > 0, 'Scroll layout must restore containment');
+  for (const layout of ['pages', 'scroll']) {
+    await page.getByRole('button', { name: 'Reading settings', exact: true }).click();
+    await page.locator(`#reading-settings input[value="${layout}"]`).check(); await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    // Both layouts keep far chunks as placeholders, never inside the page's own measurement band (a page above, a page and 240px below).
+    const windowed = await page.evaluate(() => {
+      const placeholders = [...document.querySelectorAll('[data-placeholder]')];
+      const inBand = placeholders.filter(el => { const box = el.getBoundingClientRect(); return box.bottom > -innerHeight && box.top < innerHeight + 240; }).length;
+      return { placeholders: placeholders.length, inBand };
+    });
+    assert(windowed.placeholders > 0 && windowed.inBand === 0, `${layout} layout must keep far chunks as placeholders clear of the page band: ${JSON.stringify(windowed)}`);
+  }
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   await page.goto(`${origin}/book/illustrated-mobile/c1`, { waitUntil: 'domcontentloaded' });
   await page.locator('[data-translation-of="b0"]').waitFor();

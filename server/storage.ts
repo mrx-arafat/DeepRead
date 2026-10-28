@@ -26,8 +26,11 @@ export type ObjectStore = {
   putFile(key: string, path: string): Promise<void>;
   /** Copies the object to `path` on this computer. False when there is none. */
   download(key: string, path: string): Promise<boolean>;
-  /** Every object under `prefix`, which is "" or ends in "/". */
-  list(prefix: string): Promise<StoredObject[]>;
+  /**
+   * Every object under `prefix`, which is "" or ends in "/". With `sized: false` only the keys are wanted: each size is the
+   * bytes stored, and no object is read to measure it, so a listing never costs one request per object.
+   */
+  list(prefix: string, options?: { sized?: boolean }): Promise<StoredObject[]>;
   /** Removes these objects. One that is already gone is no error. */
   remove(keys: string[]): Promise<void>;
   /** Removes every object under `prefix`, which is "" or ends in "/". */
@@ -62,8 +65,8 @@ export function scopedStore(store: ObjectStore, prefix: string): ObjectStore {
     write: async (key, data) => store.write(full(key), data),
     putFile: async (key, path) => store.putFile(full(key), path),
     download: async (key, path) => store.download(full(key), path),
-    async list(folder) {
-      return (await store.list(full(folder))).map((object) => ({ key: object.key.slice(prefix.length), size: object.size }));
+    async list(folder, options) {
+      return (await store.list(full(folder), options)).map((object) => ({ key: object.key.slice(prefix.length), size: object.size }));
     },
     remove: async (keys) => store.remove(keys.map(full)),
     removeAll: async (folder) => store.removeAll(full(folder)),

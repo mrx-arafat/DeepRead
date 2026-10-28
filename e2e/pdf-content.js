@@ -112,6 +112,9 @@ async (page) => {
   }), "Pointer selection must reach the text over the image");
   await original.getByRole("button", { name: "Zoom original page" }).click();
   assert(await originalImage.evaluate((img) => img.getBoundingClientRect().width > img.closest(".original-page-image").clientWidth), "Original page zoom must allow detail inspection");
+  // The text layer refits itself to the zoomed image from a ResizeObserver, which the browser delivers after layout in
+  // the frame following the click; the second animation frame is past that.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const zoomGeometry = await sourceWord.evaluate((span) => {
     const imageRect = span.closest("dialog").querySelector("img").getBoundingClientRect(), textRect = span.getBoundingClientRect();
     return { x: (textRect.left - imageRect.left) / imageRect.width, width: textRect.width / imageRect.width };

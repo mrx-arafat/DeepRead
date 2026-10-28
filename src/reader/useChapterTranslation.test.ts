@@ -123,6 +123,18 @@ describe("useChapterTranslation", () => {
     expect(fetchTranslation).toHaveBeenCalledTimes(2);
   });
 
+  it("should ignore a rejection after unmount aborts the request", async () => {
+    let reject!: (error: Error) => void;
+    fetchTranslation.mockReturnValueOnce(new Promise((_resolve, failed) => { reject = failed; }));
+    render("c-aborted-error", true);
+    react.state.effects.forEach((effect) => effect.cleanup?.());
+    reject(new DOMException("Aborted", "AbortError"));
+    await Promise.resolve();
+    expect(scheduling.startTransition).not.toHaveBeenCalled();
+    expect(scheduling.flushSync).not.toHaveBeenCalled();
+    expect(render("c-aborted-error", true)).toEqual({ status: "loading" });
+  });
+
   it.each(["language", "book"])("ignores a pending arrival after changing %s", async (change) => {
     const frames = new Map<number, () => void>();
     let nextFrame = 0;

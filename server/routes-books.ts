@@ -173,9 +173,32 @@ async function sendPdf(c: Context, pdf: StoredPdf): Promise<Response> {
   return c.body(body, status, partial);
 }
 
+/** A strong validator for exactly these bytes: the same bytes always give the same tag. */
+const strongTag = (source: string | Uint8Array): string => `"${createHash("sha256").update(source).digest("base64url").slice(0, 27)}"`;
+
+/** Whether If-None-Match names `tag`. A weak tag matches too, since revalidation is a weak comparison. */
+function notModified(c: Context, tag: string): boolean {
+  const header = c.req.header("if-none-match");
+  return header !== undefined && header.split(",").some((candidate) => candidate.trim().replace(/^W\//, "") === tag);
+}
+
+// Figures always revalidate, so a reader whose share has ended loses the image on the next request, not after a day.
+const figureHeaders = (etag: string): Record<string, string> => ({
+  "Content-Type": "image/png",
+  "Cache-Control": "private, no-cache",
+  ETag: etag,
+  "X-Content-Type-Options": "nosniff",
+});
+
+/** JSON that revalidates: the tag is the hash of the bytes sent, so an unchanged body answers 304 without one. */
+function revalidatedJson(c: Context, text: string): Response {
+  const headers = { "Content-Type": "application/json", "Cache-Control": "private, no-cache", ETag: strongTag(text) };
+  return notModified(c, headers.ETag) ? c.body(null, 304, headers) : c.body(text, 200, headers);
+}
+
 /** The books of whoever is reading: every route works on c.var.library. */
-export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover }): Hono<AppEnv> {
-  const variant = createFigureVariants();
+export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover; variant?: ReturnType<typeof createFigureVariants> }): Hono<AppEnv> {
+  const variant = deps.variant ?? createFigureVariants();
   const { parsePdf, renderCover } = deps;
   const routes = new Hono<AppEnv>();
 
@@ -252,7 +275,7 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     const id = c.req.param("id");
     if (!isReadableBookId(id)) return invalidId(c);
     const detail = await library.detail(id);
-    return detail ? c.json(detail) : bookNotFound(c);
+    return detail ? revalidatedJson(c, JSON.stringify(detail)) : bookNotFound(c);
   });
 
   routes.patch(
@@ -310,7 +333,7 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     const book = await library.book(id);
     if (!book) return bookNotFound(c);
     const chapter = book.chapters.find((candidate) => candidate.id === c.req.param("chapterId"));
-    return chapter ? c.json(chapter) : chapterNotFound(c);
+    return chapter ? revalidatedJson(c, JSON.stringify(chapter)) : chapterNotFound(c);
   });
 
   routes.get("/:id/resume", async (c) => {
@@ -385,13 +408,21 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     const width = widths?.length === 1 ? figureWidth(widths[0]!) : null;
     if (widths && !width) return apiError(c, 400, "invalid_figure_width", "Choose a supported figure width.");
     // Authorize through this profile's library before consulting any derived-image cache.
-    const data = await c.var.library.figure(id, c.req.param("name"));
+    const name = c.req.param("name");
+    const data = await c.var.library.figure(id, name);
     if (!data) return apiError(c, 404, "figure_not_found", "This book figure could not be found.");
-    return c.body(width ? await variant(data, width) : data, 200, {
-      "Content-Type": "image/png",
-      "Cache-Control": "private, no-cache",
-      "X-Content-Type-Options": "nosniff",
-    });
+    // The name is the hash of the figure's bytes, so a width names exactly one resized variant of it.
+    const variantTag = width ? strongTag(`${name}:${width}`) : null;
+    // Only a real resize is ever tagged with its width, so a tag the phone already holds needs no resize at all.
+    if (variantTag && notModified(c, variantTag)) return c.body(null, 304, figureHeaders(variantTag));
+    const body = width ? await variant(data, width) : data;
+    // Anything that is not a resize (the figure is no wider than the width, the image is not a PNG, the resize queue is full,
+    // or a resize failed) comes back as the original bytes. Those answer under the original's tag, so the full-size bytes
+    // are never kept under a resized tag and a later request still gets the real variant.
+    const resized = variantTag !== null && body !== data;
+    const etag = variantTag && resized ? variantTag : strongTag(`${name}:original`);
+    if (notModified(c, etag)) return c.body(null, 304, figureHeaders(etag));
+    return c.body(body, 200, figureHeaders(etag));
   });
 
   routes.get("/:id/cover", async (c) => {

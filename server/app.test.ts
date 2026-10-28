@@ -891,6 +891,28 @@ describe("DeepRead API", () => {
     });
   });
 
+  describe("revalidating book JSON", () => {
+    it("should tag a chapter and the book's detail by the bytes sent, and answer 304 only while the book is on the shelf", async () => {
+      const book = (await (await upload(sampleBook("Tagged Book"))).json()) as BookDetail;
+      const chapterUrl = `/api/books/${book.id}/chapters/c1`;
+      const chapter = await app.request(chapterUrl);
+      const etag = chapter.headers.get("etag") ?? "";
+      expect(chapter.status).toBe(200);
+      expect(etag).toMatch(/^"[^"]+"$/);
+      expect(chapter.headers.get("cache-control")).toBe("private, no-cache");
+      expect(await chapter.json()).toMatchObject({ id: "c1" });
+      expect((await app.request(chapterUrl, { headers: { "if-none-match": etag } })).status).toBe(304);
+      expect((await app.request(chapterUrl, { headers: { "if-none-match": '"stale"' } })).status).toBe(200);
+
+      const detailUrl = `/api/books/${book.id}`;
+      const detailTag = (await app.request(detailUrl)).headers.get("etag") ?? "";
+      expect((await app.request(detailUrl, { headers: { "if-none-match": detailTag } })).status).toBe(304);
+
+      expect((await send("DELETE", `/api/books/${book.id}`)).status).toBe(204);
+      expect((await app.request(chapterUrl, { headers: { "if-none-match": etag } })).status).toBe(404);
+    });
+  });
+
   describe("covers", () => {
     const metaOf = async (id: string) =>
       JSON.parse(await readFile(join(dataDir, "books", id, "meta.json"), "utf8")) as Record<string, unknown>;

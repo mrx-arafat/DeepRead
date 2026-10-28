@@ -11,3 +11,4 @@ data/
 .worktrees/
 .playwright-cli/
 test-results/
+.perf-traces/

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BookDetail, Chapter } from "../../shared/types.ts";
 import { api } from "../api.ts";
+import { refreshDeviceTier } from "../deviceTier.ts";
+import { registerWindow } from "./mountRegistry.ts";
 import { blockAtTop, detourIn, keepingLine, placeIn, useReadingPosition } from "./useReadingPosition.ts";
 
 const hooks = vi.hoisted(() => ({
@@ -29,6 +31,7 @@ vi.mock("react", () => {
   };
 });
 vi.mock("wouter", () => ({ useLocation: () => ["/book/book/c1", hooks.navigate] }));
+vi.mock("react-dom", () => ({ flushSync: (change: () => void) => change() }));
 vi.mock("wouter/use-browser-location", () => ({ useHistoryState: () => history.state }));
 vi.mock("../api.ts", () => ({ api: { saveProgress: vi.fn().mockResolvedValue({}) } }));
 vi.mock("./paging.ts", () => ({ inPages: () => hooks.pages, pageFrame: () => ({ top: 50, bottom: 750 }) }));
@@ -78,7 +81,7 @@ function reader(initialState: unknown = detourState()) {
     constructor(block: FakeBlock) { this.block = block; }
   }
   class FakeBlock {
-    dataset: { block: string };
+    dataset: { block: string; charsBefore?: string };
     firstChild = new FakeText(this);
     textContent = this.firstChild.data;
     focus = vi.fn();
@@ -94,9 +97,9 @@ function reader(initialState: unknown = detourState()) {
   const sourceBlock = new FakeBlock("source", 1000);
   const returnBlock = new FakeBlock("return", 2000);
   let blocks = [sourceBlock, returnBlock];
-  const section = (id: string) => ({ dataset: { chapter: id }, lastElementChild: { getBoundingClientRect: () => ({ bottom: 3000 - scrollY }) }, querySelectorAll: (selector: string) => selector === "[data-block]" ? blocks.filter((block) => block.chapterId === id) : selector === ".text-chunk" ? chunks : [], querySelector: () => blocks.find((block) => block.chapterId === id) });
+  const section = (id: string) => ({ dataset: { chapter: id } as { chapter: string; chars?: string; lastBlock?: string }, lastElementChild: { getBoundingClientRect: () => ({ bottom: 3000 - scrollY }) }, querySelectorAll: (selector: string) => selector === "[data-block]" ? blocks.filter((block) => block.chapterId === id) : selector === ".text-chunk" ? chunks : [], querySelector: () => blocks.find((block) => block.chapterId === id) });
   let chapters = [section("c1")];
-  let chunks: Array<{ getBoundingClientRect: () => { height: number; bottom: number }; querySelectorAll: ReturnType<typeof vi.fn> }> = [];
+  let chunks: Array<{ dataset?: { placeholder?: string }; getBoundingClientRect: () => { height: number; bottom: number }; querySelectorAll: ReturnType<typeof vi.fn> }> = [];
   const historyMock = { state: initialState, scrollRestoration: "auto", replaceState: (state: unknown) => { historyMock.state = state; } };
   vi.stubGlobal("history", historyMock);
   vi.stubGlobal("Text", FakeText);
@@ -111,6 +114,7 @@ function reader(initialState: unknown = detourState()) {
   let visibilityState = "visible";
   vi.stubGlobal("document", {
     get visibilityState() { return visibilityState; },
+    getElementById: () => null,
     querySelectorAll: (selector: string) => selector === "[data-chapter]" ? chapters : [],
     querySelector: (selector: string) => selector.startsWith("[data-block=") ? blocks.find((block) => selector.includes(`"${block.dataset.block}"`)) ?? null : selector.startsWith("[data-chapter=") ? chapters[0] : null,
     addEventListener: documentEvents.addEventListener.bind(documentEvents), removeEventListener: documentEvents.removeEventListener.bind(documentEvents),
@@ -134,7 +138,7 @@ function reader(initialState: unknown = detourState()) {
     }
     return position;
   };
-  return { render, book, chapter, sourceBlock, returnBlock,
+  return { render, book, chapter, sourceBlock, returnBlock, article: chapters[0]!,
     characterMeasurements: () => characterMeasurements,
     enableChunks: () => {
       chunks = blocks.map((block) => ({ getBoundingClientRect: () => ({ height: 600, bottom: block.top + 600 - scrollY }), querySelectorAll: vi.fn(() => [block]) }));
@@ -146,6 +150,8 @@ function reader(initialState: unknown = detourState()) {
     leave: () => windowEvents.dispatchEvent(new Event("pagehide")),
     unmount: () => hooks.effects.forEach((effect) => effect.cleanup?.()),
     missingReturn: () => { blocks = [sourceBlock]; },
+    hideSource: () => { blocks = [returnBlock]; },
+    mountReturn: () => { blocks = [sourceBlock, returnBlock]; return true; },
     showReturnChapter: () => { blocks = [returnBlock]; chapters = [section("c2")]; },
     clearChapters: () => { blocks = []; chapters = []; },
     currentOffset: () => Math.max(0, Math.floor((scrollY + (hooks.pages ? 52 : 96) - returnBlock.top) / 20) * columns),
@@ -159,7 +165,7 @@ describe("useReadingPosition detours", () => {
     hooks.navigate.mockReset();
     vi.mocked(api.saveProgress).mockClear();
   });
-  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+  afterEach(() => { refreshDeviceTier({ override: "auto" }); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
   it("measures the logical character only once per scroll progress update", () => {
     const page = reader({ place: source });
@@ -168,6 +174,65 @@ describe("useReadingPosition detours", () => {
     const before = page.characterMeasurements();
     vi.advanceTimersByTime(150);
     expect(page.characterMeasurements() - before).toBeLessThanOrEqual(10);
+  });
+
+  it("uses full-chapter character metadata when earlier text is unmounted", () => {
+    const page = reader({ place: returnTo });
+    page.article.dataset.chars = "2400";
+    page.returnBlock.dataset.charsBefore = "1800";
+    page.hideSource();
+    page.render();
+    // Chapter one is half the book: (1800 + 80) / 2400 * 50 rounds to 39%.
+    expect(page.render().percent).toBe(39);
+  });
+
+  it.each(["open", "return"])("mounts an evicted block before measuring a saved %s", (action) => {
+    const page = reader(action === "open" ? { place: returnTo } : detourState());
+    page.missingReturn();
+    const unregister = registerWindow("c1", (blockId) => blockId === "return" && page.mountReturn());
+    try {
+      const position = page.render();
+      if (action === "return") position.returnToPlace();
+      expect(page.currentOffset()).toBe(80);
+      expect(placeIn(history.state)).toEqual(returnTo);
+    } finally {
+      page.unmount();
+      unregister();
+    }
+  });
+
+  it("waits for the low-tier measurement delay after scrolling", () => {
+    const page = reader({ place: source });
+    refreshDeviceTier({ override: "on" });
+    page.render();
+    page.scroll(2050);
+    const before = page.characterMeasurements();
+    vi.advanceTimersByTime(249);
+    expect(page.characterMeasurements()).toBe(before);
+    vi.advanceTimersByTime(1);
+    expect(page.characterMeasurements()).toBeGreaterThan(before);
+  });
+
+  it("keeps the previous reading place when the eye line enters a placeholder", () => {
+    const page = reader({ place: source });
+    page.render();
+    const chunks = page.enableChunks();
+    chunks[0]!.dataset = { placeholder: "" };
+    chunks[0]!.querySelectorAll.mockReturnValue([]);
+    page.scroll(1100);
+    expect(blockAtTop()).toBeNull();
+    vi.advanceTimersByTime(2000);
+    expect(placeIn(history.state)).toEqual(source);
+    expect(api.saveProgress).toHaveBeenCalledWith("book", "c1", "source", 0);
+  });
+
+  it("uses the article's last block when Stay Here is past the mounted text", () => {
+    const page = reader();
+    page.article.dataset.lastBlock = "source";
+    const position = page.render();
+    page.scroll(3500);
+    position.stayHere();
+    expect(placeIn(history.state)).toEqual({ ...source, offset: 600 });
   });
 
   it("keeps exact source-end progress while reading a translation without character-range probes", () => {
@@ -257,6 +322,22 @@ describe("useReadingPosition detours", () => {
     expect(page.currentOffset()).toBe(80);
     keepingLine(() => { hooks.pages = true; });
     expect(page.currentOffset()).toBe(80);
+  });
+
+  it.each([0, 300])("keeps the logical offset across text-size taps with a %s px placeholder correction", (correction) => {
+    const page = reader({ place: source });
+    page.scroll(2000 + 4 * 20 - 96);
+    keepingLine(() => page.resize(13));
+    // A placeholder grows above the reader; its scroll correction keeps the visible line still.
+    page.sourceBlock.top += correction;
+    page.returnBlock.top += correction;
+    page.scroll(window.scrollY + correction);
+    keepingLine(() => page.resize(10));
+    expect(page.currentOffset()).toBe(80);
+    // Actual reader scrolling must invalidate the remembered offset.
+    page.scroll(window.scrollY + 40);
+    keepingLine(() => page.resize(20));
+    expect(page.currentOffset()).toBe(100);
   });
 
   it("should suppress debounced, hidden, pagehide, cleanup and reload progress saves during a detour", () => {

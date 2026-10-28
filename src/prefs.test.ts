@@ -8,7 +8,7 @@ beforeAll(async () => {
   // prefs.ts applies the saved look as it loads, so it needs a page to load into.
   vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
   vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
-  vi.stubGlobal("document", { documentElement: { dataset: {}, style: { setProperty: () => {} } } });
+  vi.stubGlobal("document", { documentElement: { dataset: {}, style: { setProperty: () => {}, getPropertyValue: () => "" } } });
   ({ readPrefs } = await import("./prefs.ts"));
 });
 
@@ -32,6 +32,7 @@ describe("readPrefs", () => {
       highlight: "yellow",
       chapterNotes: true,
       translation: false,
+      lightReading: "auto",
     });
     expect(readPrefs({ highlight: "pink" }, false).highlight).toBe("pink");
   });
@@ -74,6 +75,13 @@ describe("readPrefs", () => {
     expect(readPrefs(null, false).translation).toBe(false);
     expect(readPrefs({ translation: true }, false).translation).toBe(true);
     expect(readPrefs({ translation: "yes" }, false).translation).toBe(false);
+  });
+
+  it("should keep the light reading choice that was made, and fall back to auto for anything else", () => {
+    expect(readPrefs(null, false).lightReading).toBe("auto");
+    expect(readPrefs({ lightReading: "on" }, false).lightReading).toBe("on");
+    expect(readPrefs({ lightReading: "off" }, false).lightReading).toBe("off");
+    expect(readPrefs({ lightReading: "always" }, false).lightReading).toBe("auto");
   });
 
   it("should start a first-time reader on the system's light or dark", () => {

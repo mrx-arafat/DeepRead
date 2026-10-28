@@ -4,6 +4,7 @@ import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { bigBookPdf } from "../e2e/fixtures/big-book.mjs";
 import { illustratedBookPdf } from "../e2e/fixtures/illustrated-book.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -24,6 +25,10 @@ const journeys = {
   "library-continue": { fixture: true },
   "library-resume": { fixture: true, resume: true },
   "library-header": { passkey: "ux02-profile-test-code-2026" },
+  // Big generated books on an emulated low-end phone; the same e2e/lowend-reader.js runs for each shape.
+  "lowend-text-outline": { big: "text-outline", script: "lowend-reader" },
+  "lowend-text-parts": { big: "text-parts", script: "lowend-reader" },
+  "lowend-illustrated": { big: "illustrated", script: "lowend-reader" },
 };
 const children = new Set();
 
@@ -38,7 +43,7 @@ function home() {
   const bin = fileURLToPath(import.meta.url).replace(homedir(), "~");
   console.log(`bin: ${bin}\ndescription: Run a browser journey with temporary local DeepRead data`);
   console.log(`journeys[${Object.keys(journeys).length}]{name,setup}:`);
-  for (const [name, setup] of Object.entries(journeys)) console.log(`  ${name},${setup.passkey ? "profiles" : "fixture book"}`);
+  for (const [name, setup] of Object.entries(journeys)) console.log(`  ${name},${setup.passkey ? "profiles" : setup.big ? `big book (${setup.big})` : "fixture book"}`);
   console.log("help: pnpm e2e:run <journey>");
 }
 
@@ -123,9 +128,10 @@ async function run(name, setup) {
     process.stderr.write(`Starting isolated ${name} journey...\n`);
     api = start(process.execPath, [join(root, "server/index.ts")], env);
     await ready(`http://127.0.0.1:${apiPort}/api/session`, api, "API");
-    if (setup.fixture || setup.illustrated) {
+    if (setup.fixture || setup.illustrated || setup.big) {
       const form = new FormData();
-      form.append("file", new Blob([setup.illustrated ? illustratedBookPdf() : await readFile(fixture)], { type: "application/pdf" }), setup.illustrated ? "illustrated-book.pdf" : "problems-of-philosophy.pdf");
+      const book = setup.big ? { bytes: bigBookPdf(setup.big), name: `big-${setup.big}.pdf` } : setup.illustrated ? { bytes: illustratedBookPdf(), name: "illustrated-book.pdf" } : { bytes: await readFile(fixture), name: "problems-of-philosophy.pdf" };
+      form.append("file", new Blob([book.bytes], { type: "application/pdf" }), book.name);
       const response = await fetch(`http://127.0.0.1:${apiPort}/api/books`, { method: "POST", body: form });
       if (!response.ok) throw new Error(`fixture upload returned ${response.status}: ${(await response.text()).slice(0, 500)}`);
       if (setup.resume) {
@@ -140,9 +146,15 @@ async function run(name, setup) {
     web = start(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", String(webPort), "--strictPort"], env);
     await ready(`http://127.0.0.1:${webPort}/`, web, "Vite");
     await command("playwright-cli", [`-s=${session}`, "open", `http://127.0.0.1:${webPort}`], 30000);
-    const output = await command("playwright-cli", [`-s=${session}`, "run-code", "--filename", `e2e/${name}.js`]);
+    // A big book takes the parser a minute; the journey itself turns hundreds of pages on a throttled CPU.
+    const output = await command("playwright-cli", [`-s=${session}`, "run-code", "--filename", `e2e/${setup.script ?? name}.js`], setup.big ? 600000 : undefined);
     // run-code exits 0 even when the journey throws, and prints the error under "### Error" instead.
     if (output.includes("### Error")) throw new Error(`journey ${name} failed: ${output}`);
+    if (setup.big) {
+      const result = output.match(/### Result\n([\s\S]*?)(?:\n###|$)/)?.[1];
+      if (!result) throw new Error(`Missing ${name} result: ${output}`);
+      console.log(`lowend_metrics: ${JSON.stringify(JSON.parse(result))}`);
+    }
     if (name === "translation-mobile" || name === "illustrated-mobile") {
       const result = output.match(/### Result\n([\s\S]*?)(?:\n###|$)/)?.[1];
       if (!result) throw new Error(`Missing ${name} result: ${output}`);

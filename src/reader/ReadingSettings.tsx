@@ -2,6 +2,7 @@ import { AlignJustify, AlignLeft, ArrowLeft, AudioWaveform, BookOpen, ChevronRig
 import { useEffect, useState, type FocusEvent, type ReactNode, type ToggleEvent } from "react";
 import { LANGUAGES, type AiProviderId, type AiStatus, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
+import { refreshDeviceTier, useDeviceTier } from "../deviceTier.ts";
 import { FONT_SIZES, setPrefs, type Prefs } from "../prefs.ts";
 import { useSession } from "../profiles/session.tsx";
 import { setAiStatus, useReaderKey } from "./aiStatusStore.ts";
@@ -181,6 +182,48 @@ function VoiceChoice({ voice }: { voice: Prefs["voice"] }) {
 
 /** A change that reflows the book, made so the line being read stays where it is on screen. */
 const reflow = (patch: Partial<Prefs>) => keepingLine(() => setPrefs(patch));
+
+const LIGHT_READING_OPTIONS: Option<Prefs["lightReading"]>[] = [
+  { value: "auto", label: "Auto", content: "Auto" },
+  { value: "on", label: "On", content: "On" },
+  { value: "off", label: "Off", content: "Off" },
+];
+
+/** Lighter reading for slower phones; Auto says what it chose for this device. Changed through reflow, so the line stays put. */
+// Said on the low tier: the browser's find sees only the text that is mounted, so the book's own search covers the rest.
+const FIND_HINT = "Your browser's find only searches the text near you; use Find in this book.";
+
+function LightReadingChoice({ value }: { value: Prefs["lightReading"] }) {
+  const tier = useDeviceTier();
+  const hint =
+    value === "off"
+      ? "Lighter reading is off."
+      : tier === "low"
+        ? `${value === "on" ? "Lighter reading is on." : "Auto: lighter reading is on for this phone"} ${FIND_HINT}`
+        : tier === "desktop"
+          ? "Auto: this computer reads at full detail"
+          : "Auto: this phone reads at full detail";
+  return (
+    <div className="settings-group">
+      <Choice
+        name="light-reading"
+        legend="Light reading for slower phones"
+        value={value}
+        options={LIGHT_READING_OPTIONS}
+        // The tier and the preference change together inside the line-keeping change, so the line is measured before either.
+        onChange={(next) =>
+          keepingLine(() => {
+            refreshDeviceTier({ override: next });
+            setPrefs({ lightReading: next });
+          })
+        }
+      />
+      <p className="settings-hint" aria-live="polite">
+        {hint}
+      </p>
+    </div>
+  );
+}
 
 /** Tabbing past a panel closes it, except when returning to its trigger. */
 function closeWhenTabbedAway(event: FocusEvent<HTMLElement>) {
@@ -481,6 +524,8 @@ export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; rea
             A short line after each chapter about what you just read.
           </p>
         </div>
+
+        <LightReadingChoice value={prefs.lightReading} />
 
         <hr className="settings-divider" />
 

@@ -3,10 +3,11 @@ import { useLocation } from "wouter";
 import { useHistoryState } from "wouter/use-browser-location";
 import type { BookDetail, Chapter, ReadingProgress } from "../../shared/types.ts";
 import { api } from "../api.ts";
+import { tierParams } from "../deviceTier.ts";
 import { bookPercent, chapterMinutesLeft, indexAtLine } from "./book.ts";
 import { inPages, pageFrame } from "./paging.ts";
 import { blockText, rangeWithin } from "./domText.ts";
-import { releaseMobileRowRendering } from "./useMobileRowRendering.ts";
+import { blockElement, ensureMounted } from "./mountRegistry.ts";
 
 type Position = {
   /** The chapter at the top of the window. */
@@ -74,6 +75,7 @@ function spotAtEyeLine(): Spot | null {
   if (chunks.length && chunks[0]!.getBoundingClientRect().height > 0) {
     const chunkAt = indexAtLine(chunks.length, bottomOf(chunks, (element) => element), eyeLine());
     const chunk = chunks[chunkAt];
+    if (chunk?.dataset?.placeholder !== undefined) return null;
     candidates = chunk?.querySelectorAll<HTMLElement>("[data-block]") ?? [];
     // A figure-only chunk points to the following source text. Find it without probing
     // distant descendant geometry, which would force skipped chunks to render.
@@ -126,24 +128,25 @@ function lineTop(block: HTMLElement, offset: number): number {
 
 // The place the last text size change kept on screen. Until the reader scrolls, the next change keeps that same
 // place: taking the start of the line it reflowed into instead would creep back through the text with every tap.
-let kept: { block: HTMLElement; offset: number; scrollY: number } | null = null;
+let kept: { block: HTMLElement; offset: number; top: number } | null = null;
 
 /**
  * Runs `change`, which reflows the book (a new text size), then scrolls so that the line the reader is on stays where
  * it was on screen, as in an e-reader. The browser's own scroll anchoring does not hold it through a text size change.
  */
 export function keepingLine(change: () => void): void {
-  const again = kept?.block.isConnected && kept.scrollY === window.scrollY ? kept : null;
+  const blockId = kept?.block.dataset.block;
+  const current = blockId ? blockElement(blockId) : kept?.block;
+  const again = kept && current?.isConnected && lineTop(current, kept.offset) === kept.top ? { ...kept, block: current } : null;
   const block = again?.block ?? blockAtTop();
   if (!block) return change();
   const offset = again?.offset ?? offsetAtLine(block, eyeLine());
   const top = lineTop(block, offset);
   const beforeEye = eyeLine();
-  releaseMobileRowRendering();
   change();
   const afterEye = eyeLine();
   window.scrollBy(0, lineTop(block, offset) - (beforeEye === afterEye ? top : afterEye));
-  kept = { block, offset, scrollY: window.scrollY };
+  kept = { block, offset, top: lineTop(block, offset) };
 }
 
 /**
@@ -156,6 +159,13 @@ const chapterLengths = new WeakMap<HTMLElement, { first?: HTMLElement; last?: HT
 
 function fractionRead({ chapter, block, blocks }: Spot, offset: number): number {
   if (!block) return 1;
+  if (block.dataset.charsBefore !== undefined && chapter.dataset.chars !== undefined) {
+    const above = Number(block.dataset.charsBefore);
+    const total = Number(chapter.dataset.chars);
+    if (Number.isFinite(above) && above >= 0 && Number.isFinite(total) && total >= 0) {
+      return total > 0 ? (above + offset) / total : 0;
+    }
+  }
   let lengths = chapterLengths.get(chapter);
   if (!lengths || lengths.count !== blocks.length || lengths.first !== blocks[0] || lengths.last !== blocks[blocks.length - 1]) {
     const prefix = [0];
@@ -220,7 +230,8 @@ export function detourIn(state: unknown, bookId: string): ReadingDetour | null {
 
 /** Resolves the logical text anchor against the current viewport, in either reading layout. */
 function restorePlace(place: Place): HTMLElement | null {
-  const element = document.querySelector<HTMLElement>(`[data-block="${CSS.escape(place.blockId)}"]`);
+  ensureMounted(place.chapterId, place.blockId);
+  const element = blockElement(place.blockId);
   if (!element || element.closest<HTMLElement>("[data-chapter]")?.dataset.chapter !== place.chapterId) return null;
   window.scrollBy({ top: lineTop(element, place.offset) - eyeLine(), behavior: "instant" });
   return element;
@@ -313,9 +324,13 @@ export function useReadingPosition(
   const stayHere = useCallback(() => {
     if (!detourIn(history.state, bookId)) return;
     const spot = spotAtEyeLine();
-    const last = spot?.blocks[spot.blocks.length - 1];
     const chapterId = spot?.chapter.dataset.chapter;
-    const place = placeOf(spot) ?? (last?.dataset.block && chapterId ? { chapterId, blockId: last.dataset.block, offset: last.textContent?.length ?? 0 } : null);
+    let place = placeOf(spot);
+    if (!place && spot && chapterId) {
+      const lastId = spot.chapter.dataset.lastBlock;
+      const last = (lastId ? ensureMounted(chapterId, lastId) : null) ?? spot.blocks[spot.blocks.length - 1];
+      if (last?.dataset.block) place = { chapterId, blockId: last.dataset.block, offset: last.textContent?.length ?? 0 };
+    }
     if (!place) {
       setDetourError("No chapter text is available yet. Retry when the chapter loads or return to the source.");
       return;
@@ -357,10 +372,12 @@ export function useReadingPosition(
     opened.current = start;
     const kept = placeIn(history.state);
     const progress = (kept?.chapterId === start.id ? kept : null) ?? saved.current ?? book.progress;
-    const element =
-      progress?.chapterId === start.id && document.querySelector<HTMLElement>(`[data-block="${CSS.escape(progress.blockId)}"]`);
+    if (progress?.chapterId === start.id) ensureMounted(start.id, progress.blockId);
+    const element = progress?.chapterId === start.id && blockElement(progress.blockId);
     // A reader who stayed at the chapter's heading is saved at the very start of its text: that reopens at the heading.
-    const atStart = element && !progress.offset && element.closest("[data-chapter]")?.querySelector("[data-block]") === element;
+    const atStart = element && !progress.offset && (element.dataset.charsBefore !== undefined
+      ? element.dataset.charsBefore === "0"
+      : element.closest("[data-chapter]")?.querySelector("[data-block]") === element);
     if (element && !atStart) {
       element.scrollIntoView({ block: "start" });
       // Then on to the reader's line, so it lands where the paragraph's first line would. Progress saved before
@@ -432,7 +449,7 @@ export function useReadingPosition(
 
     const onScroll = () => {
       if (restored.current && restored.current.scrollY !== window.scrollY) restored.current = null;
-      measuring ??= window.setTimeout(measure, 150);
+      measuring ??= window.setTimeout(measure, tierParams().measureDebounceMs);
       window.clearTimeout(keeping);
       keeping = window.setTimeout(keep, 300);
       window.clearTimeout(saving);

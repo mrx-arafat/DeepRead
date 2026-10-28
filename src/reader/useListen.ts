@@ -4,7 +4,8 @@ import { inPages, showOnPage } from "./paging.ts";
 import { prepareSpeech, speak, whenVoiceFree } from "./speech.ts";
 import { placeInView, scrollTopFor, type Place } from "./sentenceView.ts";
 import { rangeInBlock, sentenceIndex, sentencesOf, setHighlight, wordAt, type SentenceAt } from "./textRanges.ts";
-import { isTitleId } from "./listenBlocks.ts";
+import { isTitleId, titleId } from "./listenBlocks.ts";
+import { blockElement, ensureMounted, pin, useMountVersion, type BlockPlace } from "./mountRegistry.ts";
 import { forSpeech, pauseBetween, type Spoken } from "./voicing.ts";
 
 /** What the page can say about the chapter that follows the last one on it. */
@@ -46,6 +47,24 @@ export type Listen = {
  */
 export function useListen(blocks: Block[], rate: number, nextChapter: NextChapter): Listen {
   const sentences = useMemo(() => sentencesOf(blocks), [blocks]);
+  const mounts = useMountVersion();
+  const chapters = useMemo(() => {
+    const result = new Map<string, string>();
+    let chapterId: string | undefined;
+    for (const block of blocks) {
+      if (isTitleId(block.id)) chapterId = block.id.slice(titleId("").length);
+      if (chapterId) result.set(block.id, chapterId);
+    }
+    return result;
+  }, [blocks]);
+  const blockPlace = useCallback((blockId: string): BlockPlace | null => {
+    const chapterId = chapters.get(blockId) ?? blockElement(blockId)?.closest<HTMLElement>("[data-chapter]")?.dataset.chapter;
+    return chapterId ? { chapterId, blockId } : null;
+  }, [chapters]);
+  const mountBlock = useCallback((blockId: string) => {
+    const place = blockPlace(blockId);
+    if (place) ensureMounted(place.chapterId, blockId);
+  }, [blockPlace]);
   const [at, setAt] = useState<SentenceAt | null>(null);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +129,10 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   }, [at, index]);
 
   const scrollTo = useCallback((range: Range) => {
+    if (sentence) {
+      mountBlock(sentence.blockId);
+      range = rangeInBlock(sentence.blockId, sentence) ?? range;
+    }
     // Turning pages, the voice turns to the page the sentence is on, rather than sliding the text up mid-page.
     if (inPages()) {
       if (showOnPage(range.getBoundingClientRect())) scrolledAt.current = performance.now();
@@ -119,7 +142,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
     if (top === null) return;
     scrolledAt.current = performance.now();
     window.scrollTo({ top, behavior: "smooth" });
-  }, []);
+  }, [sentence, mountBlock]);
 
   useEffect(() => {
     if (!sentence) {
@@ -127,6 +150,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
       setHighlight("dr-sentence", null);
       return;
     }
+    mountBlock(sentence.blockId);
     const range = rangeInBlock(sentence.blockId, sentence);
     setHighlight("dr-sentence", range);
     const before = shown.current;
@@ -139,13 +163,28 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
       performance.now() - scrolledAt.current < 1500;
     if (range && withReader) scrollTo(range);
     return () => setHighlight("dr-sentence", null);
-  }, [place]);
+  }, [place, mounts]);
 
   // Asked for by the reader: show the sentence wherever the page is. Declared after the effect above, which
   // has set `shown` by the time a request for a new sentence runs.
   useEffect(() => {
-    if (reveal && shown.current) scrollTo(shown.current);
+    if (!reveal || !sentence) return;
+    mountBlock(sentence.blockId);
+    const range = rangeInBlock(sentence.blockId, sentence);
+    if (range) {
+      shown.current = range;
+      scrollTo(range);
+    }
   }, [reveal]);
+
+  useEffect(() => {
+    const places = sentence ? [sentence, sentences[index + 1]].flatMap((item) => {
+      const place = item && blockPlace(item.blockId);
+      return place ? [place] : [];
+    }) : [];
+    pin("listen", places);
+    return () => pin("listen", []);
+  }, [place, sentences, blockPlace]);
 
   // Tell the reader when the sentence is out of view. Waits for scrolling to settle, so the page following
   // the voice does not make the answer flicker.
@@ -266,12 +305,13 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
 
   const startAtLine = useCallback(
     (blockId: string, line: number) => {
+      mountBlock(blockId);
       const inBlock = sentences.filter((s) => s.blockId === blockId);
       // The first sentence that still reaches below the line: the one being read there, not the paragraph's first.
       const reaching = inBlock.find((s) => (rangeInBlock(blockId, s)?.getBoundingClientRect().bottom ?? 0) > line);
       begin(reaching ?? inBlock[0]);
     },
-    [sentences, begin],
+    [sentences, begin, mountBlock],
   );
 
   const toggle = useCallback(() => {
@@ -283,6 +323,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   }, [playing]);
 
   const stop = useCallback(() => {
+    pin("listen", []);
     resume.current = null;
     setPlaying(false);
     setWaiting(false);

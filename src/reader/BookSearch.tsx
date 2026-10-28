@@ -1,8 +1,8 @@
 import { Search, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
-import type { BookDetail, Chapter } from "../../shared/types.ts";
-import { api } from "../api.ts";
+import type { BookDetail } from "../../shared/types.ts";
 import { MAX_SEARCH_QUERY_LENGTH, searchChapter, type BookSearchResult } from "./bookSearch.ts";
+import { loadChapter } from "./chapterCache.ts";
 
 const RESULT_LIMIT = 40;
 
@@ -17,7 +17,6 @@ export function BookSearch({ book, onClose, onPick }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const controller = useRef<AbortController | null>(null);
-  const chapters = useRef(new Map<string, Chapter>());
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<BookSearchResult[]>([]);
   const [searched, setSearched] = useState(false);
@@ -60,13 +59,11 @@ export function BookSearch({ book, onClose, onPick }: Props) {
 
     const found: BookSearchResult[] = [];
     try {
+      // Through the page's chapter cache: chapters the reader has been through are not asked for again, and the
+      // cache, not this dialog, decides how much of the book stays in memory.
       for (const summary of book.chapters) {
-        let chapter = chapters.current.get(summary.id);
-        if (!chapter) {
-          chapter = await api.getChapter(book.id, summary.id, next.signal);
-          if (next.signal.aborted) return;
-          chapters.current.set(summary.id, chapter);
-        }
+        const chapter = await loadChapter(book.id, summary.id, next.signal);
+        if (next.signal.aborted) return;
         found.push(...searchChapter(chapter, term, RESULT_LIMIT - found.length));
         setResults([...found]);
         setScanned((count) => count + 1);

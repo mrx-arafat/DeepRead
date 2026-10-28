@@ -2,6 +2,20 @@ async (page) => {
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
   const origin = await page.evaluate(() => location.origin);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
+  // On a phone only the rows near the reader are on the page (the chunk window); a far block is reached by scrolling
+  // its chunk's placeholder into view, which mounts its rows.
+  const reach = async (blockId) => {
+    await page.evaluate(async (id) => {
+      if (document.getElementById(id)) return;
+      const number = Number(id.match(/(\d+)$/)?.[1]);
+      const prefix = id.replace(/\d+$/, '');
+      const chunk = [...document.querySelectorAll('[data-chunk]')].filter(el => el.dataset.chunk.startsWith(prefix) && Number(el.dataset.chunk.slice(prefix.length)) <= number).at(-1);
+      if (!chunk) throw new Error(`no chunk holds ${id}`);
+      chunk.scrollIntoView({ block: 'start' });
+      for (let tick = 0; tick < 100 && !document.getElementById(id); tick++) await new Promise(resolve => setTimeout(resolve, 50));
+      if (!document.getElementById(id)) throw new Error(`${id} did not mount`);
+    }, blockId);
+  };
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
     localStorage.setItem('deepread.prefs', JSON.stringify({ translation: true, lang: 'bn', layout: 'scroll', chapterNotes: false }));
@@ -35,7 +49,8 @@ async (page) => {
   });
   await page.route('**/api/books/mobile-smooth', route => fulfill(route, { id: 'mobile-smooth', title: 'Mobile translation', author: null, pageCount: 3, chapterCount: 3, wordCount: 72000, chapters: summary, warnings: [], hasCover: false, readingStatus: 'reading', addedAt: new Date().toISOString(), progress: null }));
   await page.goto(`${origin}/book/mobile-smooth/c1`);
-  await page.locator('[data-block="c1-b792"]').waitFor();
+  await page.locator('[data-block="c1-b0"]').waitFor();
+  await reach('c1-b792');
   await page.evaluate(() => document.fonts.ready);
   await page.locator('[data-block="c1-b792"]').evaluate(el => scrollBy({ top: el.getBoundingClientRect().top - 96, behavior: 'instant' }));
   await page.waitForFunction(() => document.querySelector('[data-chapter="c2"]'));
@@ -50,6 +65,7 @@ async (page) => {
   await page.getByRole('button', { name: 'Reading settings', exact: true }).click();
   await page.locator('#reading-settings').waitFor({ state: 'visible' });
   await page.keyboard.press('Escape');
+  await reach('c2-b20');
   await page.locator('[data-block="c2-b20"]').evaluate(el => scrollBy({ top: el.getBoundingClientRect().top - 96, behavior: 'instant' }));
   for (let attempt = 0; attempt < 30 && !pending.has('c2'); attempt++) await page.waitForTimeout(50);
   assert(pending.has('c2'), 'Entering a prefetched chapter must start its translation');
@@ -70,8 +86,9 @@ async (page) => {
     assert(Math.abs(toggledTop - toggleTop) < 3, `Translation toggle must preserve reading position: ${JSON.stringify({ enabled, toggleTop, toggledTop })}`);
   }
   assert(translations.length === requestCount, 'Switching translation back on must reuse fetched answers');
-  // Compare identical continuous scrolls in this browser with and without retained-row rendering.
+  // A continuous scroll through the windowed chapters, with frame, layout, style and paint numbers reported.
   const measureScroll = async () => {
+    await reach('c2-b2');
     await page.locator('[data-block="c2-b2"]').evaluate(el => scrollBy({ top: el.getBoundingClientRect().top - 96, behavior: 'instant' }));
     await page.waitForTimeout(500);
     const trace = [];
@@ -101,41 +118,46 @@ async (page) => {
     return result;
   };
   await cdp.send('Performance.enable');
-  const renderingOverride = await page.addStyleTag({ content: '.chapter-text > .text-chunk { content-visibility: visible !important; }' });
-  const baseline = await measureScroll();
-  await renderingOverride.evaluate(el => el.remove());
   const optimized = await measureScroll();
-  const scrolling = { baseline, optimized };
+  const scrolling = { optimized };
   // Performance numbers are reported, not tied to machine-specific wall-clock thresholds.
-  // The enforceable budget is how much distant text the browser still has to render.
+  // The enforceable budget is how much text is on the page at all: far chunks are placeholders without rows.
   const rendering = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('.chapter-text > .text-chunk')];
-    return { total: rows.length, managed: rows.filter(row => getComputedStyle(row).contentVisibility === 'auto').length,
-      skipped: rows.filter(row => row.firstElementChild && !row.firstElementChild.checkVisibility({ contentVisibilityAuto: true })).length };
+    const chunks = [...document.querySelectorAll('.chapter-text > .text-chunk')];
+    return { total: chunks.length, placeholders: chunks.filter(chunk => chunk.hasAttribute('data-placeholder')).length, rows: document.querySelectorAll('.chapter-text .row').length };
   });
-  assert(rendering.managed > 10 && rendering.managed < 50, `Long translated chapters must use a bounded number of rendering chunks: ${JSON.stringify(rendering)}`);
-  assert(rendering.skipped > rendering.total / 2, `Most distant chunks must skip rendering: ${JSON.stringify(rendering)}`);
-  // The native source DOM remains available, including selections spanning adjacent paragraphs.
+  assert(rendering.total > 30 && rendering.placeholders > rendering.total / 2, `Most distant chunks must be placeholders: ${JSON.stringify(rendering)}`);
+  assert(rendering.rows > 0 && rendering.rows <= 480, `Rows on the page must stay bounded: ${JSON.stringify(rendering)}`);
+  // The source DOM near the reader is the real one, including selections spanning adjacent chunks.
+  await reach('c2-b47');
+  await page.locator('[data-block="c2-b47"]').evaluate(el => scrollBy({ top: el.getBoundingClientRect().top - 96, behavior: 'instant' }));
+  await page.waitForTimeout(300);
   const selected = await page.evaluate(() => {
-    const blocks = [...document.querySelectorAll('[data-chapter="c2"] [data-block]')];
     const range = document.createRange();
-    range.setStart(blocks[47].firstChild, 0); range.setEnd(blocks[48].firstChild, 20);
+    range.setStart(document.getElementById('c2-b47').firstChild, 0); range.setEnd(document.getElementById('c2-b48').firstChild, 20);
     const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
     const text = selection.toString(); selection.removeAllRanges(); return text;
   });
-  assert(selected.includes('Paragraph 47.') && selected.includes('Paragraph 48.'), 'Source selection must survive across managed chunks');
-  // Width changes must discard old intrinsic heights; returning to the same width restores the same geometry.
-  const heightBeforeResize = await page.locator('[data-chapter="c2"]').evaluate(el => el.getBoundingClientRect().height);
+  assert(selected.includes('Paragraph 47.') && selected.includes('Paragraph 48.'), 'Source selection must survive across chunks');
+  // Width changes must discard old heights; returning to the same width restores the text the reader is at. Far chunks
+  // are placeholders with estimated heights, so the whole chapter's height is not exact; the rows being read are.
+  const anchorGeometry = () => page.locator('#c2-b48').evaluate(el => { const box = el.getBoundingClientRect(); return { top: box.top, height: box.height }; });
+  const beforeResize = await anchorGeometry();
   await page.setViewportSize({ width: 320, height: 844 }); await page.waitForTimeout(400);
   await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(400);
-  const heightAfterResize = await page.locator('[data-chapter="c2"]').evaluate(el => el.getBoundingClientRect().height);
-  assert(Math.abs(heightAfterResize - heightBeforeResize) < 3, `Resizing must restore exact translated chapter height: ${heightBeforeResize} -> ${heightAfterResize}`);
-  const focusedRow = await page.locator('[data-block="c2-b20"]').evaluate(el => {
-    el.focus({ preventScroll: true });
-    const visibility = getComputedStyle(el.closest('.text-chunk')).contentVisibility;
-    el.blur(); return visibility;
-  });
-  assert(focusedRow === 'visible', 'Keyboard focus must release containment so its outline and hint are not clipped');
+  const afterResize = await anchorGeometry();
+  assert(Math.abs(afterResize.top - beforeResize.top) < 3 && Math.abs(afterResize.height - beforeResize.height) < 1,
+    `Resizing must restore the translated text being read: ${JSON.stringify(beforeResize)} -> ${JSON.stringify(afterResize)}`);
+  // Keyboard focus pins its chunk: the row stays on the page however far the reader scrolls, and goes once focus leaves.
+  await reach('c2-b20');
+  await page.locator('[data-block="c2-b20"]').evaluate(el => el.focus({ preventScroll: true }));
+  await reach('c2-b300');
+  await page.waitForTimeout(500);
+  assert(await page.evaluate(() => document.getElementById('c2-b20')?.closest('.text-chunk')?.hasAttribute('data-placeholder') === false), 'Keyboard focus must keep its chunk on the page');
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForTimeout(600);
+  assert(await page.evaluate(() => document.getElementById('c2-b20') === null), 'An unfocused chunk far from the reader must become a placeholder');
+  await reach('c2-b20');
   const character = () => page.locator('[data-block="c2-b20"]').evaluate(el => {
     const range = document.createRange(); range.setStart(el.firstChild, 90); range.setEnd(el.firstChild, 91);
     return range.getBoundingClientRect().top;
@@ -150,9 +172,14 @@ async (page) => {
   for (const layout of ['pages', 'scroll']) {
     await page.getByRole('button', { name: 'Reading settings', exact: true }).click();
     await page.locator(`#reading-settings input[value="${layout}"]`).check();
-    await page.keyboard.press('Escape'); await page.waitForTimeout(350);
-    const contained = await page.evaluate(() => document.querySelectorAll('[data-mobile-rendering]').length);
-    assert(layout === 'pages' ? contained === 0 : contained > 10 && contained < 50, `${layout} layout must use the appropriate rendering strategy`);
+    await page.keyboard.press('Escape'); await page.waitForTimeout(400);
+    // Both layouts keep far chunks as placeholders, never inside the page's own measurement band (a page above, a page and 240px below).
+    const windowed = await page.evaluate(() => {
+      const placeholders = [...document.querySelectorAll('[data-placeholder]')];
+      const inBand = placeholders.filter(el => { const box = el.getBoundingClientRect(); return box.bottom > -innerHeight && box.top < innerHeight + 240; }).length;
+      return { placeholders: placeholders.length, inBand };
+    });
+    assert(windowed.placeholders > 10 && windowed.inBand === 0, `${layout} layout must keep far chunks as placeholders clear of the page band: ${JSON.stringify(windowed)}`);
   }
   assert(errors.length === 0, `Browser errors: ${errors.join('; ')}`);
   const metrics = await page.evaluate(() => ({ tasks: window.translationLongTasks.length, maxTaskMs: Math.round(Math.max(0, ...window.translationLongTasks)) }));
