@@ -3,11 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import type { BookDetail, ExplainMode, Note } from "../../shared/types.ts";
 import { api } from "../api.ts";
+import { refreshDeviceTier } from "../deviceTier.ts";
 import { readerTitle, useDocumentTitle } from "../pageTitle.ts";
 import { setPrefs, usePrefs } from "../prefs.ts";
 import { readableBlocks } from "./book.ts";
 import { BookSearch } from "./BookSearch.tsx";
 import type { BookSearchResult } from "./bookSearch.ts";
+import { loadChapter } from "./chapterCache.ts";
 import { quoteStart } from "./highlights.ts";
 import { ChapterList } from "./ChapterList.tsx";
 import { ChapterSection } from "./ChapterSection.tsx";
@@ -18,6 +20,7 @@ import { Notebook, type NotebookDraft } from "./Notebook.tsx";
 import { notebookSource, type NotebookSource } from "./notebookSource.ts";
 import { listenBlocks } from "./listenBlocks.ts";
 import { lookupTipDone, markLookupTipDone } from "./lookupTip.ts";
+import { ensureMounted, pin, useMountVersion } from "./mountRegistry.ts";
 import { ReadingSettings } from "./ReadingSettings.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
 import { canSpeak } from "./speech.ts";
@@ -76,6 +79,13 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const pages = usePages(turning, Boolean(book && flow.start), Boolean(word || selection));
   // Whether the admin lets readers show translations: asked once for the page, for the Aa menu. Null until known.
   const [readersTranslate, setReadersTranslate] = useState<boolean | null>(null);
+  // Chunks of text come and go on the page (the chunk window): marks painted on their rows are painted again.
+  const mountVersion = useMountVersion();
+
+  // Resolved again as the reader page opens: coming here from the library is when long frames are measured.
+  useEffect(() => {
+    refreshDeviceTier();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,13 +145,31 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     return () => setHighlight("dr-word", null);
   }, [word]);
 
+  const visiting = position.detour !== null;
+
   useEffect(() => {
-    const range = sourceTarget && position.detour
+    const range = sourceTarget && visiting
       ? rangeInBlock(sourceTarget.blockId, { start: sourceTarget.offset, end: sourceTarget.offset + sourceTarget.matchLength })
       : null;
     setHighlight("dr-search", range);
     return () => setHighlight("dr-search", null);
-  }, [sourceTarget, flow.chapters, position.detour]);
+  }, [sourceTarget, flow.chapters, visiting, mountVersion]);
+
+  // The text a word card or the bar is about, and the passage being visited, stay on the page while they are open:
+  // their ranges must not point at rows the chunk window has let go, and the flow must not trim their chapters.
+  useEffect(() => {
+    pin("lookup", [word, selection].flatMap((lookup) => (lookup ? [{ chapterId: lookup.chapterId, blockId: lookup.blockId }] : [])));
+  }, [word, selection]);
+  useEffect(() => {
+    pin("detour", sourceTarget && visiting ? [{ chapterId: sourceTarget.chapterId, blockId: sourceTarget.blockId }] : []);
+  }, [sourceTarget, visiting]);
+  useEffect(
+    () => () => {
+      pin("lookup", []);
+      pin("detour", []);
+    },
+    [],
+  );
 
   const dismiss = useCallback(() => {
     setWord(null);
@@ -224,6 +252,8 @@ export function ReaderPage({ bookId, chapterId }: Props) {
    */
   function undoRemove() {
     if (removed && document.activeElement?.closest(".toast")) {
+      // The paragraph may be in a chunk that is only a placeholder by now: it is brought back before focus goes to it.
+      if (removed.mode === "highlight") ensureMounted(removed.chapterId, removed.blockId);
       focusAfterUndo.current =
         removed.mode === "highlight"
           ? `[data-block="${CSS.escape(removed.blockId)}"]`
@@ -306,7 +336,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   }
 
   async function openNotebookSource(note: Note): Promise<boolean> {
-    const chapter = await api.getChapter(bookId, note.chapterId);
+    const chapter = await loadChapter(bookId, note.chapterId);
     const source = notebookSource(note, chapter);
     if (!source) return false;
     if (!position.visitPlace(source)) throw new Error("Could not save the current reading place.");
