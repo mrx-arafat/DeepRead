@@ -104,14 +104,19 @@ function load(): Prefs {
 /** The look lives in the stylesheet, keyed by these attributes; only the text size is a number. */
 function apply(prefs: Prefs) {
   const root = document.documentElement;
-  root.dataset.theme = prefs.theme;
-  root.dataset.font = prefs.font;
-  root.dataset.spacing = prefs.spacing;
-  root.dataset.margins = prefs.margins;
-  root.dataset.align = prefs.align;
-  root.dataset.layout = prefs.layout;
-  root.dataset.tier = deviceTier();
-  root.style.setProperty("--book-size", `${prefs.fontSize}px`);
+  // Only a value that differs is written: each write is a DOM mutation that the reader's observers react to.
+  const set = (name: string, value: string) => {
+    if (root.dataset[name] !== value) root.dataset[name] = value;
+  };
+  set("theme", prefs.theme);
+  set("font", prefs.font);
+  set("spacing", prefs.spacing);
+  set("margins", prefs.margins);
+  set("align", prefs.align);
+  set("layout", prefs.layout);
+  set("tier", deviceTier());
+  const size = `${prefs.fontSize}px`;
+  if (root.style.getPropertyValue("--book-size") !== size) root.style.setProperty("--book-size", size);
 }
 
 let current = load();

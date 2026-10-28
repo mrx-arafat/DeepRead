@@ -8,7 +8,7 @@ beforeAll(async () => {
   // prefs.ts applies the saved look as it loads, so it needs a page to load into.
   vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
   vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
-  vi.stubGlobal("document", { documentElement: { dataset: {}, style: { setProperty: () => {} } } });
+  vi.stubGlobal("document", { documentElement: { dataset: {}, style: { setProperty: () => {}, getPropertyValue: () => "" } } });
   ({ readPrefs } = await import("./prefs.ts"));
 });
 
