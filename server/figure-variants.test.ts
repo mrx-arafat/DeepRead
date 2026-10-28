@@ -126,7 +126,7 @@ describe("responsive private figure variants", () => {
     expect(figure).not.toHaveBeenCalled();
     const response = await app.request(`${url}?width=480`);
     expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("private, max-age=86400");
+    expect(response.headers.get("Cache-Control")).toBe("private, no-cache");
     const image = await loadImage(new Uint8Array(await response.arrayBuffer()));
     expect(image.width).toBe(480);
     figure.mockResolvedValue(null);
@@ -147,7 +147,7 @@ describe("responsive private figure variants", () => {
     const etag = first.headers.get("etag") ?? "";
     expect(first.status).toBe(200);
     expect(etag).toMatch(/^"[^"]+"$/);
-    expect(first.headers.get("cache-control")).toBe("private, max-age=86400");
+    expect(first.headers.get("cache-control")).toBe("private, no-cache");
     const same = await app.request(url, { headers: { "if-none-match": etag } });
     expect([same.status, await same.text()]).toEqual([304, ""]);
     expect((await app.request(url, { headers: { "if-none-match": '"stale"' } })).status).toBe(200);

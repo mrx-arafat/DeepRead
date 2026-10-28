@@ -182,9 +182,10 @@ function notModified(c: Context, tag: string): boolean {
   return header !== undefined && header.split(",").some((candidate) => candidate.trim().replace(/^W\//, "") === tag);
 }
 
-const figureHeaders = (etag: string, cacheControl: string): Record<string, string> => ({
+// Figures always revalidate, so a reader whose share has ended loses the image on the next request, not after a day.
+const figureHeaders = (etag: string): Record<string, string> => ({
   "Content-Type": "image/png",
-  "Cache-Control": cacheControl,
+  "Cache-Control": "private, no-cache",
   ETag: etag,
   "X-Content-Type-Options": "nosniff",
 });
@@ -413,16 +414,15 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     // The name is the hash of the figure's bytes, so a width names exactly one resized variant of it.
     const variantTag = width ? strongTag(`${name}:${width}`) : null;
     // Only a real resize is ever tagged with its width, so a tag the phone already holds needs no resize at all.
-    if (variantTag && notModified(c, variantTag)) return c.body(null, 304, figureHeaders(variantTag, "private, max-age=86400"));
+    if (variantTag && notModified(c, variantTag)) return c.body(null, 304, figureHeaders(variantTag));
     const body = width ? await variant(data, width) : data;
     // Anything that is not a resize (the figure is no wider than the width, the image is not a PNG, the resize queue is full,
-    // or a resize failed) comes back as the original bytes. Those answer under the original's tag, with no-cache for a width
-    // request, so the full-size bytes are never kept under a resized tag and a later request still gets the real variant.
+    // or a resize failed) comes back as the original bytes. Those answer under the original's tag, so the full-size bytes
+    // are never kept under a resized tag and a later request still gets the real variant.
     const resized = variantTag !== null && body !== data;
     const etag = variantTag && resized ? variantTag : strongTag(`${name}:original`);
-    const cacheControl = width && !resized ? "private, no-cache" : "private, max-age=86400";
-    if (notModified(c, etag)) return c.body(null, 304, figureHeaders(etag, cacheControl));
-    return c.body(body, 200, figureHeaders(etag, cacheControl));
+    if (notModified(c, etag)) return c.body(null, 304, figureHeaders(etag));
+    return c.body(body, 200, figureHeaders(etag));
   });
 
   routes.get("/:id/cover", async (c) => {
