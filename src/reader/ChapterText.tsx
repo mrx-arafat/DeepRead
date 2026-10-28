@@ -213,7 +213,9 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions, transla
   const { onWord, onSelect, onDismiss, onCloseNote, onSaveAnswer } = actions;
   const container = useRef<HTMLDivElement>(null);
   const params = TIER_PARAMS[useDeviceTier()];
-  const cursor = useWordCursor(blocks.find((block) => block.type !== "image" && block.text.trim())?.id, (word) => ask(word, "keyboard"));
+  // The cursor moves through the chapter's blocks in book order, so it can step into a chunk that is still a placeholder.
+  const order = useMemo(() => ({ chapterId, blockIds: blocks.filter((block) => block.type !== "image").map((block) => block.id) }), [chapterId, blocks]);
+  const cursor = useWordCursor(blocks.find((block) => block.type !== "image" && block.text.trim())?.id, (word) => ask(word, "keyboard"), order);
   const tags = useMemo(() => headingTags(blocks), [blocks]);
   const chunks = useMemo(() => chunksOf(blocks, params.rowsPerChunk), [blocks, params.rowsPerChunk]);
   // How much of the chapter's text comes before each block: the same count the server makes for the shelf.
