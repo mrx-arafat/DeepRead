@@ -412,14 +412,16 @@ select {
   }
 }
 
-/* Light reading (slower phones): no transitions or streaming animations. The page-turn slide stays, it is composited. */
+/* Light reading (slower phones): no transitions, streaming animations or page-turn slide. Paint was the largest Pages cost. */
 :root[data-tier="low"] .reading-progress > span,
 :root[data-tier="low"] .chapter {
   transition: none;
 }
 
 :root[data-tier="low"] .skeleton,
-:root[data-tier="low"] .writing {
+:root[data-tier="low"] .writing,
+:root[data-tier="low"] .page.turn-next,
+:root[data-tier="low"] .page.turn-previous {
   animation: none;
 }
 

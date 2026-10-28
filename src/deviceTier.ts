@@ -97,8 +97,8 @@ export const TIER_PARAMS: Record<Tier, TierParams> = {
   low: {
     windowing: true,
     rowsPerChunk: 24,
-    mountRootMargin: "100% 0px 100% 0px",
-    keepRootMargin: "200% 0px 200% 0px",
+    mountRootMargin: "125% 0px 125% 0px",
+    keepRootMargin: "250% 0px 250% 0px",
     initialChunks: 2,
     chapterCacheEntries: 12,
     chapterCacheChars: 2_000_000,
@@ -153,12 +153,12 @@ export function readSignals(): TierSignals {
 }
 
 const STORE_KEY = "deepread.deviceTier";
-// The long-frame measurement: frames of FRAME_MS or more that start more than SETTLE_MS after the chapter appears, counted
-// for MEASURE_MS. FRAMES_TO_MEASURE of them promote a device to low for EXPIRY_MS. These describe the measurement, not the
-// reader, so they stay here rather than in TIER_PARAMS.
-const MEASURE_MS = 20_000;
+// The long-frame measurement, counted over the whole session on a book page: frames of FRAME_MS or more that start more
+// than SETTLE_MS after the chapter appears. FRAMES_TO_MEASURE of them, or one frame of BIG_FRAME_MS or more, promote a
+// device to low for EXPIRY_MS. These describe the measurement, not the reader, so they stay here rather than in TIER_PARAMS.
 const SETTLE_MS = 2_000;
 const FRAME_MS = 100;
+const BIG_FRAME_MS = 400;
 const FRAMES_TO_MEASURE = 5;
 const EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
 const WAIT_FOR_CHAPTER_MS = 60_000;
@@ -260,32 +260,34 @@ function arm(): void {
   watch.observe(document.body ?? document.documentElement, { childList: true, subtree: true });
 }
 
-/** Counts long frames for MEASURE_MS after the chapter appeared; enough of them promote this device to low. */
+/**
+ * Counts long frames for the whole session on a book page, from the first chapter on. One frame of BIG_FRAME_MS or more
+ * promotes the device at once; FRAMES_TO_MEASURE frames of FRAME_MS or more promote it too. Frames in the first
+ * SETTLE_MS are loading noise and are not counted.
+ */
 function measure(chapterAt: number): void {
   if (typeof PerformanceObserver === "undefined") return;
   const type = PerformanceObserver.supportedEntryTypes?.includes("long-animation-frame") ? "long-animation-frame" : "longtask";
   let frames = 0;
   let observer: PerformanceObserver | undefined;
-  const timer = setTimeout(() => done(), MEASURE_MS);
-  const done = () => {
-    observer?.disconnect();
-    clearTimeout(timer);
-  };
   try {
     observer = new PerformanceObserver((list) => {
+      if (override !== "auto" || window.location?.pathname?.startsWith("/book/") !== true) return;
+      let promote = false;
       for (const entry of list.getEntries()) {
-        if (entry.duration >= FRAME_MS && entry.startTime - chapterAt > SETTLE_MS) frames += 1;
+        if (entry.startTime - chapterAt <= SETTLE_MS) continue;
+        if (entry.duration >= BIG_FRAME_MS) promote = true;
+        else if (entry.duration >= FRAME_MS) frames += 1;
       }
-      if (frames < FRAMES_TO_MEASURE) return;
-      done();
-      if (override !== "auto") return;
+      if (!promote && frames < FRAMES_TO_MEASURE) return;
+      observer?.disconnect();
       remember();
       refreshDeviceTier({ measured: true });
     });
     observer.observe({ type, buffered: false });
   } catch {
     // Not supported on this browser: the tier stays what the other signals gave.
-    done();
+    observer?.disconnect();
   }
 }
 
