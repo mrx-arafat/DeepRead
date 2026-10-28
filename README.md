@@ -274,7 +274,8 @@ Select a sentence or a paragraph, then choose what you want:
 
 The answer is pinned beside the paragraph like a teacher's note. Choose **Save to notebook** on a completed explanation to keep its exact text for later, even if the AI helper is unavailable.
 Once DeepRead confirms **Notes saved**, these notes are kept with the book, so clearing your browser does not lose them and they show on your phone too.
-A book you already have open picks up notes made on another device when you come back to it, and every 30 seconds while it is on screen, so you never need to reload.
+A book you already have open picks up notes made on another device when you come back to it, and while it stays on screen it checks again every 30 seconds on a computer and every two minutes on a phone, so you never need to reload.
+On a slower phone with **Light reading** on, it checks when you come back to the book instead of on a timer.
 Notes that were saved in a browser before are moved up automatically the next time you open that book.
 The reader shows whether notes are saving, saved or waiting for a connection.
 When DeepRead cannot be reached, it holds changes in this browser when browser storage is available; other devices do not have them until DeepRead saves them.
@@ -351,6 +352,12 @@ Open **Aa** at the top right to set the page the way an e-reader does: a light, 
 **Reader preferences** at the bottom opens a separate panel for your language (used for word meanings, explanations and translations), end-of-chapter notes and your AI helper.
 Its **Voice settings** button opens the read-aloud voice choices (see [A more natural voice](#8-a-more-natural-voice)).
 Opening one panel closes the previous one. Escape closes it, returning focus to **Aa** after settings navigation, or to the player's **Voice settings** button when opened there.
+
+**Light reading for slower phones** is also in **Reader preferences**, with three choices: **Auto**, **On** and **Off**.
+**Auto** (the default) turns it on for a phone that reports 2 GB of memory or less, or that has Save-Data on, or that shows long frames while you read.
+It stays off on a computer.
+**On** and **Off** set it either way.
+When it is on, DeepRead keeps only the text near the reader on the page, sends one translation request at a time, and drops the animations.
 The footer under the text tells you how many minutes of the chapter are left, then marks the end of the book when you reach its closing panel.
 
 **Layout** chooses how you move through the book: **Scroll** (the default) reads it as one long page, and **Pages** turns it a page at a time like an e-reader.
@@ -1019,7 +1026,8 @@ It retains refused changes for explicit retry or discard; connection failures, e
 [`src/reader/NoteSyncStatus.tsx`](src/reader/NoteSyncStatus.tsx) distinguishes acknowledged saves from changes held only in this browser, and exposes retry, discard and storage-recovery warnings.
 It also adopts notes from the old `localStorage` keys, `deepread.notes.<bookId>` and `deepread.notes.<bookId>.<chapterId>`.
 [`src/reader/useNotes.ts`](src/reader/useNotes.ts) is a thin React hook around it.
-It calls `refresh()` when the page comes back into view, gets focus or goes online, and every 30 seconds while it is visible, so notes made on another device appear without a reload; a refresh that finds nothing new does not draw the page again.
+It calls `refresh()` when the page comes back into view, gets focus or goes online, and, while it is visible, every 30 seconds on a computer or every 120 seconds on a phone, so notes made on another device appear without a reload; a refresh that finds nothing new does not draw the page again.
+The light tier has no timer and refreshes on those events only.
 
 Whatever the store, a few small things stay in the data folder on this computer: `tmp/`, `settings.json` (your AI helper choice), `translate-cache.json` (quick word translations), `openrouter-usage.json` (each reader's API Model requests today), `codex-home/`, the phone key `remote-key`, and the sign-in secret `session-secret` and the wrong-code locks `locks.json` when profiles are on.
 
@@ -1054,7 +1062,9 @@ Answers stream as they are written and are cached with the book (on disk, or in 
 ### The reader
 
 The reading view is plain React and CSS.
-Each paragraph is a single text node, and word and sentence highlights are painted with the CSS Custom Highlight API, so the book's DOM stays light even for long books.
+Each paragraph is a single text node, and word and sentence highlights are painted with the CSS Custom Highlight API.
+On a phone, text far from the reader is kept out of the page, so the DOM stays light even for long books.
+On a computer, every chapter you have scrolled through stays in the page.
 Explanations sit in the margin beside their paragraph on wide screens and directly under it on narrow ones.
 
 Where the reader is comes from the line at the top of the window.
@@ -1159,6 +1169,8 @@ To work against the data folder instead, put `DEEPREAD_STORAGE=local` in front, 
 - Existing books keep their parsed text and saved note offsets. These import improvements apply to newly added books; existing books are not automatically reparsed.
 - Reading aloud uses the voices built into your browser and operating system, unless you choose the natural voice.
   The natural voice speaks English with one voice, needs WebGPU, and marks the spoken word by estimating where it falls in the sentence, so the green word can be a little early or late.
+- On phones, the browser's own find searches only the text near the reader.
+  Use **Find in this book** in the reader toolbar to search the whole book.
 - An answer takes a few seconds to start, even for a single word, because accuracy was chosen over speed.
 - Run one DeepRead server for each folder of a bucket.
   When it starts, it removes any book folder that has no `meta.json`, which could be a book another server is adding at that moment.
