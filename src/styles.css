@@ -865,7 +865,8 @@ select {
   min-width: 0;
 }
 
-/* The whole cover is the link. Its rounded corners are the cover's, so the focus ring follows the book. */
+/* The whole cover opens the book for a pointer; the keyboard and screen readers take the title link under it instead
+   (BookRow.tsx), so the cover is never a second stop on the same book. Its rounded corners are the cover's. */
 .shelf-link {
   position: relative;
   display: block;
