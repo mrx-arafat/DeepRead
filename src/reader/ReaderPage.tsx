@@ -53,6 +53,7 @@ function pagesLeftText(pages: number): string {
 
 /** The book read start to finish as one flow: chapters follow each other as the reader scrolls. */
 export function ReaderPage({ bookId, chapterId }: Props) {
+  useEffect(() => { if (new URLSearchParams(location.search).get("perf") !== "1") return; let dispose: (() => void) | undefined; let closed = false; void import("./perf-report.ts").then(({ startPerfReport }) => { if (!closed) dispose = startPerfReport(); }); return () => { closed = true; dispose?.(); }; }, []);
   const prefs = usePrefs();
   const [book, setBook] = useState<BookDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
