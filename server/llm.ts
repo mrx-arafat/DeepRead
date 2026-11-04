@@ -439,6 +439,11 @@ const CODEX_TOOLS_OFF = [
   "multi_agent",
   "goals",
   "view_image",
+  // ChatGPT's connectors, a server Codex otherwise starts for every answer, on by default in a new Codex home. Today's
+  // model is sent none of their tools (a model Codex knows nothing about was sent all of them, 317 KB), but a first
+  // answer waits for the server to list them until they are cached: measured in a new home, the model request could go
+  // out 1.8 s in without it and 2.9 s in with it. Once cached it made no difference.
+  "apps",
 ].flatMap((feature) => ["-c", `features.${feature}=false`]);
 
 const CODEX_INSTRUCTIONS = "instructions.md";

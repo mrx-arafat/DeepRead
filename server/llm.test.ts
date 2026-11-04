@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { completeText, createClaudeLlm, createCodexLlm } from "./llm.ts";
 import type { LlmRequest } from "./llm.ts";
 
@@ -157,10 +157,35 @@ function expectPrivateDirectoryGone(cwd: string) {
 const CAPTURED_ANSWER =
   "**Ubiquitous** means something that is everywhere at the same time. It's something you find or see constantly all around you.\n\nFor example, smartphones are ubiquitous today because almost everyone has one.";
 
+// A test changes the environment only with vi.stubEnv, and every change is undone after it. Never assign process.env
+// itself: vitest undoes a stub through the process.env it started with, so after one test replaced it, a variable a
+// later test stubbed stayed set for every test after that, and reached the helpers they started.
+beforeAll(() => {
+  process.env.FAKE_FIXTURES = join(import.meta.dirname, "fixtures");
+});
+
+// The reader's own Codex home, whose sign-in DeepRead links its Codex home to: a temp folder of each test's own with a
+// fake auth.json, so no test ever links to the real ~/.codex.
+let readerCodexHome: string;
+
+beforeEach(async () => {
+  readerCodexHome = await mkdtemp(join(tmpdir(), "deepread-reader-codex-"));
+  writeFileSync(join(readerCodexHome, "auth.json"), '{"fake":true}\n');
+  vi.stubEnv("CODEX_HOME", readerCodexHome);
+});
+
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await rm(readerCodexHome, { recursive: true, force: true });
+});
+
+afterAll(() => {
+  delete process.env.FAKE_FIXTURES;
+});
+
 describe("createClaudeLlm", () => {
   let workDir: string;
   let fakeBin: string;
-  const savedEnv = { ...process.env };
 
   const request = (user: string, extra: Partial<LlmRequest> = {}): LlmRequest => ({
     task: "explain",
@@ -182,11 +207,9 @@ describe("createClaudeLlm", () => {
     fakeBin = join(workDir, "fake-claude");
     writeFileSync(fakeBin, FAKE_CLAUDE);
     await chmod(fakeBin, 0o755);
-    process.env.FAKE_FIXTURES = join(import.meta.dirname, "fixtures");
   });
 
   afterAll(async () => {
-    process.env = savedEnv;
     await rm(workDir, { recursive: true, force: true });
   });
 
@@ -196,10 +219,10 @@ describe("createClaudeLlm", () => {
   });
 
   it("should send the prompt on stdin with the right model, flags, directory and a clean environment", async () => {
-    process.env.CLAUDECODE = "1";
-    process.env.CLAUDE_CODE_ENTRYPOINT = "cli";
+    vi.stubEnv("CLAUDECODE", "1");
+    vi.stubEnv("CLAUDE_CODE_ENTRYPOINT", "cli");
     // The reader's own Claude Code setting, which DeepRead inherits when started from inside Claude Code.
-    process.env.CLAUDE_CODE_EFFORT_LEVEL = "xhigh";
+    vi.stubEnv("CLAUDE_CODE_EFFORT_LEVEL", "xhigh");
     const llm = createClaudeLlm({ bin: fakeBin });
     const hugePrompt = "x".repeat(300_000);
 
@@ -229,21 +252,17 @@ describe("createClaudeLlm", () => {
       "ADMIN_PASSKEY",
       "DEEPREAD_REMOTE_KEY",
     ];
-    try {
-      for (const name of secrets) vi.stubEnv(name, "fake-secret");
-      const ask = request(`echo present=${secrets.join(",")},FAKE_FIXTURES\n`);
-      const claude = JSON.parse(await completeText(createClaudeLlm({ bin: fakeBin }), ask));
-      const codex = JSON.parse(await completeText(createCodexLlm({ bin: fakeBin, home: join(workDir, "codex-home") }), ask));
-      // FAKE_FIXTURES shows the rest of the environment still gets through.
-      expect(claude.present).toEqual(["FAKE_FIXTURES"]);
-      expect(codex.present).toEqual(["FAKE_FIXTURES"]);
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    for (const name of secrets) vi.stubEnv(name, "fake-secret");
+    const ask = request(`echo present=${secrets.join(",")},FAKE_FIXTURES\n`);
+    const claude = JSON.parse(await completeText(createClaudeLlm({ bin: fakeBin }), ask));
+    const codex = JSON.parse(await completeText(createCodexLlm({ bin: fakeBin, home: join(workDir, "codex-home") }), ask));
+    // FAKE_FIXTURES shows the rest of the environment still gets through.
+    expect(claude.present).toEqual(["FAKE_FIXTURES"]);
+    expect(codex.present).toEqual(["FAKE_FIXTURES"]);
   });
 
   it("should run every other task at its own effort level too, whatever the reader's Claude Code setting is", async () => {
-    process.env.CLAUDE_CODE_EFFORT_LEVEL = "xhigh";
+    vi.stubEnv("CLAUDE_CODE_EFFORT_LEVEL", "xhigh");
     const llm = createClaudeLlm({ bin: fakeBin });
     const tasks = ["explain", "ask", "preview", "recap", "quiz"] as const;
     const efforts = await Promise.all(
@@ -343,7 +362,6 @@ describe("createCodexLlm", () => {
     home = join(workDir, "codex-home");
     writeFileSync(fakeBin, FAKE_CLAUDE);
     await chmod(fakeBin, 0o755);
-    process.env.FAKE_FIXTURES = join(import.meta.dirname, "fixtures");
   });
 
   afterAll(async () => {
@@ -363,59 +381,51 @@ describe("createCodexLlm", () => {
 
   it("should answer through codex exec, reading a captured real run, when Codex has no app-server", async () => {
     const runs = join(workDir, "replay.runs");
-    process.env.FAKE_CODEX_NO_APP_SERVER = "1";
-    try {
-      const llm = createCodexLlm({ bin: fakeBin, home });
-      expect(await completeText(llm, request(`replay runs=${runs}\nWhat does ubiquitous mean?`))).toBe(
-        "\u201cUbiquitous\u201d means present or found everywhere, like smartphones today.",
-      );
-      expect(readFileSync(runs, "utf8")).toBe("exec\n");
-    } finally {
-      delete process.env.FAKE_CODEX_NO_APP_SERVER;
-    }
+    vi.stubEnv("FAKE_CODEX_NO_APP_SERVER", "1");
+    const llm = createCodexLlm({ bin: fakeBin, home });
+    expect(await completeText(llm, request(`replay runs=${runs}\nWhat does ubiquitous mean?`))).toBe(
+      "\u201cUbiquitous\u201d means present or found everywhere, like smartphones today.",
+    );
+    expect(readFileSync(runs, "utf8")).toBe("exec\n");
   });
 
   it("should run with DeepRead's instructions, a read-only sandbox and no tools, the same either way", async () => {
     const hugePrompt = "x".repeat(300_000);
     const app = JSON.parse(await completeText(createCodexLlm({ bin: fakeBin, home }), request(`echo\n${hugePrompt}`)));
+    // Signed in through the test's own reader home, never the real ~/.codex.
+    expect(readlinkSync(join(home, "auth.json"))).toBe(join(readerCodexHome, "auth.json"));
     expect(app.thread).toMatchObject({ sandbox: "read-only", approvalPolicy: "never", ephemeral: true });
     expect(app.thread.cwd.replace(/^\/private/, "")).toBe(app.cwd.replace(/^\/private/, ""));
     expect(app.instructions).toBe("You are a tutor.");
     expect(app.toolsOff).toEqual(expect.arrayContaining(["shell_tool", "unified_exec", "computer_use", "browser_use"]));
     // Tools and skills DeepRead never uses, which only made every request longer.
     expect(app.toolsOff).toEqual(expect.arrayContaining(["multi_agent", "goals", "view_image"]));
+    // Nor the ChatGPT connectors' server, which a first answer in a new Codex home waited on.
+    expect(app.toolsOff).toContain("apps");
     expect(app.skillInstructions).toBe("false");
     // Nor does it wait on Codex sending its usage metrics before it exits.
     expect(app.analytics).toBe("false");
     expect(app.prompt).toBe(hugePrompt);
     expectPrivateDirectoryGone(app.cwd);
 
-    process.env.FAKE_CODEX_NO_APP_SERVER = "1";
-    try {
-      const exec = JSON.parse(await completeText(createCodexLlm({ bin: fakeBin, home }), request(`echo\n${hugePrompt}`)));
-      expect(exec).toMatchObject({ sandbox: "read-only", ignoresUserConfig: true, instructions: "You are a tutor.", lastArg: "-" });
-      expect(exec.settings).toEqual(app.settings);
-      expect(exec.prompt).toBe(hugePrompt);
-      expectPrivateDirectoryGone(exec.cwd);
-    } finally {
-      delete process.env.FAKE_CODEX_NO_APP_SERVER;
-    }
+    vi.stubEnv("FAKE_CODEX_NO_APP_SERVER", "1");
+    const exec = JSON.parse(await completeText(createCodexLlm({ bin: fakeBin, home }), request(`echo\n${hugePrompt}`)));
+    expect(exec).toMatchObject({ sandbox: "read-only", ignoresUserConfig: true, instructions: "You are a tutor.", lastArg: "-" });
+    expect(exec.settings).toEqual(app.settings);
+    expect(exec.prompt).toBe(hugePrompt);
+    expectPrivateDirectoryGone(exec.cwd);
   });
 
   it("should run in a Codex home of DeepRead's own, signed in through the reader's, so their AGENTS.md stays out", async () => {
     const llm = createCodexLlm({ bin: fakeBin, home });
-    try {
-      // Neither reader home exists, as for a reader not signed in yet: the link still goes in, and the real Codex
-      // reads it as signed out.
-      for (const readerHome of [join(workDir, "reader-codex"), join(workDir, "reader-codex-moved")]) {
-        vi.stubEnv("CODEX_HOME", readerHome);
-        // Answers run side by side, so all three set up the link at once.
-        const answers = await Promise.all(Array.from({ length: 3 }, () => completeText(llm, request("echo\n"))));
-        for (const answer of answers) expect(JSON.parse(answer).codexHome).toBe(home);
-        expect(readlinkSync(join(home, "auth.json"))).toBe(join(readerHome, "auth.json"));
-      }
-    } finally {
-      vi.unstubAllEnvs();
+    // Neither reader home exists, as for a reader not signed in yet: the link still goes in, and the real Codex
+    // reads it as signed out.
+    for (const readerHome of [join(workDir, "reader-codex"), join(workDir, "reader-codex-moved")]) {
+      vi.stubEnv("CODEX_HOME", readerHome);
+      // Answers run side by side, so all three set up the link at once.
+      const answers = await Promise.all(Array.from({ length: 3 }, () => completeText(llm, request("echo\n"))));
+      for (const answer of answers) expect(JSON.parse(answer).codexHome).toBe(home);
+      expect(readlinkSync(join(home, "auth.json"))).toBe(join(readerHome, "auth.json"));
     }
   });
 
@@ -423,18 +433,14 @@ describe("createCodexLlm", () => {
     for (const [noAppServer, ran] of [["", "app-server\n"], ["1", "exec\n"]]) {
       const pidFile = join(workDir, `signedout${noAppServer}.pid`);
       const runs = join(workDir, `signedout${noAppServer}.runs`);
-      process.env.FAKE_CODEX_NO_APP_SERVER = noAppServer;
-      try {
-        const started = Date.now();
-        const answer = completeText(createCodexLlm({ bin: fakeBin, home }), request(`signedout pidfile=${pidFile} runs=${runs}\n`));
-        await expect(answer).rejects.toMatchObject({ kind: "not_logged_in", message: expect.stringContaining("codex login") });
-        expect(Date.now() - started).toBeLessThan(5_000);
-        expect(alive(Number(readFileSync(pidFile, "utf8")))).toBe(false);
-        // A refused sign-in is the answer: codex exec would only be refused too.
-        expect(readFileSync(runs, "utf8")).toBe(ran);
-      } finally {
-        delete process.env.FAKE_CODEX_NO_APP_SERVER;
-      }
+      vi.stubEnv("FAKE_CODEX_NO_APP_SERVER", noAppServer);
+      const started = Date.now();
+      const answer = completeText(createCodexLlm({ bin: fakeBin, home }), request(`signedout pidfile=${pidFile} runs=${runs}\n`));
+      await expect(answer).rejects.toMatchObject({ kind: "not_logged_in", message: expect.stringContaining("codex login") });
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(alive(Number(readFileSync(pidFile, "utf8")))).toBe(false);
+      // A refused sign-in is the answer: codex exec would only be refused too.
+      expect(readFileSync(runs, "utf8")).toBe(ran);
     }
   });
 });
