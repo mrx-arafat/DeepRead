@@ -1589,6 +1589,44 @@ describe("DeepRead API", () => {
       expect((await published.request(`${PUBLIC}/api/unlock?key=anything`, { headers: viaCloudflare })).status).toBe(404);
     });
   });
+
+  describe("serving the built app", () => {
+    let web: Hono<AppEnv>;
+
+    beforeEach(async () => {
+      const webRoot = join(dataDir, "dist");
+      await mkdir(join(webRoot, "assets"), { recursive: true });
+      await writeFile(join(webRoot, "index.html"), "<!doctype html><title>DeepRead</title>");
+      await writeFile(join(webRoot, "assets", "index-abc123.js"), "console.log('app')");
+      await writeFile(join(webRoot, "assets", "index-abc123.js.br"), "brotli bytes");
+      await writeFile(join(webRoot, "assets", "index-abc123.js.gz"), "gzip bytes");
+      web = createApp({ library, parsePdf: fakeParsePdf, renderCover: fakeRenderCover, llm: llm.llm, quickTranslate: async (text) => text, webRoot });
+    });
+
+    it("should send the build's compressed copy of an asset and let the browser keep it for good", async () => {
+      const brotli = await web.request("/assets/index-abc123.js", { headers: { "accept-encoding": "gzip, deflate, br, zstd" } });
+      expect(brotli.headers.get("content-encoding")).toBe("br");
+      expect(brotli.headers.get("content-type")).toMatch(/javascript/);
+      expect(brotli.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+      expect(await brotli.text()).toBe("brotli bytes");
+      const gzip = await web.request("/assets/index-abc123.js", { headers: { "accept-encoding": "gzip" } });
+      expect(gzip.headers.get("content-encoding")).toBe("gzip");
+      expect(await gzip.text()).toBe("gzip bytes");
+      const plain = await web.request("/assets/index-abc123.js");
+      expect(plain.headers.get("content-encoding")).toBeNull();
+      expect(await plain.text()).toBe("console.log('app')");
+      expect((await web.request("/assets/missing-xyz.js")).status).toBe(404);
+    });
+
+    it("should have the browser check the app shell on every visit", async () => {
+      for (const path of ["/", "/book/b1/c2"]) {
+        const shell = await web.request(path);
+        expect(shell.status).toBe(200);
+        expect(shell.headers.get("cache-control")).toBe("no-cache");
+        expect(await shell.text()).toContain("<title>DeepRead</title>");
+      }
+    });
+  });
 });
 
 describe("checkClosing", () => {

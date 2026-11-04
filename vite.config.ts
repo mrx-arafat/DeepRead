@@ -1,12 +1,51 @@
 /// <reference types="vitest/config" />
 // Types only from vitest: a reader's install has no test tools, and `vite build` must still load this file.
 import react from "@vitejs/plugin-react";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { defineConfig } from "vite";
+import type { Plugin } from "vite";
 
 const API_PORT = Number(process.env.DEEPREAD_API_PORT ?? 8787);
 
+/**
+ * Writes a brotli (.br) and a gzip (.gz) copy beside each script, stylesheet and page the build makes. The server sends
+ * the smaller copy to a browser that takes it (server/app.ts), so the app arrives about a quarter of its size even
+ * when no proxy in front compresses it. Done once here, at the strongest settings, rather than on every request.
+ */
+function precompress(): Plugin {
+  return {
+    name: "deepread:precompress",
+    apply: "build",
+    writeBundle(output, bundle) {
+      for (const name of Object.keys(bundle)) {
+        if (!/\.(js|css|html|svg)$/.test(name)) continue;
+        const path = join(output.dir!, name);
+        const data = readFileSync(path);
+        const copies = {
+          br: brotliCompressSync(data, { params: { [constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_SIZE_HINT]: data.length } }),
+          gz: gzipSync(data, { level: 9 }),
+        };
+        for (const [extension, copy] of Object.entries(copies)) if (copy.length < data.length) writeFileSync(`${path}.${extension}`, copy);
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), precompress()],
+  build: {
+    rolldownOptions: {
+      output: {
+        // React in a file of its own: it changes only when React is upgraded, so after a DeepRead update a returning
+        // reader's browser fetches the app's own code again (about a quarter of the first paint) and keeps React.
+        codeSplitting: {
+          groups: [{ name: "react", test: /node_modules[\\/](\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?(react|react-dom|scheduler)[\\/]/ }],
+        },
+      },
+    },
+  },
   server: {
     // A fixed IPv4 address: "localhost" resolves to ::1 or 127.0.0.1 depending on the OS, and the phone tunnel
     // must know which one to reach.

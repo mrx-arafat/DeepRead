@@ -69,9 +69,21 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   if (deps.webRoot) {
     const indexPath = join(deps.webRoot, "index.html");
-    app.use("/*", serveStatic({ root: deps.webRoot }));
+    // Each file the build writes into /assets/ has a hash of its content in its name, so a browser keeps it for good
+    // and never asks again. The app shell names the current ones, so it is checked on every visit: a reader gets an
+    // update the next time they open DeepRead, never an old shell asking for files that are gone.
+    app.use("/*", async (c, next) => {
+      await next();
+      if (c.res.status !== 200) return;
+      if (c.req.path.startsWith("/assets/")) c.header("Cache-Control", "public, max-age=31536000, immutable");
+      else if (c.res.headers.get("Content-Type")?.startsWith("text/html")) c.header("Cache-Control", "no-cache");
+    });
+    // Text files go out as the brotli or gzip copy the build wrote beside them (vite.config.ts), to browsers that take it.
+    app.use("/*", serveStatic({ root: deps.webRoot, precompressed: true }));
     // Client-side routes fall back to the app shell; a missing file (/assets/x.js) must stay a real 404.
-    app.get("*", (c, next) => (/\.[a-z0-9]+$/i.test(c.req.path) ? next() : serveStatic({ path: indexPath })(c, next)));
+    app.get("*", (c, next) =>
+      /\.[a-z0-9]+$/i.test(c.req.path) ? next() : serveStatic({ path: indexPath, precompressed: true })(c, next),
+    );
   }
 
   app.onError((error, c) => {
