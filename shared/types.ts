@@ -102,6 +102,11 @@ export type BookSummary = {
   readingStatus: ReadingStatus;
   /** Page 1 of the PDF is the book's cover, served at /api/books/<id>/cover. Without one the library draws a cover. */
   hasCover: boolean;
+  /**
+   * The chapter the book opens at while it has no place saved: its first section of real reading (openingChapter in
+   * src/reader/book.ts), so the shelf can start loading it on the tap. Absent for books added before it was kept.
+   */
+  openingChapterId?: string;
   /** When the reader pinned the book to the top of their library; absent when it is not pinned. Pins are the reader's own, shared books included. */
   pinnedAt?: string;
   /**

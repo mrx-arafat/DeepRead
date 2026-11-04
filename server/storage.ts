@@ -73,6 +73,78 @@ export function scopedStore(store: ObjectStore, prefix: string): ObjectStore {
   };
 }
 
+/** A store that also knows how many bytes its objects under one folder take. */
+export type CountedStore = ObjectStore & {
+  /** The bytes of every object under the folder, as list() would add them up: listed once, then kept up to date. */
+  used(): Promise<number>;
+};
+
+/**
+ * `store`, also counting the bytes its objects under `prefix` (a folder) take, so the count is listed once and not on every
+ * look. After the first listing, each change made through here updates the count. That keeps it true while nothing else
+ * changes those objects: only one DeepRead may use a store (README), and a library makes every change to its own books.
+ * A change that fails may have been made in part, so the count lists the store again next time.
+ */
+export function countedStore(store: ObjectStore, prefix: string): CountedStore {
+  if (!isFolderPrefix(prefix)) throw new Error(`a folder prefix ends in "/": ${JSON.stringify(prefix)}`);
+  // Each object's bytes, and their sum: from a listing taken while no change was under way, and every change since.
+  let known: { sizes: Map<string, number>; bytes: number } | null = null;
+  // Moves on as a change starts and again as it ends, so a listing taken meanwhile is seen to have overlapped one.
+  let changes = 0;
+
+  const set = (key: string, size: number): void => {
+    if (!known || !key.startsWith(prefix)) return;
+    known.bytes += size - (known.sizes.get(key) ?? 0);
+    known.sizes.set(key, size);
+  };
+  const drop = (keys: Iterable<string>): void => {
+    if (!known) return;
+    for (const key of keys) {
+      known.bytes -= known.sizes.get(key) ?? 0;
+      known.sizes.delete(key);
+    }
+  };
+  // Each update says what the store holds once the change is made, whatever a listing taken meanwhile saw of it.
+  async function change(work: () => Promise<void>, update: () => void): Promise<void> {
+    changes++;
+    try {
+      await work();
+      update();
+    } catch (error) {
+      known = null;
+      throw error;
+    } finally {
+      changes++;
+    }
+  }
+
+  return {
+    kind: store.kind,
+    read: (key) => store.read(key),
+    size: (key) => store.size(key),
+    stream: (key, range) => store.stream(key, range),
+    write: (key, data) => change(() => store.write(key, data), () => set(key, typeof data === "string" ? Buffer.byteLength(data) : data.byteLength)),
+    async putFile(key, path) {
+      // Measured first: the local store moves the file rather than copying it.
+      const { size } = await stat(path);
+      await change(() => store.putFile(key, path), () => set(key, size));
+    },
+    download: (key, path) => store.download(key, path),
+    list: (folder, options) => store.list(folder, options),
+    remove: (keys) => change(() => store.remove(keys), () => drop(keys)),
+    removeAll: (folder) => change(() => store.removeAll(folder), () => drop([...(known?.sizes.keys() ?? [])].filter((key) => key.startsWith(folder)))),
+    async used() {
+      if (known) return known.bytes;
+      const at = changes;
+      const objects = await store.list(prefix);
+      const bytes = objects.reduce((sum, object) => sum + object.size, 0);
+      // A change made while listing may be missing from it: this count answers, but is not kept.
+      if (changes === at && !known) known = { sizes: new Map(objects.map((object) => [object.key, object.size])), bytes };
+      return bytes;
+    },
+  };
+}
+
 // writeFileAtomic's file in flight, which is not an object of its own.
 const IN_FLIGHT = /\.[0-9a-f-]{36}\.tmp$/;
 

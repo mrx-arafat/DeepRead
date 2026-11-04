@@ -459,7 +459,7 @@ export function LibraryPage() {
                     <div className="up-next-cover" aria-hidden><Cover book={upNext} /></div>
                     <div><h4><BookTitle title={upNext.title} /></h4>{upNext.author && <p>{upNext.author}</p>}</div>
                   </div>
-                  <Link className="up-next-link" href={`/book/${upNext.id}`} aria-label={`Open ${upNext.title}`} onClick={() => startOpening(upNext.id, upNext.progress?.chapterId)}>Open book <ArrowRight size={18} aria-hidden /></Link>
+                  <Link className="up-next-link" href={`/book/${upNext.id}`} aria-label={`Open ${upNext.title}`} onClick={() => startOpening(upNext.id, upNext.progress?.chapterId ?? upNext.openingChapterId)}>Open book <ArrowRight size={18} aria-hidden /></Link>
                 </section>
               )}
             </div>

@@ -72,7 +72,7 @@ export const BookRow = memo(function BookRow({ book, mode, pending, deleteError,
     if (event.key === "Escape" && mode === "delete" && !busy) close();
   }
 
-  const open = () => startOpening(book.id, book.progress?.chapterId);
+  const open = () => startOpening(book.id, book.progress?.chapterId ?? book.openingChapterId);
   const note = readingNote(book);
   const { sharedBy } = book;
   return (

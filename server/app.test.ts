@@ -7,6 +7,7 @@ import { gunzipSync } from "node:zlib";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiProviderId, AiStatus, ApiError, BookDetail, BookSummary, Chapter, HighlightColor, Note, ParsedBook, SectionKind, StorageView } from "../shared/types.ts";
+import { openingChapter } from "../src/reader/book.ts";
 import type { Ai } from "./ai.ts";
 import type { AppEnv } from "./app-env.ts";
 import { createApp } from "./app.ts";
@@ -307,6 +308,15 @@ describe("DeepRead API", () => {
       // Books stored before sections had kinds read as the book's own text.
       const legacy = (await (await upload(sampleBook())).json()) as BookDetail;
       expect(legacy.chapters.map((c) => c.kind)).toEqual(["body", "body"]);
+    });
+
+    it("should name in the shelf's summary the chapter the reader opens a book at while it has no place", async () => {
+      const book = sampleBook("Wrapped Book");
+      const [first, second] = book.chapters;
+      book.chapters = [{ ...first!, kind: "front" }, { ...second!, kind: "body" }];
+      const detail = (await (await upload(book)).json()) as BookDetail;
+      const summary = ((await (await app.request("/api/books")).json()) as BookSummary[]).find((each) => each.id === detail.id);
+      expect([summary?.openingChapterId, detail.openingChapterId]).toEqual(["c2", openingChapter(detail.chapters)?.id]);
     });
 
     it("should return the existing book when the same PDF is uploaded again", async () => {

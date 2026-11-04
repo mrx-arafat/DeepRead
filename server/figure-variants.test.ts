@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
@@ -7,11 +8,18 @@ import type { AppEnv } from "./app-env.ts";
 import type { ParsePdf, RenderCover } from "./deps.ts";
 
 const bytes = (value: number, length = 4) => new Uint8Array(length).fill(value);
+// A figure is stored under the hash of its bytes (book-figures.ts), and its variants are kept by that name.
+const variantsOf = (options: Parameters<typeof createFigureVariants>[0] = {}) => {
+  const variants = createFigureVariants(options);
+  return (data: Uint8Array<ArrayBuffer>, width: 480 | 960 | 1440) => variants.make(`${createHash("sha256").update(data).digest("hex")}.png`, data, width);
+};
+// What the library hands the route: the book has the figure, and its bytes when asked for.
+const storedFigure = (data: Uint8Array<ArrayBuffer>) => ({ stored: async () => true, read: async () => data });
 
 describe("responsive private figure variants", () => {
   it("downsamples real PNGs preserving aspect ratio and transparency, without upscaling", async () => {
     const original = new Uint8Array(await createCanvas(1200, 600).encode("png"));
-    const variant = createFigureVariants();
+    const variant = variantsOf();
     const small = await variant(original, 480);
     const image = await loadImage(small);
     expect([image.width, image.height]).toEqual([480, 240]);
@@ -26,7 +34,7 @@ describe("responsive private figure variants", () => {
   it("deduplicates work, bounds concurrency and retained bytes, and falls back on errors", async () => {
     let finish!: (result: Uint8Array<ArrayBuffer>) => void;
     const resize = vi.fn(() => new Promise<Uint8Array<ArrayBuffer>>((resolve) => { finish = resolve; }));
-    const variant = createFigureVariants({ resize, maxConcurrent: 1, maxQueued: 0, maxInFlightBytes: 4, maxCacheBytes: 4 });
+    const variant = variantsOf({ resize, maxConcurrent: 1, maxQueued: 0, maxInFlightBytes: 4, maxCacheBytes: 4 });
     const original = bytes(1), other = bytes(2);
     const first = variant(original, 480), duplicate = variant(original, 480);
     expect(await variant(other, 480)).toBe(other);
@@ -46,14 +54,14 @@ describe("responsive private figure variants", () => {
     finish(result);
     await evicted;
     expect(await variant(bytes(5, 5), 480)).toEqual(bytes(5, 5));
-    const broken = createFigureVariants({ resize: async () => { throw new Error("decode failed"); } });
+    const broken = variantsOf({ resize: async () => { throw new Error("decode failed"); } });
     expect(await broken(original, 480)).toBe(original);
   });
 
   it("waits for capacity during an ordinary three-figure burst and shares queued work", async () => {
     const jobs = new Map<number, (result: Uint8Array<ArrayBuffer>) => void>();
     const resize = vi.fn((data: Uint8Array<ArrayBuffer>) => new Promise<Uint8Array<ArrayBuffer>>((resolve) => jobs.set(data[0]!, resolve)));
-    const variant = createFigureVariants({ resize });
+    const variant = variantsOf({ resize });
     const first = variant(bytes(1), 480), second = variant(bytes(2), 480);
     const third = variant(bytes(3), 480), duplicate = variant(bytes(3), 480);
     let settled = false;
@@ -74,7 +82,7 @@ describe("responsive private figure variants", () => {
     for (const limits of [{ maxQueued: 1, maxInFlightBytes: 100 }, { maxQueued: 16, maxInFlightBytes: 8 }]) {
       const jobs = new Map<number, (result: Uint8Array<ArrayBuffer>) => void>();
       const resize = vi.fn((data: Uint8Array<ArrayBuffer>) => new Promise<Uint8Array<ArrayBuffer>>((resolve) => jobs.set(data[0]!, resolve)));
-      const variant = createFigureVariants({ resize, maxConcurrent: 1, ...limits });
+      const variant = variantsOf({ resize, maxConcurrent: 1, ...limits });
       const first = variant(bytes(1), 480), second = variant(bytes(2), 480);
       const overflow = bytes(3);
       expect(await variant(overflow, 480)).toBe(overflow);
@@ -98,7 +106,7 @@ describe("responsive private figure variants", () => {
     const resize = vi.fn()
       .mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }))
       .mockImplementation(async () => bytes(9));
-    const variant = createFigureVariants({ resize, maxConcurrent: 1, maxInFlightBytes: 8 });
+    const variant = variantsOf({ resize, maxConcurrent: 1, maxInFlightBytes: 8 });
     const original = bytes(1);
     const first = variant(original, 480), second = variant(bytes(2), 480);
     await vi.waitFor(() => expect(resize).toHaveBeenCalledTimes(1));
@@ -109,10 +117,12 @@ describe("responsive private figure variants", () => {
     expect(resize).toHaveBeenCalledTimes(3);
   });
 
-  it("strictly validates route widths and rereads authorized assets even after a cache hit", async () => {
+  it("strictly validates route widths, and takes a kept variant without reading the figure but never without authorizing it", async () => {
     expect(["480", "960", "1440"].map(figureWidth)).toEqual([480, 960, 1440]);
     const original = new Uint8Array(await createCanvas(600, 300).encode("png"));
-    const figure = vi.fn().mockResolvedValue(original);
+    const stored = storedFigure(original);
+    const read = vi.spyOn(stored, "read");
+    const figure = vi.fn().mockResolvedValue(stored);
     const app = new Hono<AppEnv>();
     app.use("*", async (c, next) => {
       c.set("library", { figure } as unknown as AppEnv["Variables"]["library"]);
@@ -127,15 +137,20 @@ describe("responsive private figure variants", () => {
     const response = await app.request(`${url}?width=480`);
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("private, no-cache");
-    const image = await loadImage(new Uint8Array(await response.arrayBuffer()));
-    expect(image.width).toBe(480);
+    const resized = new Uint8Array(await response.arrayBuffer());
+    expect((await loadImage(resized)).width).toBe(480);
+    const again = await app.request(`${url}?width=480`);
+    expect([again.status, new Uint8Array(await again.arrayBuffer())]).toEqual([200, resized]);
+    expect(read).toHaveBeenCalledTimes(1);
     figure.mockResolvedValue(null);
     expect((await app.request(`${url}?width=480`)).status).toBe(404);
-    expect(figure).toHaveBeenCalledTimes(2);
+    expect(figure).toHaveBeenCalledTimes(3);
   });
 
-  it("revalidates a figure by its name and width, and never answers 304 once the library stops authorizing it", async () => {
-    const figure = vi.fn().mockResolvedValue(new Uint8Array(await createCanvas(600, 300).encode("png")));
+  it("revalidates a figure by its name and width without reading it, and never answers 304 once the book has no such figure", async () => {
+    const stored = storedFigure(new Uint8Array(await createCanvas(600, 300).encode("png")));
+    const read = vi.spyOn(stored, "read");
+    const figure = vi.fn().mockResolvedValue(stored);
     const app = new Hono<AppEnv>();
     app.use("*", async (c, next) => {
       c.set("library", { figure } as unknown as AppEnv["Variables"]["library"]);
@@ -150,14 +165,18 @@ describe("responsive private figure variants", () => {
     expect(first.headers.get("cache-control")).toBe("private, no-cache");
     const same = await app.request(url, { headers: { "if-none-match": etag } });
     expect([same.status, await same.text()]).toEqual([304, ""]);
+    expect(read).toHaveBeenCalledTimes(1);
     expect((await app.request(url, { headers: { "if-none-match": '"stale"' } })).status).toBe(200);
+    stored.stored = async () => false;
+    expect((await app.request(url, { headers: { "if-none-match": etag } })).status).toBe(404);
+    expect((await app.request(url)).status).toBe(404);
     figure.mockResolvedValue(null);
     expect((await app.request(url, { headers: { "if-none-match": etag } })).status).toBe(404);
   });
 
   it("gives a width the fallback answers with the original's tag and no-cache, never the resized tag", async () => {
     const original = new Uint8Array(await createCanvas(600, 300).encode("png"));
-    const figure = vi.fn().mockResolvedValue(original);
+    const figure = vi.fn().mockResolvedValue(storedFigure(original));
     const app = new Hono<AppEnv>();
     app.use("*", async (c, next) => {
       c.set("library", { figure } as unknown as AppEnv["Variables"]["library"]);

@@ -33,7 +33,7 @@ import type { CoverImage } from "./cover.ts";
 import type { RenderCover } from "./deps.ts";
 import { isRecord } from "./http.ts";
 import { describePosition } from "./progress.ts";
-import { createLocalStore } from "./storage.ts";
+import { countedStore, createLocalStore } from "./storage.ts";
 import type { ByteRange, ObjectStore, StoredObject } from "./storage.ts";
 
 // Ids are a lowercase slug plus a hash. Anything else cannot be a book, so it never reaches the store.
@@ -119,6 +119,11 @@ type BookMeta = Omit<BookSummary, "hasCover" | "readingStatus"> & {
   cover?: boolean;
 };
 
+/** Where a book with no saved place opens: by the reader's own rule (openingChapter in src/reader/book.ts). */
+function openingChapterOf(book: ParsedBook): string | undefined {
+  return (book.chapters.find((chapter) => (chapter.kind ?? "body") === "body") ?? book.chapters[0])?.id;
+}
+
 /** Progress saved before it carried a chapter title and a percentage: those are filled in from the book. */
 function lacksDetails(meta: BookMeta): boolean {
   return meta.progress !== null && typeof meta.progress.percent !== "number";
@@ -173,6 +178,14 @@ export type StoredPdf = {
   stream(range?: ByteRange): Promise<ReadableStream<Uint8Array> | null>;
 };
 
+/** A figure of a book the reader may read. Each asks the store once; neither caches. */
+export type StoredFigure = {
+  /** Whether the book has the figure, without reading it: enough to answer a revalidation. */
+  stored(): Promise<boolean>;
+  /** Its bytes, or null when the book has no such figure. */
+  read(): Promise<Uint8Array<ArrayBuffer> | null>;
+};
+
 /** One limit for several libraries: each profile's books count against the room everyone shares. */
 export type SharedLimit = {
   /** Bytes the books of every library sharing the limit take together. */
@@ -215,8 +228,11 @@ export type Library = {
   pdf(id: string): Promise<StoredPdf | null>;
   /** Null when the book has no cover of its own, or has not been looked at yet. */
   cover(id: string): Promise<CoverImage | null>;
-  /** A figure from this readable book; filenames are content hashes, never paths. */
-  figure(id: string, name: string): Promise<Uint8Array<ArrayBuffer> | null>;
+  /**
+   * A figure of this readable book, whose bytes are read only when they are wanted. Null when the reader has no such book
+   * or `name` is not a figure's: filenames are content hashes, never paths.
+   */
+  figure(id: string, name: string): Promise<StoredFigure | null>;
   /** The original printed page as an image, available through the same permissions as book text. */
   sourcePage(id: string, page: number): Promise<SourcePageImage | null>;
   /**
@@ -263,7 +279,8 @@ export type Library = {
 };
 
 export function createLibrary(dataDir: string, options: LibraryOptions = {}): Library {
-  const store = options.store ?? createLocalStore(dataDir);
+  // The books' bytes are listed once and then counted as they change: the library page asks for them on every visit.
+  const store = countedStore(options.store ?? createLocalStore(dataDir), "books/");
   const limit = options.limit ?? null;
   const tempDir = options.tempDir ?? join(dataDir, "tmp");
   const shared = options.shared;
@@ -463,6 +480,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
       progress: meta.progress,
       readingStatus: meta.readingStatus ?? "reading",
       hasCover: meta.cover === true,
+      ...(meta.openingChapterId === undefined ? {} : { openingChapterId: meta.openingChapterId }),
       ...(pinnedAt === undefined ? {} : { pinnedAt }),
     };
   }
@@ -527,8 +545,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
 
   async function usage(): Promise<StorageUsage> {
     await ready();
-    const objects = await store.list("books/");
-    const used = objects.reduce((sum, object) => sum + object.size, 0);
+    const used = await store.used();
     return { used, total: shared ? await shared.total() : used, limit, where: store.kind };
   }
 
@@ -631,6 +648,8 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
               chapterWordCounts,
               cover: cover !== null,
             };
+            const opening = openingChapterOf(storedBook);
+            if (opening !== undefined) meta.openingChapterId = opening;
             const metaJson = JSON.stringify(meta);
             const pdfBytes = (await stat(uploadPath)).size;
             await assertRoom(pdfBytes + Buffer.byteLength(bookJson) + figureBytes + (cover?.data.byteLength ?? 0) + Buffer.byteLength(metaJson));
@@ -709,8 +728,15 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
 
     async figure(id, name) {
       if (!FIGURE_NAME.test(name) || !(await exists(id))) return null;
-      const data = await store.read(keyOf(id, `figures/${name}`));
-      return data ? new Uint8Array(data) : null;
+      const key = keyOf(id, `figures/${name}`);
+      return {
+        stored: async () => (await store.size(key)) !== null,
+        async read() {
+          const data = await store.read(key);
+          // A view of the bytes read, not a copy of them: a figure can be megabytes.
+          return data && new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
+        },
+      };
     },
 
     async cover(id) {

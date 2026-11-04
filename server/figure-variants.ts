@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 export const FIGURE_WIDTHS = [480, 960, 1440] as const;
 export type FigureWidth = typeof FIGURE_WIDTHS[number];
 
@@ -25,14 +23,25 @@ async function resizeFigure(data: Bytes, width: FigureWidth): Promise<Bytes> {
   return new Uint8Array(await canvas.encode("png"));
 }
 
-/** Derived bytes are cached by content, but callers must authorize/read the original on every request. */
+/**
+ * Resized figures, kept by name and width. A figure's name is the hash of its bytes (book-figures.ts), so a name names
+ * exactly one image wherever it is stored, and taking one kept here needs no read or hash of the original. The cache is
+ * shared by every library: a caller authorizes the figure in the reader's own book on every request before taking one.
+ */
+export type FigureVariants = {
+  /** The figure named `name` at `width`, when it was resized before and is still kept. */
+  kept(name: string, width: FigureWidth): Bytes | null;
+  /** `data`, the figure named `name`, at `width`; `data` itself when it is not resized (see resizeFigure and the limits). */
+  make(name: string, data: Bytes, width: FigureWidth): Promise<Bytes>;
+};
+
 export function createFigureVariants(options: {
   resize?: ResizeFigure;
   maxCacheBytes?: number;
   maxInFlightBytes?: number;
   maxConcurrent?: number;
   maxQueued?: number;
-} = {}): (data: Bytes, width: FigureWidth) => Promise<Bytes> {
+} = {}): FigureVariants {
   const resize = options.resize ?? resizeFigure;
   const maxCacheBytes = options.maxCacheBytes ?? 8 * 1024 * 1024;
   const maxInFlightBytes = options.maxInFlightBytes ?? 16 * 1024 * 1024;
@@ -42,41 +51,54 @@ export function createFigureVariants(options: {
   const pending = new Map<string, Promise<Bytes>>();
   const queue: Array<() => void> = [];
   let cacheBytes = 0, inFlightBytes = 0, active = 0;
-  return async (data, width) => {
-    const key = `${createHash("sha256").update(data).digest("hex")}/${width}`;
+  const keyOf = (name: string, width: FigureWidth): string => `${name}/${width}`;
+  const kept = (name: string, width: FigureWidth): Bytes | null => {
+    const key = keyOf(name, width);
     const cached = cache.get(key);
-    if (cached) { cache.delete(key); cache.set(key, cached); return cached; }
-    const known = pending.get(key);
-    if (known) return known;
-    // Ordinary browser bursts wait for a resize slot. Bound both the queue and input bytes
-    // held by active/queued jobs; only overflow falls back to the original image.
-    if (maxConcurrent <= 0 || (active >= maxConcurrent && queue.length >= maxQueued) || data.byteLength + inFlightBytes > maxInFlightBytes) return data;
-    inFlightBytes += data.byteLength;
-    let resolve!: (result: Bytes) => void;
-    const run = new Promise<Bytes>((ready) => { resolve = ready; });
-    pending.set(key, run);
-    const start = () => {
-      active++;
-      void Promise.resolve().then(() => resize(data, width)).then((result) => {
-        if (result !== data && result.byteLength <= maxCacheBytes) {
-          while ((cacheBytes + result.byteLength > maxCacheBytes || cache.size >= 64) && cache.size) {
-            const oldest = cache.keys().next().value!;
-            cacheBytes -= cache.get(oldest)!.byteLength;
-            cache.delete(oldest);
+    if (!cached) return null;
+    // The one used last goes last, so the oldest is the one left longest unused.
+    cache.delete(key);
+    cache.set(key, cached);
+    return cached;
+  };
+  return {
+    kept,
+    async make(name, data, width) {
+      const key = keyOf(name, width);
+      const cached = kept(name, width);
+      if (cached) return cached;
+      const known = pending.get(key);
+      if (known) return known;
+      // Ordinary browser bursts wait for a resize slot. Bound both the queue and input bytes
+      // held by active/queued jobs; only overflow falls back to the original image.
+      if (maxConcurrent <= 0 || (active >= maxConcurrent && queue.length >= maxQueued) || data.byteLength + inFlightBytes > maxInFlightBytes) return data;
+      inFlightBytes += data.byteLength;
+      let resolve!: (result: Bytes) => void;
+      const run = new Promise<Bytes>((ready) => { resolve = ready; });
+      pending.set(key, run);
+      const start = () => {
+        active++;
+        void Promise.resolve().then(() => resize(data, width)).then((result) => {
+          if (result !== data && result.byteLength <= maxCacheBytes) {
+            while ((cacheBytes + result.byteLength > maxCacheBytes || cache.size >= 64) && cache.size) {
+              const oldest = cache.keys().next().value!;
+              cacheBytes -= cache.get(oldest)!.byteLength;
+              cache.delete(oldest);
+            }
+            cache.set(key, result);
+            cacheBytes += result.byteLength;
           }
-          cache.set(key, result);
-          cacheBytes += result.byteLength;
-        }
-        return result;
-      }).catch(() => data).finally(() => {
-        pending.delete(key);
-        inFlightBytes -= data.byteLength;
-        active--;
-        queue.shift()?.();
-      }).then(resolve);
-    };
-    if (active < maxConcurrent) start();
-    else queue.push(start);
-    return run;
+          return result;
+        }).catch(() => data).finally(() => {
+          pending.delete(key);
+          inFlightBytes -= data.byteLength;
+          active--;
+          queue.shift()?.();
+        }).then(resolve);
+      };
+      if (active < maxConcurrent) start();
+      else queue.push(start);
+      return run;
+    },
   };
 }

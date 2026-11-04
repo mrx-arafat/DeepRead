@@ -80,9 +80,11 @@ describe("book figure assets", () => {
       const name = (await library.book(
         id,
       ))!.chapters[0]!.blocks[1]!.image!.src.split("/")[1]!;
-      expect(await library.figure(id, name)).toEqual(
+      expect(await (await library.figure(id, name))!.read()).toEqual(
         new Uint8Array(Buffer.from(png, "base64")),
       );
+      expect(await (await library.figure(id, name))!.stored()).toBe(true);
+      expect(await (await library.figure(id, "0".repeat(64) + ".png"))!.stored()).toBe(false);
       const sealed = await readFile(join(dir, "books", id, "figures", name));
       expect(sealed.subarray(0, 6).toString("latin1")).toBe("\0DRENC");
       const stored = await store.list(`books/${id}/`);

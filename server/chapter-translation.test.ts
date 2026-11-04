@@ -3,6 +3,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gunzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiError, BookSummary, Chapter, ChapterTranslation, ParsedBook, PublicProfile, TranslationSettings, TranslationTest } from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
@@ -345,6 +346,30 @@ describe("chapter translation over HTTP", () => {
     const failed = await app.request(`/api/books/${id}/chapters/c1/translation?lang=fr`);
     expect(failed.status).toBe(502);
     expect(await failed.json()).toEqual({ error: "translation_unavailable", message: "The translation services could not be reached just now." });
+  });
+
+  it("should gzip a long translation under its tag marked weak, answer 304 to it, and tag a changed translation anew", async () => {
+    const app = createApp({ ...fakes, library: createLibrary(dataDir), translation: translation() });
+    const form = new FormData();
+    form.set("file", new File([pdfBytes(book("Problems", [...TEXTS, "A sentence long enough to be worth compressing. ".repeat(40)]))], "book.pdf", { type: "application/pdf" }));
+    const id = ((await (await app.request("/api/books", { method: "POST", body: form })).json()) as BookSummary).id;
+    const url = `/api/books/${id}/chapters/c1/translation?lang=bn`;
+    const plain = await app.request(url);
+    const tag = plain.headers.get("etag") ?? "";
+    expect(tag).toMatch(/^"[^"]+"$/);
+    expect(plain.headers.get("cache-control")).toBe("private, no-cache");
+    const zipped = await app.request(url, { headers: { "accept-encoding": "gzip" } });
+    expect([zipped.headers.get("content-encoding"), zipped.headers.get("etag")]).toEqual(["gzip", `W/${tag}`]);
+    const text = await plain.text();
+    expect(gunzipSync(Buffer.from(await zipped.arrayBuffer())).toString("utf8")).toBe(text);
+    expect((await app.request(url, { headers: { "accept-encoding": "gzip", "if-none-match": `W/${tag}` } })).status).toBe(304);
+    // Changed where it is kept (the book stays loaded): the next answer is the new translation, under a new tag.
+    const keptFile = join(dataDir, "books", id, "translations", "bn", "c1.json");
+    await writeFile(keptFile, (await readFile(keptFile, "utf8")).replace("ms:The table looks brown.", "ms:The table looks red."));
+    const changed = await app.request(url, { headers: { "accept-encoding": "gzip", "if-none-match": `W/${tag}` } });
+    expect(changed.status).toBe(200);
+    expect(changed.headers.get("etag")).not.toBe(`W/${tag}`);
+    expect(JSON.parse(gunzipSync(Buffer.from(await changed.arrayBuffer())).toString("utf8")).blocks["c1-b2"]).toBe("ms:The table looks red.");
   });
 
   it("should let only the admin choose, and keep readers out of translation while it is off", async () => {

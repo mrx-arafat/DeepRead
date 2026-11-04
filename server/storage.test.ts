@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadEnvFiles } from "./env.ts";
 import { readStorageConfig } from "./storage-config.ts";
-import { createLocalStore, scopedStore } from "./storage.ts";
+import { countedStore, createLocalStore, scopedStore } from "./storage.ts";
 import type { ObjectStore } from "./storage.ts";
 
 type Setup = { store: ObjectStore; cleanup: () => Promise<void> };
@@ -32,11 +32,18 @@ async function r2Setup(): Promise<Setup> {
   return { store, cleanup: () => store.removeAll("") };
 }
 
+// A library's store: the same contract, while it counts the bytes of its books.
+const counted = (setup: () => Promise<Setup>) => async (): Promise<Setup> => {
+  const { store, cleanup } = await setup();
+  return { store: countedStore(store, "books/"), cleanup };
+};
+
 const stores: Array<[string, () => Promise<Setup>]> = [
   ["local", localSetup],
   ["scoped local", scopedSetup],
+  ["counted local", counted(localSetup)],
 ];
-if (process.env.DEEPREAD_TEST_R2 === "1") stores.push(["r2", r2Setup]);
+if (process.env.DEEPREAD_TEST_R2 === "1") stores.push(["r2", r2Setup], ["counted r2", counted(r2Setup)]);
 
 async function text(stream: ReadableStream<Uint8Array> | null): Promise<string | null> {
   return stream && new Response(stream).text();
@@ -124,6 +131,80 @@ describe("scopedStore", () => {
 
       await mine.removeAll("");
       expect(await theirs.list("")).toEqual([{ key: "books/b/meta.json", size: 2 }]);
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
+describe("countedStore", () => {
+  const sum = async (store: ObjectStore): Promise<number> => (await store.list("books/")).reduce((total, object) => total + object.size, 0);
+
+  it("should list once, count every change made through it, and list again after a change that failed", async () => {
+    const { store: inner, cleanup } = await localSetup();
+    const scratch = await mkdtemp(join(tmpdir(), "deepread-scratch-"));
+    let listings = 0;
+    let failing = false;
+    const watched: ObjectStore = {
+      ...inner,
+      list: (prefix, options) => (listings++, inner.list(prefix, options)),
+      write: (key, data) => (failing ? Promise.reject(new Error("the bucket did not answer")) : inner.write(key, data)),
+    };
+    const store = countedStore(watched, "books/");
+    try {
+      await inner.write("books/a/meta.json", "{}");
+      await inner.write("other/x.json", "not a book");
+      expect(await store.used()).toBe(2);
+
+      await store.write("books/a/meta.json", '{"v":2}');
+      await store.write("books/a/notes.json", new TextEncoder().encode("[1]"));
+      await writeFile(join(scratch, "upload.pdf"), "%PDF-1.7 a whole book");
+      await store.putFile("books/a/source.pdf", join(scratch, "upload.pdf"));
+      await store.remove(["books/a/notes.json", "books/never-was.json"]);
+      await store.write("other/y.json", "not a book either");
+      expect(await store.used()).toBe(await sum(inner));
+      await store.write("books/b/meta.json", "{}");
+      await store.removeAll("books/a/");
+      expect([await store.used(), await sum(inner), listings]).toEqual([2, 2, 1]);
+
+      failing = true;
+      await expect(store.write("books/c/meta.json", "{}")).rejects.toThrow(/did not answer/);
+      failing = false;
+      // The write failed, but may have landed: R2 can store an object and still fail the request.
+      await inner.write("books/c/meta.json", "{}");
+      expect([await store.used(), listings]).toEqual([4, 2]);
+    } finally {
+      await cleanup();
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("should not keep a count listed while a change was being made", async () => {
+    const { store: inner, cleanup } = await localSetup();
+    let listings = 0;
+    let listed!: () => void;
+    let release!: () => void;
+    const seen = new Promise<void>((resolve) => { listed = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const store = countedStore({
+      ...inner,
+      async list(prefix, options) {
+        const objects = await inner.list(prefix, options);
+        // The first listing is taken, then held back while a write lands.
+        if (++listings === 1) {
+          listed();
+          await gate;
+        }
+        return objects;
+      },
+    }, "books/");
+    try {
+      const first = store.used();
+      await seen;
+      await store.write("books/a/meta.json", "{}");
+      release();
+      expect(await first).toBe(0);
+      expect([await store.used(), await store.used(), listings]).toEqual([2, 2, 2]);
     } finally {
       await cleanup();
     }

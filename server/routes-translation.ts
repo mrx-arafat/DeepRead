@@ -4,12 +4,14 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { TRANSLATION_ENGINES } from "../shared/types.ts";
-import type { TranslationSettings } from "../shared/types.ts";
+import type { Chapter, LangCode, TranslationSettings } from "../shared/types.ts";
 import type { AppEnv } from "./app-env.ts";
 import { isTranslationEngine, TranslationError } from "./chapter-translation.ts";
 import type { Translation, TranslationHome } from "./chapter-translation.ts";
 import type { Accounts } from "./deps.ts";
 import { adminOnly, apiError, bookNotFound, chapterNotFound, invalidBody, invalidId, isLangCode, LANG_HELP, readJsonObject } from "./http.ts";
+import { jsonBody, sendJsonBody } from "./routes-books.ts";
+import type { JsonBody } from "./routes-books.ts";
 import { isReadableBookId, parseSharedBookId } from "./shares.ts";
 
 const SETTINGS_HELP = 'send JSON like {"enabled": true, "engine": "auto"}.';
@@ -21,6 +23,22 @@ const SETTINGS_HELP = 'send JSON like {"enabled": true, "engine": "auto"}.';
 function mayTranslate(c: Context<AppEnv>, settings: TranslationSettings): boolean {
   const { session } = c.var;
   return session === null || settings.enabled || session.actor.admin;
+}
+
+// A chapter's latest translation in each language, as sent: with its tag and its gzip, which are made once rather than on
+// every request. Keyed by the parsed chapter like the chapter's own (routes-books.ts), so it goes when its book does.
+const translationBodies = new WeakMap<Chapter, Map<LangCode, JsonBody>>();
+
+/** `text`, the chapter's translation in `lang`, with the tag and gzip already made for the same text. */
+function translationBody(chapter: Chapter, lang: LangCode, text: string): JsonBody {
+  let byLang = translationBodies.get(chapter);
+  if (!byLang) translationBodies.set(chapter, (byLang = new Map()));
+  const known = byLang.get(lang);
+  if (known?.text === text) return known;
+  // New, or the translation has changed since (blocks translated that a service had missed): this one replaces it.
+  const body = jsonBody(text);
+  byLang.set(lang, body);
+  return body;
 }
 
 /** What every reader reaches: a chapter's translation, and whether they may have one. */
@@ -59,7 +77,9 @@ export function translationRoutes(deps: Translation & { accounts?: Accounts }): 
     const chapter = book.chapters.find((candidate) => candidate.id === c.req.param("chapterId"));
     if (!chapter) return chapterNotFound(c);
     try {
-      return c.json(await translator.chapter(homeOf(c, id), chapter, lang, chosen.engine));
+      const translation = await translator.chapter(homeOf(c, id), chapter, lang, chosen.engine);
+      // As big as the chapter: revalidating and gzipped, like it.
+      return await sendJsonBody(c, translationBody(chapter, lang, JSON.stringify(translation)));
     } catch (error) {
       if (!(error instanceof TranslationError)) throw error;
       // Expected now and then: both services are unofficial. The reader is told to try again; the log says why.

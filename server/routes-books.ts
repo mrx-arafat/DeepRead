@@ -33,6 +33,7 @@ import { ParseError } from "./parser/errors.ts";
 import { isReadableBookId, parseSharedBookId } from "./shares.ts";
 import { titleFromFileName } from "./upload-name.ts";
 import { createFigureVariants, figureWidth } from "./figure-variants.ts";
+import type { FigureVariants } from "./figure-variants.ts";
 
 export const MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
 // Multipart framing adds a little to the file itself; the exact file size is checked after parsing.
@@ -211,17 +212,21 @@ function takesGzip(c: Context): boolean {
 // the default level for a body 7% bigger (17 KB instead of 16 KB, from 62 KB).
 const MIN_GZIP_CHARS = 1024;
 
-type ChapterBody = { text: string; tag: string; gzipped?: Promise<Uint8Array<ArrayBuffer> | null> };
+/** A JSON response made once and sent many times: its text, its tag, and its gzip once a client has taken it. */
+export type JsonBody = { readonly text: string; readonly tag: string; gzipped?: Promise<Uint8Array<ArrayBuffer> | null> };
+
+export function jsonBody(text: string): JsonBody {
+  return { text, tag: strongTag(text) };
+}
 
 // A chapter's JSON, its tag and its gzip, each made once: library.ts never changes a parsed book it has loaded, so neither
 // do they. Keyed by the parsed chapter itself, so they go when library.ts lets that book go.
-const chapterBodies = new WeakMap<Chapter, ChapterBody>();
+const chapterBodies = new WeakMap<Chapter, JsonBody>();
 
-function chapterBody(chapter: Chapter): ChapterBody {
+function chapterBody(chapter: Chapter): JsonBody {
   let body = chapterBodies.get(chapter);
   if (!body) {
-    const text = JSON.stringify(chapter);
-    body = { text, tag: strongTag(text) };
+    body = jsonBody(JSON.stringify(chapter));
     chapterBodies.set(chapter, body);
   }
   return body;
@@ -231,8 +236,13 @@ function chapterBody(chapter: Chapter): ChapterBody {
  * A chapter, gzipped for a client that takes it: a chapter is the biggest JSON the reader fetches, and a phone reaching
  * DeepRead through the tunnel waits on the home connection's upload for every byte of it.
  */
-async function sendChapter(c: Context, chapter: Chapter): Promise<Response> {
-  const body = chapterBody(chapter);
+const sendChapter = (c: Context, chapter: Chapter): Promise<Response> => sendJsonBody(c, chapterBody(chapter));
+
+/**
+ * `body` with its tag, revalidating, and gzipped for a client that takes it, compressed the first time one does. For the
+ * big JSON the reader fetches (chapters and their translations), where the bytes on the wire are what a reader waits for.
+ */
+export async function sendJsonBody(c: Context, body: JsonBody): Promise<Response> {
   const headers = { "Content-Type": "application/json", "Cache-Control": "private, no-cache", ETag: body.tag, Vary: "Accept-Encoding" };
   const zip = takesGzip(c) && body.text.length >= MIN_GZIP_CHARS;
   // The gzip is another encoding of the same JSON, so its tag is the same one marked weak (as a weak comparison matches).
@@ -243,7 +253,7 @@ async function sendChapter(c: Context, chapter: Chapter): Promise<Response> {
       (zipped) => new Uint8Array(zipped),
       (error: unknown) => {
         // Never expected; the JSON as it is still answers.
-        console.warn("could not gzip a chapter:", error);
+        console.warn("could not gzip a response:", error);
         return null;
       },
     );
@@ -254,7 +264,7 @@ async function sendChapter(c: Context, chapter: Chapter): Promise<Response> {
 }
 
 /** The books of whoever is reading: every route works on c.var.library. */
-export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover; variant?: ReturnType<typeof createFigureVariants> }): Hono<AppEnv> {
+export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover; variant?: FigureVariants }): Hono<AppEnv> {
   const variant = deps.variant ?? createFigureVariants();
   const { parsePdf, renderCover } = deps;
   const routes = new Hono<AppEnv>();
@@ -464,20 +474,28 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     const widths = c.req.queries("width");
     const width = widths?.length === 1 ? figureWidth(widths[0]!) : null;
     if (widths && !width) return apiError(c, 400, "invalid_figure_width", "Choose a supported figure width.");
-    // Authorize through this profile's library before consulting any derived-image cache.
+    // Authorize through this profile's library before answering from a tag or any derived-image cache.
     const name = c.req.param("name");
-    const data = await c.var.library.figure(id, name);
-    if (!data) return apiError(c, 404, "figure_not_found", "This book figure could not be found.");
-    // The name is the hash of the figure's bytes, so a width names exactly one resized variant of it.
+    const figure = await c.var.library.figure(id, name);
+    const notFound = (): Response => apiError(c, 404, "figure_not_found", "This book figure could not be found.");
+    if (!figure) return notFound();
+    // The name is the hash of the figure's bytes, so a width names exactly one resized variant of it, and a tag names
+    // exactly the bytes sent under it: a client that holds the tag needs only to hear that the book still has the figure.
     const variantTag = width ? strongTag(`${name}:${width}`) : null;
+    const originalTag = strongTag(`${name}:original`);
     // Only a real resize is ever tagged with its width, so a tag the phone already holds needs no resize at all.
-    if (variantTag && notModified(c, variantTag)) return c.body(null, 304, figureHeaders(variantTag));
-    const body = width ? await variant(data, width) : data;
+    const held = variantTag ?? originalTag;
+    if (notModified(c, held)) return (await figure.stored()) ? c.body(null, 304, figureHeaders(held)) : notFound();
+    const kept = width && variant.kept(name, width);
+    if (kept) return (await figure.stored()) ? c.body(kept, 200, figureHeaders(variantTag!)) : notFound();
+    const data = await figure.read();
+    if (!data) return notFound();
+    const body = width ? await variant.make(name, data, width) : data;
     // Anything that is not a resize (the figure is no wider than the width, the image is not a PNG, the resize queue is full,
     // or a resize failed) comes back as the original bytes. Those answer under the original's tag, so the full-size bytes
     // are never kept under a resized tag and a later request still gets the real variant.
     const resized = variantTag !== null && body !== data;
-    const etag = variantTag && resized ? variantTag : strongTag(`${name}:original`);
+    const etag = variantTag && resized ? variantTag : originalTag;
     if (notModified(c, etag)) return c.body(null, 304, figureHeaders(etag));
     return c.body(body, 200, figureHeaders(etag));
   });
