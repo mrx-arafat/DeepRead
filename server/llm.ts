@@ -8,6 +8,7 @@ import { mkdir, mkdtemp, readlink, rename, rm, symlink, writeFile } from "node:f
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import type { Writable } from "node:stream";
 import { parseStreamLine } from "./claude-stream.ts";
 import type { StreamEvent } from "./claude-stream.ts";
 import { parseCodexLine } from "./codex-stream.ts";
@@ -96,25 +97,47 @@ export type CliLlm = Llm & {
   close(): void;
 };
 
+/** One way of running a tool for an answer: how it is started, and the exchange over its stdin and stdout. */
+type CliProtocol = {
+  /** `scratch` is an empty directory of this request's own, removed when it ends; the tool runs in it. */
+  args(request: LlmRequest, scratch: string): string[];
+  /** Starts the exchange on the tool's stdin, and returns what reads each line the tool prints. */
+  start(request: LlmRequest, scratch: string, stdin: Writable): (line: string) => StreamEvent | null;
+};
+
 /** How to run one AI command-line tool for a single answer, and read what it prints. */
 type CliSpec = {
   /** The tool's name as the reader knows it. */
   name: string;
   bin: string;
-  /** `scratch` is an empty directory of this request's own, removed when it ends; the tool runs in it. */
-  args(request: LlmRequest, scratch: string): string[];
+  /**
+   * Best first. The next one answers only when one fails before it gave any text, and not for a reason the next
+   * would meet as well (signed out, missing, cancelled, too slow).
+   */
+  protocols: CliProtocol[];
   /** Files to write into `scratch` before the tool starts. */
   files?(request: LlmRequest): Record<string, string>;
   /** Runs before every answer, before the tool starts. */
   prepare?(): Promise<void>;
   env(request: LlmRequest): NodeJS.ProcessEnv;
-  /** What goes in on stdin: prompts can be far too big for argv. */
-  input(request: LlmRequest): string;
-  parse(line: string): StreamEvent | null;
   model(task: LlmTask): string;
   /** What to tell a reader whose tool is installed but not signed in. */
   signIn: string;
 };
+
+/** Sends the whole prompt on stdin, as prompts can be far too big for argv, and reads the answer with `parse`. */
+function promptOnStdin(
+  args: CliProtocol["args"],
+  parse: (line: string) => StreamEvent | null,
+): CliProtocol {
+  return {
+    args,
+    start(request, _scratch, stdin) {
+      stdin.end(request.user);
+      return parse;
+    },
+  };
+}
 
 const MAX_CONCURRENT = 3;
 const STDERR_TAIL_CHARS = 600;
@@ -241,14 +264,32 @@ function createCliLlm(spec: CliSpec, options: CliLlmOptions): CliLlm {
       for (const [name, content] of Object.entries(spec.files?.(request) ?? {})) {
         await writeFile(join(scratch, name), content);
       }
-      yield* run(request, profile.timeoutMs, scratch);
+      for (const [at, protocol] of spec.protocols.entries()) {
+        let answered = false;
+        try {
+          for await (const piece of run(protocol, request, profile.timeoutMs, scratch)) {
+            answered = true;
+            yield piece;
+          }
+          return;
+        } catch (error) {
+          const next = spec.protocols[at + 1];
+          if (answered || !next || !(error instanceof LlmError && error.kind === "failed")) throw error;
+          console.warn(`${spec.name} failed before answering, so it answers another way: ${error.message}`);
+        }
+      }
     } finally {
       await rm(scratch, { recursive: true, force: true });
     }
   }
 
-  async function* run(request: LlmRequest, timeoutMs: number, scratch: string): AsyncGenerator<string, void, undefined> {
-    const child = spawn(bin, spec.args(request, scratch), { cwd: scratch, env: spec.env(request), stdio: ["pipe", "pipe", "pipe"] });
+  async function* run(
+    protocol: CliProtocol,
+    request: LlmRequest,
+    timeoutMs: number,
+    scratch: string,
+  ): AsyncGenerator<string, void, undefined> {
+    const child = spawn(bin, protocol.args(request, scratch), { cwd: scratch, env: spec.env(request), stdio: ["pipe", "pipe", "pipe"] });
     running.add(child);
 
     let stderrTail = "";
@@ -287,14 +328,14 @@ function createCliLlm(spec: CliSpec, options: CliLlmOptions): CliLlm {
 
     // EPIPE here only means the process already exited; its exit status explains why.
     child.stdin.on("error", () => {});
-    child.stdin.end(spec.input(request));
+    const read = protocol.start(request, scratch, child.stdin);
 
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     try {
       let streamed = false;
       let result: Extract<StreamEvent, { kind: "result" }> | null = null;
       for await (const line of lines) {
-        const event = spec.parse(line);
+        const event = read(line);
         if (event?.kind === "text") {
           streamed = true;
           yield event.text;
@@ -365,10 +406,13 @@ export function createClaudeLlm(options: CliLlmOptions = {}): CliLlm {
     {
       name: "Claude Code",
       bin: "claude",
-      args: (request) => ["-p", "--model", TASK_PROFILES[request.task].model, "--system-prompt", request.system, ...CLAUDE_FLAGS],
+      protocols: [
+        promptOnStdin(
+          (request) => ["-p", "--model", TASK_PROFILES[request.task].model, "--system-prompt", request.system, ...CLAUDE_FLAGS],
+          parseStreamLine,
+        ),
+      ],
       env: claudeEnv,
-      input: (request) => request.user,
-      parse: parseStreamLine,
       model: (task) => TASK_PROFILES[task].model,
       signIn: "Claude Code is not signed in on this computer. Open a terminal, run `claude`, sign in, then try again.",
     },
@@ -419,6 +463,157 @@ async function linkCodexSignIn(home: string): Promise<void> {
   await rename(fresh, link);
 }
 
+/** Codex's settings for an answer, the same whichever way it runs. */
+function codexConfig(scratch: string): string[] {
+  return [
+    // JSON strings are valid TOML strings, which is what -c reads.
+    "-c",
+    `model_instructions_file=${JSON.stringify(join(scratch, CODEX_INSTRUCTIONS))}`,
+    "-c",
+    'model_reasoning_effort="low"',
+    ...CODEX_TOOLS_OFF,
+    // Codex's own skills, described to the model in about 10,000 bytes on every request; DeepRead uses none.
+    "-c",
+    "skills.include_instructions=false",
+    // Its usage metrics, which it sends to OpenAI before it exits: the answer was done about 150 ms before Codex was.
+    "-c",
+    "analytics.enabled=false",
+  ];
+}
+
+/** `codex exec`: prints the answer only once it is finished. Kept for a Codex without app-server, or when that fails. */
+const CODEX_EXEC = promptOnStdin(
+  (_request, scratch) => [
+    "exec",
+    "--json",
+    "--skip-git-repo-check",
+    "--ephemeral",
+    "--ignore-user-config",
+    "--ignore-rules",
+    "--sandbox",
+    "read-only",
+    "--cd",
+    scratch,
+    ...codexConfig(scratch),
+    "-",
+  ],
+  parseCodexLine,
+);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const UNAUTHORIZED = /\b401\b|unauthorized/i;
+
+function codexFailure(message: string, unauthorized = UNAUTHORIZED.test(message)): StreamEvent {
+  return { kind: "result", isError: true, text: message, apiStatus: unauthorized ? 401 : null };
+}
+
+// The ids of DeepRead's three calls, in the order they are made.
+const INITIALIZE = 1;
+const THREAD_START = 2;
+const TURN_START = 3;
+
+/**
+ * `codex app-server`: the same Codex, settings and instructions as `codex exec`, spoken to in JSON-RPC, one message
+ * per line. It sends the answer as the model writes it: on a real explanation the model's first word came about 3.9 s
+ * in, and exec showed the reader nothing until 10.0 s, when the answer was whole.
+ * Exec's own switches become the thread's: read-only, never asking for approval, nothing saved. It has no switch to
+ * leave out config.toml and .rules files, which DeepRead's Codex home does not have.
+ */
+const CODEX_APP_SERVER: CliProtocol = {
+  args: (_request, scratch) => ["app-server", ...codexConfig(scratch)],
+  start(request, scratch, stdin) {
+    let open = true;
+    const send = (message: Record<string, unknown>) => {
+      if (open) stdin.write(`${JSON.stringify(message)}\n`);
+    };
+    const streamed = new Set<unknown>();
+    send({
+      id: INITIALIZE,
+      method: "initialize",
+      params: { clientInfo: { name: "deepread", title: "DeepRead", version: "1" }, capabilities: null },
+    });
+
+    return (line) => {
+      let message: unknown;
+      try {
+        message = JSON.parse(line);
+      } catch {
+        return null;
+      }
+      if (!isRecord(message)) return null;
+      const { id, method } = message;
+      const params = isRecord(message.params) ? message.params : {};
+
+      if (id !== undefined && typeof method === "string") {
+        // Codex asking for leave to act. With no tools and approval "never" it has nothing to ask, and gets nothing.
+        send({ id, error: { code: -32601, message: "DeepRead grants nothing." } });
+        return null;
+      }
+      if (id !== undefined) {
+        if (isRecord(message.error)) {
+          return codexFailure(typeof message.error.message === "string" ? message.error.message : JSON.stringify(message.error));
+        }
+        const result = isRecord(message.result) ? message.result : {};
+        if (id === INITIALIZE) {
+          send({ method: "initialized" });
+          send({
+            id: THREAD_START,
+            method: "thread/start",
+            params: { cwd: scratch, sandbox: "read-only", approvalPolicy: "never", ephemeral: true },
+          });
+        } else if (id === THREAD_START) {
+          const thread = result.thread;
+          if (!isRecord(thread) || typeof thread.id !== "string") return codexFailure("Codex did not start a conversation.");
+          send({
+            id: TURN_START,
+            method: "turn/start",
+            params: { threadId: thread.id, input: [{ type: "text", text: request.user, text_elements: [] }] },
+          });
+        }
+        return null;
+      }
+
+      if (method === "item/agentMessage/delta" && typeof params.delta === "string") {
+        streamed.add(params.itemId);
+        return { kind: "text", text: params.delta };
+      }
+      if (method === "item/completed") {
+        // An answer Codex sent whole, with no pieces before it.
+        const item = params.item;
+        if (isRecord(item) && item.type === "agentMessage" && typeof item.text === "string" && !streamed.has(item.id)) {
+          return { kind: "text", text: item.text };
+        }
+        return null;
+      }
+      if (method === "error") {
+        // As with exec: Codex reports each retry of a dropped connection, and only a refused sign-in is worth stopping
+        // for, since it retries that for about fifteen seconds before giving up. Captured signed out (0.166.0):
+        // message "Reconnecting... 2/5", codexErrorInfo {"responseStreamDisconnected":{"httpStatusCode":401}}, and
+        // the server's words in additionalDetails.
+        const error = isRecord(params.error) ? params.error : {};
+        const text = [error.message, error.additionalDetails].filter((part) => typeof part === "string").join(": ");
+        const info = error.codexErrorInfo;
+        const status = isRecord(info) ? Object.values(info).find(isRecord)?.httpStatusCode : undefined;
+        if (info === "unauthorized" || status === 401 || UNAUTHORIZED.test(text)) return codexFailure(text, true);
+        return null;
+      }
+      if (method === "turn/completed") {
+        // Codex exits once its stdin closes.
+        open = false;
+        stdin.end();
+        const turn = isRecord(params.turn) ? params.turn : {};
+        if (turn.status === "completed") return { kind: "result", isError: false, text: "", apiStatus: null };
+        const error = isRecord(turn.error) ? turn.error : {};
+        return codexFailure(typeof error.message === "string" && error.message ? error.message : `the answer was ${String(turn.status)}`);
+      }
+      return null;
+    };
+  },
+};
+
 /**
  * Codex (`codex`), signed in with the reader's ChatGPT account. DeepRead's instructions replace Codex's own coding
  * instructions. Codex reads AGENTS.md and skills from its home whatever it is told, and the reader's are written
@@ -430,36 +625,10 @@ export function createCodexLlm({ home, ...options }: CodexLlmOptions): CliLlm {
     {
       name: "Codex",
       bin: "codex",
+      protocols: [CODEX_APP_SERVER, CODEX_EXEC],
       files: (request) => ({ [CODEX_INSTRUCTIONS]: request.system }),
       prepare: () => linkCodexSignIn(home),
-      args: (_request, scratch) => [
-        "exec",
-        "--json",
-        "--skip-git-repo-check",
-        "--ephemeral",
-        "--ignore-user-config",
-        "--ignore-rules",
-        "--sandbox",
-        "read-only",
-        "--cd",
-        scratch,
-        // JSON strings are valid TOML strings, which is what -c reads.
-        "-c",
-        `model_instructions_file=${JSON.stringify(join(scratch, CODEX_INSTRUCTIONS))}`,
-        "-c",
-        'model_reasoning_effort="low"',
-        ...CODEX_TOOLS_OFF,
-        // Codex's own skills, described to the model in about 10,000 bytes on every request; DeepRead uses none.
-        "-c",
-        "skills.include_instructions=false",
-        // Its usage metrics, which it sends to OpenAI before it exits: the answer was done about 150 ms before Codex was.
-        "-c",
-        "analytics.enabled=false",
-        "-",
-      ],
       env: () => ({ ...helperEnv(), CODEX_HOME: home }),
-      input: (request) => request.user,
-      parse: parseCodexLine,
       model: () => "codex",
       signIn: "Codex is not signed in on this computer. Open a terminal, run `codex login`, sign in, then try again.",
     },
