@@ -364,6 +364,40 @@ describe("DeepRead with profiles", () => {
     expect(await json<StorageView>(call("GET", "/api/storage", minaCookie))).toEqual({ ...minaUsage, limit });
   });
 
+  it("should count everyone's books against the shared limit from one listing, kept true by every change under profiles/", async () => {
+    const calls: string[] = [];
+    await start({ limit: 10_000_000, store: counted(createLocalStore(dataDir), calls) });
+    const profiles = started.at(-1)!;
+    const adminCookie = await signIn(admin, PASSKEY);
+    const mina = await addProfile(adminCookie, "Mina", "246810");
+    const rafi = await addProfile(adminCookie, "Rafi", "135790");
+    const minaCookie = await signIn(mina.id, "246810");
+    const rafiCookie = await signIn(rafi.id, "135790");
+    // What the store holds under profiles/ right now, and what the shared limit counts.
+    const listed = async () => (await createLocalStore(dataDir).list("profiles/")).reduce((sum, object) => sum + object.size, 0);
+    const total = async () => (await profiles.library(mina.id).usage()).total;
+    expect(await total()).toBe(await listed());
+    const stillTrue = async () => {
+      calls.length = 0;
+      expect(await total()).toBe(await listed());
+      expect(calls).not.toContain("list profiles/");
+    };
+
+    // A library's book, a reader's own place in a book shared with her, a photo, and a profile removed with all it kept.
+    const bookId = await upload(rafiCookie, "Rafi Reads");
+    await stillTrue();
+    expect((await call("PUT", `/api/books/${bookId}/shares/${mina.id}`, rafiCookie)).status).toBe(204);
+    const sharedId = (await json<BookSummary[]>(call("GET", "/api/books", minaCookie)))[0]!.id;
+    expect((await call("PUT", `/api/books/${sharedId}/progress`, minaCookie, { chapterId: "c1", blockId: "c1-b0", offset: 4 })).status).toBe(200);
+    await stillTrue();
+    const form = new FormData();
+    form.set("file", new File([await png(64, 64)], "me.png"));
+    expect((await call("PUT", `/api/admin/profiles/${mina.id}/photo`, adminCookie, form)).status).toBe(200);
+    await stillTrue();
+    expect((await call("DELETE", `/api/admin/profiles/${rafi.id}`, adminCookie)).status).toBe(204);
+    await stillTrue();
+  });
+
   it("should keep the admin's dashboard to the admin", async () => {
     const adminCookie = await signIn(admin, PASSKEY);
     const mina = await addProfile(adminCookie, "Mina", "246810");

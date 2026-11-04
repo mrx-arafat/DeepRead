@@ -508,6 +508,35 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
     });
   }
 
+  // Books added before meta.json named the chapter a book opens at get it once, after this library is first listed: in
+  // the background, one book at a time, so the shelf can start that chapter on the tap for them too. A book this cannot
+  // fill (one changed meanwhile, a read that failed) is tried again the next time DeepRead starts.
+  let fillingOpenings = false;
+  function fillOpeningChapters(found: BookMeta[]): void {
+    if (fillingOpenings) return;
+    fillingOpenings = true;
+    void (async () => {
+      for (const seen of found.filter((meta) => meta.openingChapterId === undefined)) {
+        if (closed) return;
+        try {
+          // Read whole rather than kept among the parsed books, so this pass never pushes out the books being read.
+          const book = parsedBooks.get(seen.id)?.book ?? ((await readJson(keyOf(seen.id, "book.json"))) as ParsedBook | null);
+          const opening = book ? openingChapterOf(book) : undefined;
+          if (opening === undefined) continue;
+          await serialized(seen.id, async () => {
+            // A change to the book (a removal, a new copy, a saved place) makes a new meta.json: unchanged, the book read
+            // is this book.
+            if ((await readMeta(seen.id)) === seen) await writeMeta({ ...seen, openingChapterId: opening });
+          });
+        } catch (error) {
+          // Its profile was removed meanwhile: there is nothing left to fill in.
+          if (error instanceof LibraryClosedError) return;
+          console.warn(`could not note which chapter ${seen.id} opens at:`, error);
+        }
+      }
+    })();
+  }
+
   async function bookIds(): Promise<string[]> {
     await ready();
     if (ids) return [...ids];
@@ -595,6 +624,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
         }),
       );
       const found = metas.filter((meta) => meta !== null);
+      fillOpeningChapters(found);
       found.sort((a, b) => b.addedAt.localeCompare(a.addedAt) || a.id.localeCompare(b.id));
       return found.map((meta) => toSummary(meta, pins.get(meta.id)));
     },

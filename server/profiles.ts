@@ -16,8 +16,8 @@ import { createLibrary, isBookId, slugify } from "./library.ts";
 import type { Library, SharedLimit } from "./library.ts";
 import { createShares, readerShelf } from "./shares.ts";
 import type { Shares } from "./shares.ts";
-import { scopedStore } from "./storage.ts";
-import type { ObjectStore, StoredObject } from "./storage.ts";
+import { countedStore, scopedStore } from "./storage.ts";
+import type { ObjectStore } from "./storage.ts";
 import { clientKey, createThrottle } from "./throttle.ts";
 import type { Throttle, ThrottleState } from "./throttle.ts";
 
@@ -134,8 +134,6 @@ const sameName = (a: string, b: string): boolean => a.normalize("NFC").toLowerCa
 const pickerOrder = (a: StoredProfile, b: StoredProfile): number =>
   Number(b.admin) - Number(a.admin) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
 
-const totalSize = (objects: StoredObject[]): number => objects.reduce((sum, object) => sum + object.size, 0);
-
 /** Runs the works given to it one after another, each starting once the one before has settled. */
 function createQueue(): <T>(work: () => Promise<T>) => Promise<T> {
   let tail: Promise<unknown> = Promise.resolve();
@@ -206,7 +204,11 @@ export type Profiles = {
 };
 
 export function createProfiles(options: ProfilesOptions): Profiles {
-  const { store, dataDir, limit, adminPasskey, adminName } = options;
+  const { dataDir, limit, adminPasskey, adminName } = options;
+  // Everything here reads and writes through this one store, so it sees every change under profiles/ (each profile's
+  // library and photo, the readers' copies of shared books, a profile's removal) and keeps the bytes they take: the
+  // shared limit is then checked, and the library page shown, without listing every profile's books each time.
+  const store = countedStore(options.store, "profiles/");
   const tempRoot = join(dataDir, "tmp");
   const libraries = new Map<string, Library>();
   const shelves = new Map<string, Library>();
@@ -287,7 +289,7 @@ export function createProfiles(options: ProfilesOptions): Profiles {
   };
 
   const shared: SharedLimit = {
-    total: async () => totalSize(await store.list("profiles/")),
+    total: () => store.used(),
     adding: createQueue(),
   };
 

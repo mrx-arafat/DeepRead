@@ -319,6 +319,25 @@ describe("DeepRead API", () => {
       expect([summary?.openingChapterId, detail.openingChapterId]).toEqual(["c2", openingChapter(detail.chapters)?.id]);
     });
 
+    it("should name the opening chapter of a book added before summaries did, once it has been listed", async () => {
+      const book = sampleBook("Wrapped Book");
+      const [first, second] = book.chapters;
+      book.chapters = [{ ...first!, kind: "front" }, { ...second!, kind: "body" }];
+      const { id } = (await (await upload(book)).json()) as BookDetail;
+      const metaPath = join(dataDir, "books", id, "meta.json");
+      const { openingChapterId: _opening, ...older } = JSON.parse(await readFile(metaPath, "utf8")) as BookSummary;
+      await writeFile(metaPath, JSON.stringify(older));
+      restart();
+
+      await app.request("/api/books");
+      // Filled in after the listing, and kept: DeepRead starting again lists it straight from meta.json.
+      await vi.waitFor(async () => expect((JSON.parse(await readFile(metaPath, "utf8")) as BookSummary).openingChapterId).toBe("c2"));
+      restart();
+      const [summary] = (await (await app.request("/api/books")).json()) as BookSummary[];
+      const detail = (await (await app.request(`/api/books/${id}`)).json()) as BookDetail;
+      expect(summary?.openingChapterId).toBe(openingChapter(detail.chapters)?.id);
+    });
+
     it("should return the existing book when the same PDF is uploaded again", async () => {
       const first = (await (await upload(sampleBook())).json()) as { id: string };
       const again = await upload(sampleBook());

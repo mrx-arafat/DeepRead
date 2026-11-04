@@ -204,6 +204,28 @@ describe("createChapterTranslator", () => {
     expect(calls).toHaveLength(3);
   });
 
+  it("should keep a chapter's whole translation in memory once read back, and not past its book's removal", async () => {
+    const { fetchImpl, calls } = services();
+    const translator = createChapterTranslator({ fetchImpl });
+    const reads = vi.spyOn(library, "readTranslation");
+    // The parsed chapter, as the route passes it.
+    const parsed = (await library.book(bookId))!.chapters[0]!;
+    const first = await translator.chapter({ library, bookId }, parsed, "bn", "auto");
+    // Read back whole from the book once, then answered from memory.
+    expect(await translator.chapter({ library, bookId }, parsed, "bn", "auto")).toEqual(first);
+    expect(await translator.chapter({ library, bookId }, parsed, "bn", "auto")).toEqual(first);
+    expect(reads).toHaveBeenCalledTimes(2);
+    expect(calls).toHaveLength(1);
+
+    // Removed and added again: its translation went with it, so the chapter is translated again.
+    await library.remove(bookId);
+    const uploadPath = await library.newUploadPath("book");
+    await writeFile(uploadPath, "%PDF-1.4");
+    await library.add({ uploadPath, sha256: "ab".repeat(32), parsed: book("Problems", TEXTS), cover: null });
+    expect(await translator.chapter({ library, bookId }, (await library.book(bookId))!.chapters[0]!, "bn", "auto")).toEqual(first);
+    expect(calls).toHaveLength(2);
+  });
+
   it("should translate a chapter once when two readers open it at the same moment", async () => {
     let release = (): void => {};
     const held = new Promise<void>((resolve) => (release = resolve));
@@ -363,10 +385,11 @@ describe("chapter translation over HTTP", () => {
     const text = await plain.text();
     expect(gunzipSync(Buffer.from(await zipped.arrayBuffer())).toString("utf8")).toBe(text);
     expect((await app.request(url, { headers: { "accept-encoding": "gzip", "if-none-match": `W/${tag}` } })).status).toBe(304);
-    // Changed where it is kept (the book stays loaded): the next answer is the new translation, under a new tag.
+    // Changed where it is kept while DeepRead was stopped: the next answer is the new translation, under a new tag.
     const keptFile = join(dataDir, "books", id, "translations", "bn", "c1.json");
     await writeFile(keptFile, (await readFile(keptFile, "utf8")).replace("ms:The table looks brown.", "ms:The table looks red."));
-    const changed = await app.request(url, { headers: { "accept-encoding": "gzip", "if-none-match": `W/${tag}` } });
+    const restarted = createApp({ ...fakes, library: createLibrary(dataDir), translation: translation() });
+    const changed = await restarted.request(url, { headers: { "accept-encoding": "gzip", "if-none-match": `W/${tag}` } });
     expect(changed.status).toBe(200);
     expect(changed.headers.get("etag")).not.toBe(`W/${tag}`);
     expect(JSON.parse(gunzipSync(Buffer.from(await changed.arrayBuffer())).toString("utf8")).blocks["c1-b2"]).toBe("ms:The table looks red.");

@@ -257,8 +257,16 @@ export type ChapterTranslator = {
 export function createChapterTranslator(options: EngineOptions = {}): ChapterTranslator {
   // By library, then book, language and chapter: two readers opening the same chapter at once share one translation.
   const running = new WeakMap<object, Map<string, Promise<ChapterTranslation>>>();
+  // The last answer read whole from the book, by parsed chapter and language: reading it again means decoding, parsing and
+  // fingerprinting a file as big as the chapter. It holds while the book's file does, and only this translator writes
+  // that file (writeTranslation), which drops it. A removed book is forgotten by its library with its parsed chapters,
+  // and a book added again is parsed again, so no request after a removal reaches an answer kept here.
+  const answers = new WeakMap<Chapter, Map<LangCode, { library: object; bookId: string; engine: TranslationEngine; answer: ChapterTranslation }>>();
 
   async function translate(home: TranslationHome, chapter: Chapter, lang: LangCode, engine: TranslationEngine): Promise<ChapterTranslation> {
+    let byLang = answers.get(chapter);
+    const known = byLang?.get(lang);
+    if (known?.library === home.library && known.bookId === home.bookId && known.engine === engine) return known.answer;
     const kept = readKept(await home.library.readTranslation(home.bookId, lang, chapter.id));
     // A blank block has nothing to translate, and a service would only stumble on it.
     const blocks = chapter.blocks.filter((block) => block.text.trim() !== "");
@@ -271,10 +279,22 @@ export function createChapterTranslator(options: EngineOptions = {}): ChapterTra
       });
       // The chapter's blocks as they are now: a block the book no longer has goes.
       const value = { blocks: Object.fromEntries(blocks.map((block) => [block.id, kept.get(block.id)])) };
+      byLang?.delete(lang);
       await home.library.writeTranslation(home.bookId, lang, chapter.id, value);
     }
     const sent = blocks.map((block) => [block.id, kept.get(block.id)] as const).filter((pair): pair is readonly [string, Kept] => pair[1] !== undefined);
-    return { lang, blocks: Object.fromEntries(sent.map(([id, one]) => [id, one.text])), engine: mostlyBy(sent.map(([, one]) => one), engine) };
+    // Shared by every request that finds it kept, so nobody may change it.
+    const answer: ChapterTranslation = Object.freeze({
+      lang,
+      blocks: Object.freeze(Object.fromEntries(sent.map(([id, one]) => [id, one.text]))),
+      engine: mostlyBy(sent.map(([, one]) => one), engine),
+    });
+    // Only an answer the book's file held whole: one just written is read back once, so what is kept is what the book has.
+    if (missing.length === 0) {
+      if (!byLang) answers.set(chapter, (byLang = new Map()));
+      byLang.set(lang, { library: home.library, bookId: home.bookId, engine, answer });
+    }
+    return answer;
   }
 
   return {
