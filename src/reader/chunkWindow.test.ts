@@ -50,6 +50,14 @@ describe("windowOf", () => {
     expect([...initialMounted(chunks, 0, "b0")]).toEqual(["b0", "b24"]);
   });
 
+  it("opens only the chunks the screen and the mount margin are estimated to show", () => {
+    const heightOf = (blocks: readonly Block[]) => blocks.length * 10;
+    expect([...initialMounted(chunks, 3, undefined, { heightOf, reach: 300 })]).toEqual(["b0", "b24"]);
+    expect([...initialMounted(chunks, 3, "b60", { heightOf, reach: 100 })]).toEqual(["b0", "b48"]);
+    expect([...initialMounted(chunks, 3, "b49", { heightOf, reach: 100 })]).toEqual(["b0", "b48", "b24"]);
+    expect([...initialMounted(chunks, 3, "b70", { heightOf, reach: 100 })]).toEqual(["b0", "b48", "b72"]);
+  });
+
   it("estimates placeholder heights from calibrated text and figure sizes", () => {
     const fallback = defaultCalibration(19, 30, 360);
     const calibrated = calibrate([{ chars: 4000, blocks: 24, height: 4000 * 0.5 + 24 * fallback.pxPerBlock }], fallback);

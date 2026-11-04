@@ -39,6 +39,18 @@ import { WordPopover, type Lookup } from "./WordPopover.tsx";
 
 type Props = { bookId: string; chapterId: string | null };
 
+// The bar's icons never change: made once, React skips them when the reader re-renders as the reading position moves.
+const ICON = {
+  back: <ArrowLeft size={20} aria-hidden />,
+  chapters: <List size={20} aria-hidden />,
+  notebook: <NotebookPen size={20} aria-hidden />,
+  search: <Search size={20} aria-hidden />,
+  listen: <Headphones size={18} aria-hidden />,
+  tools: <SlidersHorizontal size={17} aria-hidden />,
+  previous: <ChevronLeft size={22} aria-hidden />,
+  next: <ChevronRight size={22} aria-hidden />,
+};
+
 /** How long the chapter has left, as an e-reader's footer says it. */
 function timeLeft(minutes: number | null): string {
   if (minutes === null) return "";
@@ -348,7 +360,9 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const pageError = error ?? flow.error;
   const currentTitle = book?.chapters.find((item) => item.id === position.chapterId)?.title;
   // The tab and the history menu name the book and the chapter being read, so several tabs do not look alike.
-  useDocumentTitle(readerTitle(pageError ? undefined : book?.title, currentTitle));
+  // Memoized: it segments both titles into letters, and the reader re-renders as the reading position moves.
+  const documentTitle = useMemo(() => readerTitle(pageError ? undefined : book?.title, currentTitle), [pageError, book?.title, currentTitle]);
+  useDocumentTitle(documentTitle);
 
   if (pageError) {
     return (
@@ -368,10 +382,10 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     <div className="reader">
       <header className={pages.barAway && !tocOpen ? "topbar topbar-away" : "topbar"}>
         <Link href="/" className="icon-button" aria-label="Back to your books" title="Back to your books">
-          <ArrowLeft size={20} aria-hidden />
+          {ICON.back}
         </Link>
         <button type="button" className="icon-button" aria-label="Chapters" title="Chapters" aria-expanded={tocOpen} onClick={() => setTocOpen(true)}>
-          <List size={20} aria-hidden />
+          {ICON.chapters}
         </button>
         {/* The page's one h1: the book. Chapter titles are h2; the chapter named here is for the eye alone.
             On a phone the book and the chapter take a line each, so the dot between them is for wider screens. */}
@@ -393,12 +407,12 @@ export function ReaderPage({ bookId, chapterId }: Props) {
           {book && (syncState.phase === "saved" || syncState.phase === "saving") && <NoteSyncStatus state={syncState} onRetry={retryNotes} onDiscard={discardRejectedNotes} />}
           {book && (
             <button ref={notebookButton} type="button" className="icon-button" aria-label="Notebook" title="Notebook" onClick={() => { setNotebookDraft(null); setNotebookOpen(true); }}>
-              <NotebookPen size={20} aria-hidden />
+              {ICON.notebook}
             </button>
           )}
           {book && (
             <button type="button" className="icon-button" aria-label="Find in this book" title="Find in this book" onClick={() => setSearchOpen(true)}>
-              <Search size={20} aria-hidden />
+              {ICON.search}
             </button>
           )}
           {canSpeak && (
@@ -411,7 +425,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
               onClick={listen.active ? stopListening : listenFromView}
               aria-pressed={listen.active}
             >
-              <Headphones size={18} aria-hidden />
+              {ICON.listen}
               <span className="topbar-listen-label">Listen</span>
             </button>
           )}
@@ -534,13 +548,13 @@ export function ReaderPage({ bookId, chapterId }: Props) {
             <div className="page-toolbar-reveal">
               <span title={currentTitle ?? undefined}>{currentTitle}</span>
               <button type="button" className="quiet-button" onClick={pages.showToolbar}>
-                <SlidersHorizontal size={17} aria-hidden /> Reading tools
+                {ICON.tools} Reading tools
               </button>
             </div>
           )}
           <nav className={`page-turn-controls${listen.active ? "" : " reading-footer page-turn-dock"}`} aria-label="Page navigation">
             <button type="button" className="page-turn-button page-turn-previous" aria-label="Previous page" title="Previous page (←)" aria-keyshortcuts="ArrowLeft PageUp" disabled={!pages.canPrevious} onClick={pages.previous}>
-              <ChevronLeft size={22} aria-hidden /><span className="page-turn-label">Previous</span>
+              {ICON.previous}<span className="page-turn-label">Previous</span>
             </button>
             {!listen.active && (
               <div className="page-turn-status">
@@ -550,7 +564,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
               </div>
             )}
             <button type="button" className="page-turn-button page-turn-next" aria-label="Next page" title="Next page (→)" aria-keyshortcuts="ArrowRight PageDown" disabled={!pages.canNext} onClick={pages.next}>
-              <span className="page-turn-label">Next</span><ChevronRight size={22} aria-hidden />
+              <span className="page-turn-label">Next</span>{ICON.next}
             </button>
           </nav>
         </>

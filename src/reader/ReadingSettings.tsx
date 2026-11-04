@@ -1,5 +1,5 @@
 import { AlignJustify, AlignLeft, ArrowLeft, AudioWaveform, BookOpen, ChevronRight, Monitor, ScrollText, Settings, X } from "lucide-react";
-import { useEffect, useState, type FocusEvent, type ReactNode, type ToggleEvent } from "react";
+import { memo, useEffect, useState, type FocusEvent, type ReactNode, type ToggleEvent } from "react";
 import { LANGUAGES, type AiProviderId, type AiStatus, type LangCode } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { refreshDeviceTier, useDeviceTier } from "../deviceTier.ts";
@@ -382,8 +382,9 @@ function TranslationSwitch({ prefs, blocked }: { prefs: Prefs; blocked: boolean 
  * Appearance, reader preferences and voice setup use separate native popovers.
  * The same saved preferences and reflow path apply whichever panel holds a control.
  * `readersTranslate` is whether the admin lets readers show translations, null until known.
+ * Memoized: the reader re-renders as the reading position moves, and these panels change only with their props.
  */
-export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; readersTranslate: boolean | null }) {
+export const ReadingSettings = memo(function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; readersTranslate: boolean | null }) {
   const [open, setOpen] = useState(false);
   const { info } = useSession();
   // With profiles, the admin's own profile sees every helper as theirs; a reader sees which the admin has given them.
@@ -565,7 +566,7 @@ export function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; rea
       </section>
     </>
   );
-}
+});
 
 /** Replace a panel without nesting popovers or moving the book underneath. */
 function switchPanel(from: string, to: string): void {

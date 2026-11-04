@@ -6,6 +6,7 @@
 // reader (a text size, font, width or translation change) is applied with the row at the eye line held still.
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { flushSync } from "react-dom";
+import type { Block } from "../../shared/types.ts";
 import type { TierParams } from "../deviceTier.ts";
 import { indexAtLine } from "./book.ts";
 import {
@@ -132,6 +133,15 @@ function keepingRow(change: () => void): void {
 /** Whether the browser keeps the text in view still by itself when something above it changes size. */
 const anchorsScroll = (): boolean => typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("overflow-anchor", "auto");
 
+/** The bottom of an IntersectionObserver rootMargin ("150% 0px 150% 0px"), in px for a viewport `height` px tall. */
+function marginPx(rootMargin: string, height: number): number {
+  const parts = rootMargin.trim().split(/\s+/);
+  const bottom = parts[2] ?? parts[0] ?? "0px";
+  const value = parseFloat(bottom);
+  if (!Number.isFinite(value)) return 0;
+  return bottom.endsWith("%") ? (value / 100) * height : value;
+}
+
 const typographySignature = (): string => {
   const root = document.documentElement;
   return epochOf([...TYPOGRAPHY_ATTRIBUTES.map((attribute) => root.getAttribute(attribute)), root.style.getPropertyValue("--book-size")]);
@@ -154,16 +164,24 @@ function initialLayout(): Layout {
 export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunks, params, openAt, translated }: Options): ChunkWindow {
   const { windowing } = params;
   const keyOf = useMemo(() => chunkKeys(chunks), [chunks]);
+  const [layout, setLayout] = useState<Layout>(() => (windowing ? initialLayout() : DEFAULT_LAYOUT));
+  const epoch = epochOf([layout.signature, layout.width, translated, params.rowsPerChunk]);
+  const chapterKey = `${bookId}:${chapterId}`;
+  // Measured in this epoch, for calibrating the estimates of chunks not measured yet.
+  const samples = useRef<{ epoch: string; byKey: Map<string, HeightSample> }>({ epoch: "", byKey: new Map() });
+  if (samples.current.epoch !== epoch) samples.current = { epoch, byKey: samplesFor(chapterKey, epoch) };
   // What opens as rows: the first chunks, the saved place's, and every chunk with a note card (never a placeholder).
+  // Only as many as the screen and the mount margin below it are estimated to show: the observers bring the rest.
   const opening = (): Set<string> => {
     if (!windowing) return new Set();
-    const set = initialMounted(chunks, params.initialChunks, openAt);
+    const viewport = typeof window === "undefined" ? 0 : window.innerHeight;
+    const calibration = calibrate([...samples.current.byKey.values()], defaultCalibration(layout.fontSize, layout.lineHeight, layout.width));
+    const cover = viewport > 0 ? { heightOf: (blocks: readonly Block[]) => estimateHeight(blocks, calibration, layout.width), reach: viewport + marginPx(params.mountRootMargin, viewport) } : undefined;
+    const set = initialMounted(chunks, params.initialChunks, openAt, cover);
     for (const key of noteChunks) set.add(key);
     return set;
   };
   const [mounted, setMounted] = useState<Set<string>>(opening);
-  const [layout, setLayout] = useState<Layout>(() => (windowing ? initialLayout() : DEFAULT_LAYOUT));
-  const epoch = epochOf([layout.signature, layout.width, translated, params.rowsPerChunk]);
 
   // Read by observer callbacks, which must see the latest without being recreated.
   const mountedRef = useRef(mounted);
@@ -184,11 +202,7 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
   // Pins of this chapter's own: the selection's ends and the focused row, besides what the registry pins.
   const local = useRef(new Set<string>());
   const grace = useRef(new Map<string, number>());
-  const chapterKey = `${bookId}:${chapterId}`;
   const heightKey = useCallback((key: string) => `${chapterKey}:${key}`, [chapterKey]);
-  // Measured in this epoch, for calibrating the estimates of chunks not measured yet.
-  const samples = useRef<{ epoch: string; byKey: Map<string, HeightSample> }>({ epoch: "", byKey: new Map() });
-  if (samples.current.epoch !== epoch) samples.current = { epoch, byKey: samplesFor(chapterKey, epoch) };
 
   /** Takes `next` as the mounted set. A chunk mounting gets a new element, which the keep observer has not reported yet. */
   const adopt = useCallback((next: Set<string>): void => {

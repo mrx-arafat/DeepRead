@@ -56,13 +56,29 @@ export function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean
   return true;
 }
 
-/** What opens mounted before the observers report: the chapter's first chunks, and the chunk around the saved place. */
-export function initialMounted(chunks: readonly Chunk[], initialChunks: number, openAt?: string): Set<string> {
+/** How tall some rows will be (an estimate), and how far below their start the rows shown at once must reach, in px. */
+export type Cover = { heightOf: (blocks: readonly Block[]) => number; reach: number };
+
+/**
+ * What opens mounted before the observers report: the chapter's first chunks, and the chunks around the saved place.
+ * With `cover`, only the rows the screen and the mount margin are likely to show: the first chunks stop once their
+ * height reaches `cover.reach`, and a neighbour of the saved place's chunk is added only when the place lies within that
+ * reach of it. The observers mount the rest as the reader comes near, so rows that would be evicted unseen are never built.
+ */
+export function initialMounted(chunks: readonly Chunk[], initialChunks: number, openAt?: string, cover?: Cover): Set<string> {
   const mounted = new Set<string>();
-  for (const chunk of chunks.slice(0, Math.max(0, initialChunks))) mounted.add(chunk.key);
-  if (openAt !== undefined) {
-    const at = chunks.findIndex((chunk) => chunk.blocks.some((block) => block.id === openAt));
-    for (const chunk of at === -1 ? [] : chunks.slice(Math.max(0, at - 1), at + 2)) mounted.add(chunk.key);
+  let covered = 0;
+  for (const chunk of chunks.slice(0, Math.max(0, initialChunks))) {
+    mounted.add(chunk.key);
+    if (cover && (covered += cover.heightOf(chunk.blocks)) >= cover.reach) break;
+  }
+  const at = openAt === undefined ? -1 : chunks.findIndex((chunk) => chunk.blocks.some((block) => block.id === openAt));
+  if (at !== -1) {
+    const { blocks } = chunks[at]!;
+    const row = blocks.findIndex((block) => block.id === openAt);
+    mounted.add(chunks[at]!.key);
+    if (at > 0 && (!cover || cover.heightOf(blocks.slice(0, row)) < cover.reach)) mounted.add(chunks[at - 1]!.key);
+    if (at + 1 < chunks.length && (!cover || cover.heightOf(blocks.slice(row)) < cover.reach)) mounted.add(chunks[at + 1]!.key);
   }
   return mounted;
 }
