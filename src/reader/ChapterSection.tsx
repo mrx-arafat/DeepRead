@@ -4,6 +4,7 @@ import { chapterPosition, kindOf, minutes, readableBlocks } from "./book.ts";
 import { ChapterAid } from "./ChapterAid.tsx";
 import { ChapterClosing } from "./ChapterClosing.tsx";
 import { ChapterText, type TextActions } from "./ChapterText.tsx";
+import type { SentPassage } from "./HandoffCard.tsx";
 import { titleId } from "./listenBlocks.ts";
 import { LookupTip } from "./LookupTip.tsx";
 import { OriginalPage } from "./OriginalPage.tsx";
@@ -26,6 +27,8 @@ type Props = {
   translateNow?: boolean;
   /** The server said the admin turned translation off. The same function for every chapter, so the memo holds. */
   onTranslationRefused: () => void;
+  /** A passage of this chapter handed to an outside chat, waiting for its answer; null for the other chapters, so the memo holds. */
+  sent?: SentPassage | null;
 };
 
 // Below this (about three minutes), a section is read faster than a preview of it, and a box before and after it
@@ -36,7 +39,7 @@ const AID_MIN_WORDS = 500;
  * One chapter as the book flows past: where it sits, its title, a preview, the text, a recap and a closing line.
  * Memoized: scrolling and popovers re-render the reader, and a long book must not re-render every chapter with it.
  */
-export const ChapterSection = memo(function ChapterSection({ chapter, book, notes, highlights, lang, actions, onDismissTip, translate, translateNow = false, onTranslationRefused }: Props) {
+export const ChapterSection = memo(function ChapterSection({ chapter, book, notes, highlights, lang, actions, onDismissTip, translate, translateNow = false, onTranslationRefused, sent = null }: Props) {
   const blocks = useMemo(() => readableBlocks(chapter), [chapter]);
   const translationEligibility = useChapterTranslationEligibility(book.id, chapter.id, lang, translate, translateNow);
   const translation = useChapterTranslation(book.id, chapter.id, lang, translationEligibility.eligible && blocks.length > 0, onTranslationRefused);
@@ -103,6 +106,7 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
         actions={actions}
         translation={translated ? { lang, blocks: translated } : undefined}
         openAt={openAt}
+        sent={sent}
       />
       {aids && <ChapterAid kind="recap" bookId={book.id} chapterId={chapter.id} lang={lang} />}
       {aids && (

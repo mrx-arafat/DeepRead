@@ -85,6 +85,24 @@ const EXPLAIN_TASKS: Record<ExplainMode, (ctx: PassageContext) => string> = {
       `**Explanation:** 2 to 4 short sentences in everyday ${ctx.language} on what this means at this point in the book, the way a friend would explain it.`,
       `Write names of people and places in ${ctx.language} script. Use correct, standard ${ctx.language} spelling and grammar.`,
     ].join("\n"),
+  deep: (ctx) =>
+    [
+      `The reader selected: "${ctx.selection}"`,
+      "",
+      "The reader wants to go deeper into this passage: not to read on quickly, but to understand the people or the idea in it.",
+      "Explain it like a wise, warm teacher who knows people well, in English a learner can read: sentences of at most 15 words, everyday words, and any word a learner might not know explained in the same sentence in brackets.",
+      "Write these parts in this order, each starting with its bold label:",
+      "**What it says:** the passage in plain English, 2 or 3 short sentences. Nothing new yet.",
+      "**Under the surface:** the human side, 4 to 6 short sentences. First decide what kind of text this is.",
+      "- A story or a memoir: the people. What does the speaker or character want? What do they feel, and what are they afraid of? What are they not saying out loud? Name the habit of mind behind their words (such as judging people by what they own, or protecting one's pride) in plain words.",
+      "- An idea (philosophy, history, science, an argument): the human side of the idea. Why do people believe it or resist it? What does it ask us to give up? What need, comfort or fear sits under the way we usually think?",
+      "Use only what this passage and the earlier paragraphs show, plus what you know about this book and its author. Never invent an event, a past or a motive the text does not support; when you infer a feeling, say \"seems\" or \"probably\". Never label a person with a disorder or a diagnosis.",
+      "**In real life:** 2 or 3 lines starting with \"- \". Each is one small, concrete scene from everyday life that a reader in any country would recognise (work, family, school, money, friendship, social media): 1 or 2 sentences, then one sentence that ties it back to the passage. No scene that needs one country's customs to understand. Match the weight of the passage: for great suffering, keep the scenes serious.",
+      "**What it shows about people:** 1 or 2 sentences: the general truth about how humans work that this passage points at.",
+      `**Hard words:** up to 3 lines starting with "- ", each in the form: word - simple English meaning (${ctx.language} meaning in ${ctx.language} script). Only words from the selection that a learner of English would likely not know. Leave this part out if there are none.`,
+      "If the selection is plain fact with no human side (a list, a date, a formula), write only \"What it says\" and one sentence saying there is nothing more under it.",
+      "Keep the whole answer under about 300 words.",
+    ].join("\n"),
 };
 
 export function explainPrompt(mode: ExplainMode, ctx: PassageContext): Prompt {

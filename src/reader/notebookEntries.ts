@@ -62,6 +62,8 @@ export function entryLabel(note: Note): string {
       return `In ${LANGUAGES[note.lang]}`;
     case "word":
       return "Word meaning";
+    case "deep":
+      return "Deep dive";
     default:
       return "Explanation";
   }

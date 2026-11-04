@@ -14,6 +14,7 @@ import type {
   ChapterAid,
   ChapterAidRequest,
   ChapterTranslation,
+  HandoffSettings,
   LangCode,
   NewProfile,
   Note,
@@ -342,6 +343,10 @@ export const api = {
     request<ChapterTranslation>(`/api/books/${bookId}/chapters/${encodeURIComponent(chapterId)}/translation?lang=${lang}`, { signal }),
   /** Whether this reader may show translations, and which service makes them. */
   translationSettings: () => request<TranslationSettings>("/api/translation"),
+  /** Whether this reader gets the button that opens a deep dive in an outside chat (Open in ChatGPT). */
+  handoffSettings: () => request<HandoffSettings>("/api/handoff"),
+  adminHandoff: () => request<HandoffSettings>("/api/admin/handoff"),
+  saveAdminHandoff: (patch: Partial<HandoffSettings>) => request<HandoffSettings>("/api/admin/handoff", json("PUT", patch)),
   adminTranslation: () => request<TranslationSettings>("/api/admin/translation"),
   saveAdminTranslation: (patch: Partial<TranslationSettings>) => request<TranslationSettings>("/api/admin/translation", json("PUT", patch)),
   /** Translates one sample sentence with the chosen service, so the admin sees it work. */

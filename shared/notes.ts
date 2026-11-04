@@ -25,7 +25,7 @@ export function sameQuestion(a: NoteKey, b: NoteKey): boolean {
 }
 
 // A Record makes this list exhaustive: a new kind of question fails to compile until it is added here.
-const QUESTION_MODES: Record<ExplainMode, true> = { word: true, simple: true, example: true, native: true };
+const QUESTION_MODES: Record<ExplainMode, true> = { word: true, simple: true, example: true, native: true, deep: true };
 
 /** A question, shown as a card. A note of a kind this version does not know (kept by a newer DeepRead) is neither. */
 export function isQuestion(note: Note): note is QuestionNote {

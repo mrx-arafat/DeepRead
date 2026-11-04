@@ -1137,6 +1137,20 @@ describe("DeepRead API", () => {
       expect(note).toContain("[Text just after]\nGamma paragraph comes after.");
     });
 
+    it("should answer a Deep dive as the explain task, with its parts and the weight line in the prompt", async () => {
+      const id = await addBook();
+      llm.state.script = (request) => [`${request.task}|${request.user}`];
+      const selection = "Beta paragraph is the one the reader taps.";
+      const text = textOf(await readSse(await send("POST", "/api/ai/explain", explainBody(id, { mode: "deep", selection }))));
+      expect(text).toContain("explain|");
+      expect(text).toContain("**Under the surface:**");
+      expect(text).toContain("**In real life:**");
+      expect(text).toContain("Match the weight of the passage: for great suffering, keep the scenes serious.");
+      // Its own answer, apart from Explain's, for the same selection.
+      llm.state.script = () => ["a plain explanation"];
+      expect(textOf(await readSse(await send("POST", "/api/ai/explain", explainBody(id, { mode: "simple", selection }))))).toBe("a plain explanation");
+    });
+
     it("should report a failed generation as an error event and never cache it", async () => {
       const id = await addBook();
       llm.state.script = (_request, call) =>

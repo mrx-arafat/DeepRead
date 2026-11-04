@@ -33,8 +33,15 @@ describe("readPrefs", () => {
       chapterNotes: true,
       translation: false,
       lightReading: "auto",
+      handoff: "chatgpt",
     });
     expect(readPrefs({ highlight: "pink" }, false).highlight).toBe("pink");
+  });
+
+  it("should open deep dives in ChatGPT unless another chat the bar knows was chosen", () => {
+    expect(readPrefs({ handoff: "claude" }, false).handoff).toBe("claude");
+    expect(readPrefs({ handoff: "copy" }, false).handoff).toBe("copy");
+    expect(readPrefs({ handoff: "bard" }, false).handoff).toBe("chatgpt");
   });
 
   it("should keep the natural voice when it was chosen, and fall back to the device voice for anything else", () => {

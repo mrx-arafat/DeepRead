@@ -20,7 +20,7 @@ export function isLangCode(value: unknown): value is LangCode {
 export const LANG_HELP = `Pick one of: ${Object.keys(LANGUAGES).join(", ")}.`;
 
 // A Record type makes this list exhaustive: adding a mode to the contract fails to compile until handled here.
-export const EXPLAIN_MODES: Record<ExplainMode, true> = { word: true, simple: true, example: true, native: true };
+export const EXPLAIN_MODES: Record<ExplainMode, true> = { word: true, simple: true, example: true, native: true, deep: true };
 
 export function isExplainMode(value: unknown): value is ExplainMode {
   return typeof value === "string" && Object.hasOwn(EXPLAIN_MODES, value);

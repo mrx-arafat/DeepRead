@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { DEFAULT_LANG, HIGHLIGHT_COLORS, LANGUAGES, type HighlightColor, type LangCode } from "../shared/types.ts";
 import { deviceTier, refreshDeviceTier } from "./deviceTier.ts";
+import { HANDOFF_TARGET_IDS, type HandoffTarget } from "./reader/handoff.ts";
 
 /** The page colours, as on an e-reader: white paper, warm sepia paper, or light text on black. */
 export const THEMES = ["light", "sepia", "dark"] as const;
@@ -39,6 +40,8 @@ export type Prefs = {
   translation: boolean;
   /** Lighter reading for slower phones: Auto follows the device, On and Off force it. Kept per device. */
   lightReading: (typeof LIGHT_READING)[number];
+  /** Where a deep dive is handed to from the selection bar (Open in ChatGPT): a chat that opens with the prompt, or Copy only. */
+  handoff: HandoffTarget;
 };
 
 export const FONT_SIZES = { min: 15, max: 26 } as const;
@@ -69,6 +72,7 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
     chapterNotes: true,
     translation: false,
     lightReading: "auto",
+    handoff: "chatgpt",
   };
   const merged = { ...defaults, ...(typeof saved === "object" && saved !== null ? saved : {}) } as Prefs;
   // Own keys only: `in` would take an inherited name such as "toString" for a language.
@@ -89,6 +93,7 @@ export function readPrefs(saved: unknown, prefersDark: boolean): Prefs {
   merged.chapterNotes = typeof merged.chapterNotes === "boolean" ? merged.chapterNotes : defaults.chapterNotes;
   merged.translation = typeof merged.translation === "boolean" ? merged.translation : defaults.translation;
   merged.lightReading = oneOf(LIGHT_READING, merged.lightReading, defaults.lightReading);
+  merged.handoff = oneOf(HANDOFF_TARGET_IDS, merged.handoff, defaults.handoff);
   return merged;
 }
 

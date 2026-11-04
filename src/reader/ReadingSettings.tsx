@@ -6,6 +6,7 @@ import { refreshDeviceTier, useDeviceTier } from "../deviceTier.ts";
 import { FONT_SIZES, setPrefs, type Prefs } from "../prefs.ts";
 import { useSession } from "../profiles/session.tsx";
 import { setAiStatus, useReaderKey } from "./aiStatusStore.ts";
+import { HANDOFF_TARGET_IDS, HANDOFF_TARGETS, type HandoffTarget } from "./handoff.ts";
 import { helperRows } from "./helperState.ts";
 import type { Viewer } from "./helperState.ts";
 import { NATURAL_DOWNLOAD_MB, useNaturalState } from "./natural.ts";
@@ -384,13 +385,16 @@ function TranslationSwitch({ prefs, blocked }: { prefs: Prefs; blocked: boolean 
  * `readersTranslate` is whether the admin lets readers show translations, null until known.
  * Memoized: the reader re-renders as the reading position moves, and these panels change only with their props.
  */
-export const ReadingSettings = memo(function ReadingSettings({ prefs, readersTranslate }: { prefs: Prefs; readersTranslate: boolean | null }) {
+export const ReadingSettings = memo(function ReadingSettings({ prefs, readersTranslate, readersHandoff }: { prefs: Prefs; readersTranslate: boolean | null; readersHandoff: boolean | null }) {
   const [open, setOpen] = useState(false);
   const { info } = useSession();
   // With profiles, the admin's own profile sees every helper as theirs; a reader sees which the admin has given them.
   const viewer: Viewer = info?.mode === "profiles" ? (info.session?.admin && !info.session.impersonatedBy ? "admin" : "reader") : "single";
   // As the server has it: the admin may always translate, viewing as someone else too, and without profiles anyone may.
   const translationBlocked = readersTranslate === false && info?.mode === "profiles" && !info.session?.admin;
+  // The server already answers for who is asking: the admin is never blocked.
+  const handoffBlocked = readersHandoff === false;
+  const handoffName = HANDOFF_TARGETS[prefs.handoff].name;
   return (
     <>
       <button type="button" className="icon-button settings-button" popoverTarget={PANEL} aria-label="Reading settings" title="Reading settings">
@@ -550,6 +554,35 @@ export const ReadingSettings = memo(function ReadingSettings({ prefs, readersTra
           {/* Says what the choice changes, and changes with it, so the reader sees it took effect. */}
           <p id={`${PANEL}-lang-hint`} className="settings-hint">
             Word meanings, explanations and translations come in {LANGUAGES[prefs.lang]}. The book itself stays in English.
+          </p>
+        </div>
+
+        {/* Open in ChatGPT: which outside chat the selection bar's button opens, named after it. */}
+        <div className="settings-group">
+          <label className="settings-label" htmlFor={`${PANEL}-handoff`}>
+            Deep dives open in
+          </label>
+          <select
+            id={`${PANEL}-handoff`}
+            value={prefs.handoff}
+            aria-describedby={`${PANEL}-handoff-hint`}
+            disabled={handoffBlocked}
+            onChange={(event) => setPrefs({ handoff: event.target.value as HandoffTarget })}
+          >
+            {HANDOFF_TARGET_IDS.map((target) => (
+              <option key={target} value={target}>
+                {HANDOFF_TARGETS[target].name}
+              </option>
+            ))}
+          </select>
+          <p id={`${PANEL}-handoff-hint`} className="settings-hint">
+            {handoffBlocked
+              ? "The admin has turned this off."
+              : prefs.handoff === "copy"
+                ? "The selection bar's Copy prompt button copies a deep-dive prompt for you to paste into any chat."
+                : !HANDOFF_TARGETS[prefs.handoff].open
+                  ? `The selection bar's Ask ${handoffName} button copies a deep-dive prompt and opens ${handoffName} for you to paste it. The menu beside it offers the other chats.`
+                  : `The selection bar's Ask ${handoffName} button opens it with the passage and a prompt filled in, in your own account there. The prompt is copied too, in case it opens empty. The menu beside it offers the other chats.`}
           </p>
         </div>
 

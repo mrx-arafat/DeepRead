@@ -3,6 +3,8 @@ import { Gift, Headphones, PencilLine } from "lucide-react";
 import { useLayoutEffect, type KeyboardEvent } from "react";
 import { LANGUAGES, type ExplainMode, type LangCode } from "../../shared/types.ts";
 import { useHelperCredit } from "./aiStatusStore.ts";
+import type { HandoffLink, HandoffTarget } from "./handoff.ts";
+import { HandoffControl } from "./HandoffControl.tsx";
 import { HighlightGroup, type HighlightChoice } from "./HighlightGroup.tsx";
 import { canSpeak } from "./speech.ts";
 import { blockOf } from "./textRanges.ts";
@@ -19,23 +21,27 @@ type Props = {
   onReflect?: () => void;
   /** Highlighting the selection; absent when its words could not be found in the book's text to paint. */
   highlight?: HighlightChoice;
+  /** Handing the selection to an outside chat (Open in ChatGPT); absent when the admin turned it off. */
+  handoff?: HandoffLink | null;
+  onSent?: (link: HandoffLink, copied: Promise<boolean>) => void;
+  onChooseHandoff?: (target: HandoffTarget) => void;
 };
 
 // The end handle hangs about 24px below the last selected line on Android and iOS.
 const TOUCH_HANDLE_CLEARANCE = 32;
 
-/** Left and Right move between the buttons, as in any toolbar. */
+/** Left and Right move between the buttons, as in any toolbar. The chat link is one of them. */
 function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
   if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-  const buttons = [...event.currentTarget.querySelectorAll("button")];
-  const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  const buttons = [...event.currentTarget.querySelectorAll<HTMLElement>("button, a[href]")].filter((button) => button.closest('[role="menu"]') === null);
+  const at = buttons.indexOf(document.activeElement as HTMLElement);
   const next = buttons[(at + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length];
   next?.focus();
   event.preventDefault();
 }
 
 /** The small bar that appears over selected text: how do you want this explained, or highlighted? */
-export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListen, onReflect, highlight }: Props) {
+export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListen, onReflect, highlight, handoff, onSent, onChooseHandoff }: Props) {
   // For a reader the admin shared an AI with: whose it is, where they choose to use it. Sharing is caring.
   const credit = useHelperCredit();
   const { refs, floatingStyles } = useFloating({
@@ -76,12 +82,16 @@ export function SelectionBar({ range, lang, autoFocus, touch, onExplain, onListe
       <button type="button" onClick={() => onExplain("simple")}>
         Explain
       </button>
+      <button type="button" onClick={() => onExplain("deep")}>
+        Deep dive
+      </button>
       <button type="button" onClick={() => onExplain("example")}>
         Example
       </button>
       <button type="button" onClick={() => onExplain("native")}>
         In {LANGUAGES[lang]}
       </button>
+      {handoff && onSent && onChooseHandoff && <HandoffControl link={handoff} where="bar" onChoose={onChooseHandoff} onSent={onSent} />}
       {canSpeak && (
         <button type="button" aria-label="Listen from here" title="Listen from here" onClick={onListen}>
           <Headphones size={16} aria-hidden /> Listen

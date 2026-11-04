@@ -6,6 +6,7 @@ import { ChapterText, type TextActions } from "./ChapterText.tsx";
 
 const actions: TextActions = {
   onWord: () => {}, onSelect: () => {}, onDismiss: () => {}, onCloseNote: () => {}, onSaveAnswer: () => {},
+  onDeeper: () => {}, handoffFor: () => null, onSent: () => {}, onChooseHandoff: () => {}, onSaveReflection: () => {}, onCloseSent: () => {}, onSaveSent: () => {},
 };
 const asset = `figures/${"a".repeat(64)}.png`;
 const figure: Block = { id: "c1-figure", type: "image", page: 1, text: "", image: { src: asset, width: 800, height: 600, alt: "A plotted curve" } };

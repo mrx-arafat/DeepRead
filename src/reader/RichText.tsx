@@ -73,7 +73,7 @@ type SectionKind = "deep" | "glossary" | "translation" | "plain";
 
 function kindOf(label: string | null): SectionKind {
   if (!label) return "plain";
-  if (/deeper/i.test(label)) return "deep";
+  if (/deeper|under the surface/i.test(label)) return "deep";
   if (/hard words/i.test(label)) return "glossary";
   if (/translation/i.test(label)) return "translation";
   return "plain";

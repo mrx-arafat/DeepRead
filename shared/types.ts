@@ -226,6 +226,9 @@ export type TranslationSettings = {
   engine: TranslationEngine;
 };
 
+/** The admin's choice for Open in ChatGPT: whether readers get the button that hands a deep dive to an outside chat. */
+export type HandoffSettings = { enabled: boolean };
+
 /** A chapter's paragraphs and headings in one language, by block id. Kept with the book, so each is translated once. */
 export type ChapterTranslation = {
   lang: LangCode;
@@ -287,7 +290,9 @@ export type ExplainMode =
   /** Explain with a concrete everyday example. */
   | "example"
   /** Explain in the reader's own language. */
-  | "native";
+  | "native"
+  /** Go deeper: the people or the idea under the passage, with scenes from everyday life. */
+  | "deep";
 
 /** The highlighter colours a reader can mark a passage with, in the order the selection bar offers them. */
 export const HIGHLIGHT_COLORS = ["yellow", "green", "blue", "pink"] as const;

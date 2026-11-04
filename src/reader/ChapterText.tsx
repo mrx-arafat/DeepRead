@@ -3,7 +3,8 @@ import type { Block, LangCode, QuestionNote } from "../../shared/types.ts";
 import { TIER_PARAMS, useDeviceTier } from "../deviceTier.ts";
 import { headingTags } from "./book.ts";
 import { type Chunk, chunksOf } from "./chunkWindow.ts";
-import { NoteCard } from "./NoteCard.tsx";
+import { HandoffCard, type SentPassage } from "./HandoffCard.tsx";
+import { NoteCard, type CardActions } from "./NoteCard.tsx";
 import { blockOf, termSpan, wordRangeAtPoint } from "./textRanges.ts";
 import { useChunkWindow } from "./useChunkWindow.ts";
 import { useWordCursor } from "./useWordCursor.ts";
@@ -11,13 +12,14 @@ import type { Lookup } from "./WordPopover.tsx";
 import "./book-content.css";
 import { offsetInBlock, rangeWithin } from "./domText.ts";
 
-/** What the reader can do with the text. Shared by every chapter on the page, so keep the functions stable. */
-export type TextActions = {
+/** What the reader can do with the text and its cards. Shared by every chapter on the page, so keep the functions stable. */
+export type TextActions = CardActions & {
   onWord: (lookup: Lookup) => void;
   onSelect: (lookup: Lookup) => void;
   onDismiss: () => void;
-  onCloseNote: (id: string, byKeyboard: boolean) => void;
-  onSaveAnswer: (note: QuestionNote, answer: string) => void;
+  /** The card of a passage handed to an outside chat from the bar: closed, or its answer pasted and kept. */
+  onCloseSent: () => void;
+  onSaveSent: (sent: SentPassage, text: string) => void;
 };
 
 type Props = {
@@ -31,6 +33,8 @@ type Props = {
   translation?: { lang: LangCode; blocks: Record<string, string> };
   /** The block the chapter opens at (the reader's saved place), so its text is on the page before the rest. */
   openAt?: string;
+  /** A passage of this chapter handed to an outside chat from the bar, shown as a card beside its block until the answer is pasted. */
+  sent?: SentPassage | null;
 };
 
 // How long a touch selection must rest before the bar offers explanations: the handles may still be moving.
@@ -138,8 +142,10 @@ type ChunkProps = {
   /** The notes on this chunk's blocks, in the book's order. */
   notes: QuestionNote[];
   latestNoteId: string | undefined;
+  /** The passage handed to a chat, when its block is in this chunk. */
+  sent: SentPassage | null;
   bookId: string;
-  actions: Pick<TextActions, "onCloseNote" | "onSaveAnswer">;
+  actions: TextActions;
   translation: Translation | undefined;
   /** The one block in the chapter that Tab stops on, when it is in this chunk. */
   tabbable: string | undefined;
@@ -153,6 +159,7 @@ function sameRows(previous: ChunkProps, next: ChunkProps): boolean {
   if (previous.chunk !== next.chunk || previous.tags !== next.tags || previous.charsBefore !== next.charsBefore) return false;
   if (previous.bookId !== next.bookId || previous.actions !== next.actions || previous.tabbable !== next.tabbable || previous.windowed !== next.windowed || previous.attach !== next.attach) return false;
   if (previous.notes.length !== next.notes.length || previous.notes.some((note, at) => note !== next.notes[at])) return false;
+  if (previous.sent !== next.sent) return false;
   if ((previous.latestNoteId !== next.latestNoteId) && (previous.notes.length > 0 || next.notes.length > 0)) return false;
   if (previous.translation === next.translation) return true;
   if (!previous.translation || !next.translation || previous.translation.lang !== next.translation.lang) return false;
@@ -160,7 +167,7 @@ function sameRows(previous: ChunkProps, next: ChunkProps): boolean {
 }
 
 /** The rows of one chunk: each block, the notes on it, and its translation under it. */
-const TextChunk = memo(function TextChunk({ chunk, tags, charsBefore, notes, latestNoteId, bookId, actions, translation, tabbable, windowed, attach }: ChunkProps) {
+const TextChunk = memo(function TextChunk({ chunk, tags, charsBefore, notes, latestNoteId, sent, bookId, actions, translation, tabbable, windowed, attach }: ChunkProps) {
   return (
     <div ref={attach} className="text-chunk" data-chunk={chunk.key} data-window={windowed ? "" : undefined}>
       {chunk.blocks.map((block, at) => {
@@ -170,8 +177,9 @@ const TextChunk = memo(function TextChunk({ chunk, tags, charsBefore, notes, lat
             {notes
               .filter((note) => note.blockId === block.id)
               .map((note) => (
-                <NoteCard key={note.id} note={note} bookId={bookId} latest={note.id === latestNoteId} onClose={actions.onCloseNote} onSaveAnswer={actions.onSaveAnswer} />
+                <NoteCard key={note.id} note={note} bookId={bookId} latest={note.id === latestNoteId} actions={actions} />
               ))}
+            {sent?.blockId === block.id && <HandoffCard sent={sent} onClose={actions.onCloseSent} onSave={actions.onSaveSent} />}
             <BlockText block={block} bookId={bookId} tag={tags[chunk.start + at] ?? null} tabbable={block.id === tabbable} charsBefore={charsBefore.get(block.id) ?? 0} />
             {/* Translations stay beside the block, so every source offset remains in the original book text. */}
             {translation && translated ? (
@@ -209,8 +217,8 @@ const EMPTY_NOTES: QuestionNote[] = [];
  * On a phone only the chunks of rows near the reader are on the page; the rest hold their place as empty boxes of the
  * same height (useChunkWindow), so a chapter of thousands of paragraphs costs what is near the reader.
  */
-export function ChapterText({ blocks, notes, bookId, chapterId, actions, translation, openAt }: Props) {
-  const { onWord, onSelect, onDismiss, onCloseNote, onSaveAnswer } = actions;
+export function ChapterText({ blocks, notes, bookId, chapterId, actions, translation, openAt, sent = null }: Props) {
+  const { onWord, onSelect, onDismiss } = actions;
   const container = useRef<HTMLDivElement>(null);
   const params = TIER_PARAMS[useDeviceTier()];
   // The cursor moves through the chapter's blocks in book order, so it can step into a chunk that is still a placeholder.
@@ -229,22 +237,30 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions, transla
     }
     return before;
   }, [blocks]);
-  const notesByChunk = useMemo(() => {
-    const byChunk = new Map<string, QuestionNote[]>();
+  const chunkOfBlock = useMemo(() => {
     const keyOf = new Map<string, string>();
     for (const chunk of chunks) for (const block of chunk.blocks) keyOf.set(block.id, chunk.key);
+    return keyOf;
+  }, [chunks]);
+  const notesByChunk = useMemo(() => {
+    const byChunk = new Map<string, QuestionNote[]>();
     for (const note of notes) {
-      const key = keyOf.get(note.blockId);
+      const key = chunkOfBlock.get(note.blockId);
       if (!key) continue;
       const list = byChunk.get(key) ?? [];
       list.push(note);
       byChunk.set(key, list);
     }
     return byChunk;
-  }, [chunks, notes]);
-  const noteChunks = useMemo(() => new Set(notesByChunk.keys()), [notesByChunk]);
+  }, [chunkOfBlock, notes]);
+  // The chunks with a card on them stay on the page, the handed-off passage's card like a note's.
+  const sentChunk = sent ? chunkOfBlock.get(sent.blockId) : undefined;
+  const noteChunks = useMemo(() => {
+    const keys = new Set(notesByChunk.keys());
+    if (sentChunk) keys.add(sentChunk);
+    return keys;
+  }, [notesByChunk, sentChunk]);
   const chunkWindow = useChunkWindow({ container, bookId, chapterId, chunks, noteChunks, params, openAt, translated: translation !== undefined });
-  const cardActions = useMemo(() => ({ onCloseNote, onSaveAnswer }), [onCloseNote, onSaveAnswer]);
   const latestNoteId = notes.at(-1)?.id;
 
   /** Ask about the selected text if there is any, else about `word`; with neither, close what is open. */
@@ -348,8 +364,9 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions, transla
             charsBefore={charsBefore}
             notes={notesByChunk.get(chunk.key) ?? EMPTY_NOTES}
             latestNoteId={latestNoteId}
+            sent={sentChunk === chunk.key ? sent : null}
             bookId={bookId}
-            actions={cardActions}
+            actions={actions}
             translation={translation}
             tabbable={chunk.blocks.some((block) => block.id === cursor.tabbable) ? cursor.tabbable : undefined}
             windowed={windowed}

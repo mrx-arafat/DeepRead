@@ -2,6 +2,7 @@ import type { ParsedBook } from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
 import type { Translation } from "./chapter-translation.ts";
 import type { CoverImage } from "./cover.ts";
+import type { HandoffSettingsStore } from "./handoff-settings.ts";
 import type { Library } from "./library.ts";
 import type { OpenRouter } from "./openrouter.ts";
 import type { Profiles } from "./profiles.ts";
@@ -30,6 +31,8 @@ type SharedDeps = {
   quickTranslate: QuickTranslate;
   /** Chapter translation: the admin's choice and the services that translate. Absent: DeepRead has none, and its addresses are unknown. */
   translation?: Translation;
+  /** Open in ChatGPT: the admin's choice of whether readers get the button. Absent: everyone does, and the admin's address is unknown. */
+  handoff?: HandoffSettingsStore;
   /** Built web app to serve (production only). Unknown paths fall back to its index.html. */
   webRoot?: string;
   /** When set, devices on other host names (a tunnel) may use the app after unlocking with this key. */

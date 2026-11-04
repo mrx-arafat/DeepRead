@@ -1,9 +1,28 @@
 import { BookmarkCheck, BookmarkPlus, X } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LANGUAGES, MAX_SAVED_ANSWER_CHARS, type ExplainMode, type ExplainRequest, type LangCode, type QuestionNote } from "../../shared/types.ts";
 import { useDeviceTier } from "../deviceTier.ts";
+import type { HandoffLink as Link, HandoffTarget } from "./handoff.ts";
+import { HandoffControl } from "./HandoffControl.tsx";
+import { PasteAnswer } from "./PasteAnswer.tsx";
 import { parseSections, RichText } from "./RichText.tsx";
 import { useAiStream } from "./useAiStream.ts";
+
+/** What a card can do with its passage. Shared by every card on the page, so keep the functions stable. */
+export type CardActions = {
+  /** `byKeyboard`: pressed with Enter or Space, so focus was on the button that is about to go. */
+  onCloseNote: (id: string, byKeyboard: boolean) => void;
+  onSaveAnswer: (note: QuestionNote, answer: string) => void;
+  /** A Deep dive on the same passage, from a finished Explain card. */
+  onDeeper: (note: QuestionNote) => void;
+  /** The link that hands this passage to an outside chat, or null when the admin turned that off. */
+  handoffFor: (note: QuestionNote) => Link | null;
+  onSent: (link: Link, copied: Promise<boolean>) => void;
+  /** The reader picked another chat from the control's menu; it is remembered for every card and the bar. */
+  onChooseHandoff: (target: HandoffTarget) => void;
+  /** What the outside chat answered, kept with the passage as a reflection. */
+  onSaveReflection: (note: QuestionNote, text: string) => void;
+};
 
 type Props = {
   /** A question: a highlight is painted on the text, never shown as a card. */
@@ -11,19 +30,18 @@ type Props = {
   bookId: string;
   /** The most recently asked note. In the margin only it shows its whole answer; older cards fold to their first part. */
   latest: boolean;
-  /** `byKeyboard`: pressed with Enter or Space, so focus was on the button that is about to go. */
-  onClose: (id: string, byKeyboard: boolean) => void;
-  onSaveAnswer: (note: QuestionNote, answer: string) => void;
+  actions: CardActions;
 };
 
 function label(mode: ExplainMode, lang: LangCode): string {
   if (mode === "example") return "Example";
   if (mode === "native") return `In ${LANGUAGES[lang]}`;
+  if (mode === "deep") return "Deep dive";
   return "Explanation";
 }
 
 /** One explanation, shown in the margin beside the paragraph it belongs to. */
-export function NoteCard({ note, bookId, latest, onClose, onSaveAnswer }: Props) {
+export function NoteCard({ note, bookId, latest, actions }: Props) {
   const { lang } = note;
   // Folded unless it is the newest card, until the reader opens or folds it themselves.
   const [unfolded, setUnfolded] = useState<boolean | null>(null);
@@ -43,6 +61,13 @@ export function NoteCard({ note, bookId, latest, onClose, onSaveAnswer }: Props)
   const saved = Boolean(note.savedAnswer);
   const canSave = !saved && answer.status === "done" && Boolean(answer.text.trim()) && answer.text.length <= MAX_SAVED_ANSWER_CHARS;
   const panelRef = useRef<HTMLElement>(null);
+  // Once the answer is in (or failed): the ways on from here, to DeepRead's Deep dive or to an outside chat.
+  const finished = saved || answer.status !== "loading";
+  const deeper = finished && note.mode === "simple";
+  const { handoffFor } = actions;
+  const handoff = useMemo(() => (finished ? handoffFor(note) : null), [finished, handoffFor, note]);
+  // The chat the passage was last handed to from this card: its answer comes back into the box below.
+  const [sentTo, setSentTo] = useState<Link | null>(null);
 
   const tier = useDeviceTier();
   useLayoutEffect(() => {
@@ -81,7 +106,7 @@ export function NoteCard({ note, bookId, latest, onClose, onSaveAnswer }: Props)
     >
       <header className="note-head">
         <span className="note-label">{label(note.mode, lang)}</span>
-        <button type="button" className="icon-button" aria-label="Remove note" onClick={(event) => onClose(note.id, event.detail === 0)}>
+        <button type="button" className="icon-button" aria-label="Remove note" onClick={(event) => actions.onCloseNote(note.id, event.detail === 0)}>
           <X size={16} aria-hidden />
         </button>
       </header>
@@ -112,7 +137,7 @@ export function NoteCard({ note, bookId, latest, onClose, onSaveAnswer }: Props)
           </button>
         </p>
       )}
-      {(saved || canSave || more) && (
+      {(saved || canSave || more || deeper || handoff) && (
         // Below the answer, never over it: the answer scrolls on its own and fades out above this line.
         <footer className="note-foot">
           {saved ? (
@@ -120,16 +145,43 @@ export function NoteCard({ note, bookId, latest, onClose, onSaveAnswer }: Props)
               <BookmarkCheck size={16} aria-hidden /> Saved to notebook
             </p>
           ) : canSave ? (
-            <button type="button" className="quiet-button note-save" onClick={() => onSaveAnswer(note, answer.text)}>
+            <button type="button" className="quiet-button note-save" onClick={() => actions.onSaveAnswer(note, answer.text)}>
               <BookmarkPlus size={16} aria-hidden /> Save to notebook
             </button>
           ) : null}
+          {deeper && (
+            <button type="button" className="link-button note-deeper" onClick={() => actions.onDeeper(note)}>
+              Go deeper
+            </button>
+          )}
+          {handoff && (
+            <HandoffControl
+              link={handoff}
+              where="card"
+              onChoose={actions.onChooseHandoff}
+              onSent={(link, copied) => {
+                setSentTo(link);
+                actions.onSent(link, copied);
+              }}
+            />
+          )}
           {more && (
             <button type="button" className="link-button note-more" aria-expanded={open} onClick={() => setUnfolded(!open)}>
               {open ? "Show less" : "Show more"}
             </button>
           )}
         </footer>
+      )}
+      {sentTo && (
+        <div className="note-foot">
+          <PasteAnswer
+            from={sentTo.target === "copy" ? "the chat" : sentTo.label}
+            onSave={(pasted) => {
+              actions.onSaveReflection(note, pasted);
+              setSentTo(null);
+            }}
+          />
+        </div>
       )}
     </aside>
   );

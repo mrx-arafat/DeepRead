@@ -10,7 +10,7 @@ describe("NoteCard", () => {
       offset: 8, savedAnswer: "A durable answer chosen by the reader.",
     };
     const html = renderToStaticMarkup(
-      <NoteCard note={note} bookId="book" latest onClose={() => {}} onSaveAnswer={() => {}} />,
+      <NoteCard note={note} bookId="book" latest actions={{ onCloseNote() {}, onSaveAnswer() {}, onDeeper() {}, handoffFor: () => null, onSent() {}, onChooseHandoff() {}, onSaveReflection() {} }} />,
     );
     expect(html).toContain("A durable answer chosen by the reader.");
     expect(html).toContain("Saved to notebook");

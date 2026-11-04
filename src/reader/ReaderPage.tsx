@@ -1,7 +1,7 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, Headphones, List, NotebookPen, Search, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
-import type { BookDetail, ExplainMode, Note } from "../../shared/types.ts";
+import { LANGUAGES, type BookDetail, type ExplainMode, type Note, type QuestionNote } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { refreshDeviceTier } from "../deviceTier.ts";
 import { readerTitle, useDocumentTitle } from "../pageTitle.ts";
@@ -10,12 +10,15 @@ import { readableBlocks } from "./book.ts";
 import { BookSearch } from "./BookSearch.tsx";
 import type { BookSearchResult } from "./bookSearch.ts";
 import { loadChapter } from "./chapterCache.ts";
+import { HANDOFF_TARGETS, handoffLink, type HandoffLink, type HandoffTarget } from "./handoff.ts";
+import type { SentPassage } from "./HandoffCard.tsx";
 import { quoteStart } from "./highlights.ts";
 import { ChapterList } from "./ChapterList.tsx";
 import { ChapterSection } from "./ChapterSection.tsx";
 import type { TextActions } from "./ChapterText.tsx";
 import { ListenBar } from "./ListenBar.tsx";
 import { NoteSyncStatus } from "./NoteSyncStatus.tsx";
+import { NoticeToast } from "./NoticeToast.tsx";
 import { Notebook, type NotebookDraft } from "./Notebook.tsx";
 import { notebookSource, type NotebookSource } from "./notebookSource.ts";
 import { listenBlocks } from "./listenBlocks.ts";
@@ -92,6 +95,12 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   const pages = usePages(turning, Boolean(book && flow.start), Boolean(word || selection));
   // Whether the admin lets readers show translations: asked once for the page, for the Aa menu. Null until known.
   const [readersTranslate, setReadersTranslate] = useState<boolean | null>(null);
+  // Whether the admin lets readers hand a passage to an outside chat (Open in ChatGPT): null until known, and offered meanwhile.
+  const [readersHandoff, setReadersHandoff] = useState<boolean | null>(null);
+  // A passage handed to a chat from the bar: a card beside its paragraph holds the reader's place until the answer is pasted.
+  const [sent, setSent] = useState<SentPassage | null>(null);
+  // A line at the foot of the window about what just happened ("Prompt copied...").
+  const [notice, setNotice] = useState<string | null>(null);
   // Chunks of text come and go on the page (the chunk window): marks painted on their rows are painted again.
   const mountVersion = useMountVersion();
 
@@ -107,6 +116,19 @@ export function ReaderPage({ bookId, chapterId }: Props) {
       .then((settings) => !cancelled && setReadersTranslate(settings.enabled))
       .catch(() => {
         // Unknown, the switch stays usable: the server still refuses a reader it would not translate for.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .handoffSettings()
+      .then((settings) => !cancelled && setReadersHandoff(settings.enabled))
+      .catch(() => {
+        // Unknown, the button stays: it needs nothing from the server to work.
       });
     return () => {
       cancelled = true;
@@ -150,6 +172,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
   useEffect(() => {
     setWord(null);
     setSelection(null);
+    setSent(null);
     if (lookupTipDone()) setTipOpen(false);
   }, [flow.start]);
 
@@ -281,9 +304,88 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     focusAfterUndo.current = null;
   });
 
+  /** The link that hands a passage to the reader's chosen chat, built from the page alone: the chapter, its paragraph and the one before. */
+  const handoffFor = useCallback(
+    (chapterId: string, blockId: string, quote: string): HandoffLink | null => {
+      if (!book || readersHandoff === false) return null;
+      const chapter = flow.chapters.find((item) => item.id === chapterId);
+      if (!chapter) return null;
+      const blocks = readableBlocks(chapter).filter((block) => block.type !== "image");
+      const at = blocks.findIndex((block) => block.id === blockId);
+      const block = blocks[at];
+      if (!block) return null;
+      const before = blocks.slice(0, at).findLast((item) => item.type === "paragraph")?.text ?? null;
+      return handoffLink(prefs.handoff, { bookTitle: book.title, author: book.author, chapterTitle: chapter.title, language: LANGUAGES[prefs.lang], before, paragraph: block.text, selection: quote });
+    },
+    [book, readersHandoff, flow.chapters, prefs.handoff, prefs.lang],
+  );
+  const noteHandoff = useCallback((note: QuestionNote) => handoffFor(note.chapterId, note.blockId, note.quote), [handoffFor]);
+
+  /** Said once the prompt is on the clipboard, or could not be: the chat may open with an empty box. */
+  const sentNotice = useCallback((link: HandoffLink, copied: Promise<boolean>) => {
+    const { name, open } = HANDOFF_TARGETS[link.target];
+    void copied.then((ok) =>
+      setNotice(
+        !ok
+          ? "The prompt could not be copied."
+          : link.target === "copy"
+            ? "Prompt copied. Paste it into your chat."
+            : !open
+              ? `Prompt copied. Paste it into ${name}.`
+              : "Prompt copied. Paste it if the chat opens empty.",
+      ),
+    );
+  }, []);
+  const clearNotice = useCallback(() => setNotice(null), []);
+  // Picked from the control's menu, on the bar or a card: kept with the reading preferences, so every control follows.
+  const chooseHandoff = useCallback((target: HandoffTarget) => setPrefs({ handoff: target }), []);
+
+  /** Where a question's passage starts in its paragraph, for a reflection kept on it; found again for a question saved before offsets were. */
+  const anchorOf = useCallback(
+    (note: QuestionNote): number => {
+      if (note.offset !== undefined) return note.offset;
+      const chapter = flow.chapters.find((item) => item.id === note.chapterId);
+      return (chapter && quoteStart(readableBlocks(chapter), note.blockId, note.quote, 0)?.offset) ?? 0;
+    },
+    [flow.chapters],
+  );
+  const deeper = useCallback(
+    (note: QuestionNote) => addNote({ chapterId: note.chapterId, blockId: note.blockId, quote: note.quote, mode: "deep", ...(note.offset === undefined ? {} : { offset: note.offset }) }),
+    [addNote],
+  );
+  const saveNoteReflection = useCallback(
+    (note: QuestionNote, text: string) => {
+      saveReflection({ chapterId: note.chapterId, blockId: note.blockId, quote: note.quote, offset: anchorOf(note) }, text);
+      setNotice("Answer saved to notebook.");
+    },
+    [saveReflection, anchorOf],
+  );
+  const closeSent = useCallback(() => setSent(null), []);
+  const saveSent = useCallback(
+    (passage: SentPassage, text: string) => {
+      saveReflection({ chapterId: passage.chapterId, blockId: passage.blockId, quote: passage.quote, offset: passage.offset }, text);
+      setSent(null);
+      setNotice("Answer saved to notebook.");
+    },
+    [saveReflection],
+  );
+
   const actions = useMemo<TextActions>(
-    () => ({ onWord: handleWord, onSelect: handleSelect, onDismiss: dismiss, onCloseNote: closeNote, onSaveAnswer: saveAnswer }),
-    [handleWord, handleSelect, dismiss, closeNote, saveAnswer],
+    () => ({
+      onWord: handleWord,
+      onSelect: handleSelect,
+      onDismiss: dismiss,
+      onCloseNote: closeNote,
+      onSaveAnswer: saveAnswer,
+      onDeeper: deeper,
+      handoffFor: noteHandoff,
+      onSent: sentNotice,
+      onChooseHandoff: chooseHandoff,
+      onSaveReflection: saveNoteReflection,
+      onCloseSent: closeSent,
+      onSaveSent: saveSent,
+    }),
+    [handleWord, handleSelect, dismiss, closeNote, saveAnswer, deeper, noteHandoff, sentNotice, chooseHandoff, saveNoteReflection, closeSent, saveSent],
   );
 
   const selectionDraft = useMemo<NotebookDraft | null>(() => {
@@ -300,6 +402,18 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     markLookupTipDone();
     addNote({ chapterId: selection.chapterId, blockId: selection.blockId, quote: selection.text, mode,
       ...(selectionDraft ? { offset: selectionDraft.offset } : {}) });
+    window.getSelection()?.removeAllRanges();
+    setSelection(null);
+  }
+
+  // The bar's chat link, for the selection as it stands.
+  const selectionHandoff = useMemo(() => (selection ? handoffFor(selection.chapterId, selection.blockId, selection.text) : null), [selection, handoffFor]);
+
+  /** The passage is off to the chat: the bar goes, and a card beside the paragraph waits for the answer. */
+  function sendFromBar(link: HandoffLink, copied: Promise<boolean>) {
+    sentNotice(link, copied);
+    markLookupTipDone();
+    if (selectionDraft) setSent({ ...selectionDraft, target: link.target });
     window.getSelection()?.removeAllRanges();
     setSelection(null);
   }
@@ -429,7 +543,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
               <span className="topbar-listen-label">Listen</span>
             </button>
           )}
-          <ReadingSettings prefs={prefs} readersTranslate={readersTranslate} />
+          <ReadingSettings prefs={prefs} readersTranslate={readersTranslate} readersHandoff={readersHandoff} />
         </div>
         {book && (
           <div
@@ -512,6 +626,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
                 translate={prefs.translation}
                 translateNow={chapter.id === (position.chapterId ?? flow.start?.id)}
                 onTranslationRefused={refuseTranslation}
+                sent={sent?.chapterId === chapter.id ? sent : null}
               />
             ))}
             {flow.nextError ? (
@@ -599,6 +714,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
             onTimeout={forgetRemoved}
           />
         )}
+        {!removed && notice && <NoticeToast message={notice} onTimeout={clearNotice} />}
       </div>
 
       {word && (
@@ -622,6 +738,9 @@ export function ReaderPage({ bookId, chapterId }: Props) {
           onListen={() => listenFrom(selection)}
           onReflect={selectionDraft ? reflect : undefined}
           highlight={selectionHighlight}
+          handoff={selectionHandoff}
+          onSent={sendFromBar}
+          onChooseHandoff={chooseHandoff}
         />
       )}
     </div>

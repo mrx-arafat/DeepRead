@@ -37,4 +37,8 @@ describe("notebook entries", () => {
     expect(entryPreview(byId("early"))).toBe("My own thought");
     expect(entryPreview(byId("late"))).toBe("");
   });
+
+  it("should name a saved Deep dive after its card", () => {
+    expect(entryLabel({ id: "deep", chapterId: "c2", blockId: "c2-b3", quote: "Third paragraph", lang: "bn", mode: "deep", savedAnswer: "**What it says:** A table." })).toBe("Deep dive");
+  });
 });

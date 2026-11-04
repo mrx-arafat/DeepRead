@@ -5,6 +5,7 @@ import { formatBytes } from "../shared/bytes.ts";
 import { createAi } from "./ai.ts";
 import { createApp } from "./app.ts";
 import { createChapterTranslator, createTranslationSettings } from "./chapter-translation.ts";
+import { createHandoffSettings } from "./handoff-settings.ts";
 import { checkEncryptionKey, createEncryptedStore, refuseEncryptedObjects } from "./encrypted-store.ts";
 import { createOpenRouter } from "./openrouter.ts";
 import { renderCover } from "./cover.ts";
@@ -107,6 +108,8 @@ const app = createApp({
   openrouter,
   quickTranslate: translator.translate,
   translation,
+  // Open in ChatGPT: whether readers get the button, the admin's choice kept in the data folder like translation's.
+  handoff: createHandoffSettings(dataDir),
   webRoot: production ? resolve(import.meta.dirname, "../dist") : undefined,
   remoteKey: process.env.DEEPREAD_REMOTE_KEY || undefined,
   publicOrigin,

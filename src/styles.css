@@ -3629,6 +3629,7 @@ h5[data-block] {
 }
 
 .selection-bar button,
+.selection-bar .handoff-main,
 .selection-highlight button {
   display: inline-flex;
   align-items: center;
@@ -3646,12 +3647,14 @@ h5[data-block] {
 /* Phones: tighter choices, so all four stay on one line in every reading language ("In Indonesian" is the longest). */
 @media (max-width: 30rem) {
   .selection-bar button,
+  .selection-bar .handoff-main,
   .selection-highlight button {
     padding: 0 0.375rem;
   }
 }
 
 .selection-bar button:hover,
+.selection-bar .handoff-main:hover,
 .selection-highlight button:hover {
   background: var(--pen-wash);
   color: var(--pen);
@@ -6276,4 +6279,178 @@ p[data-block] + .block-translation:is(:lang(ar), :lang(ur)) {
     border-bottom: 1px solid var(--rule);
     background: var(--raised);
   }
+}
+
+/* Deep dive and Open in ChatGPT. The chat control is split: its main part opens the chat the reader chose last, and the
+   chevron beside it lists the others. In the bar it is dressed as the bar's buttons; on a card it is a quiet line in the
+   footer. Its menu is a native popover in the top layer, placed by HandoffControl, so a card's clipping cannot cut it. */
+.handoff {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.handoff-main {
+  color: inherit;
+  text-decoration: none;
+}
+
+.handoff-mark {
+  flex: none;
+}
+
+.selection-bar .handoff-main {
+  gap: 0.4rem;
+  padding-right: 0.5rem;
+  border-radius: 2px 0 0 2px;
+}
+
+.selection-bar .handoff-more {
+  min-width: 1.75rem;
+  padding: 0 0.25rem;
+  border-left: 1px solid var(--rule);
+  border-radius: 0 2px 2px 0;
+}
+
+/* On a card: the footer's quiet link look, the lead-in in soft ink and the chat's name in the pen's blue. */
+.note-foot .handoff-main,
+.note-foot .handoff-more {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0 0.375rem;
+  border: 0;
+  border-radius: 2px;
+  background: none;
+  color: var(--pen);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.note-foot .handoff-main {
+  gap: 0.3rem;
+  margin-left: -0.375rem;
+}
+
+.note-foot .handoff-lead {
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.note-foot .handoff-more {
+  justify-content: center;
+  width: 1.75rem;
+  padding: 0;
+}
+
+.note-foot .handoff-main:hover,
+.note-foot .handoff-more:hover,
+.handoff-more[aria-expanded="true"] {
+  background: var(--pen-wash);
+}
+
+.handoff-menu {
+  position: fixed;
+  inset: auto;
+  min-width: 14rem;
+  margin: 0;
+  padding: 0.25rem;
+  border-color: var(--ink-faint);
+  color: var(--ink);
+}
+
+/* Only while open: a display set on the element itself would also show it closed, over the browser's own hiding rule. */
+.handoff-menu:popover-open {
+  display: grid;
+}
+
+.handoff-menu [role="menuitemradio"] {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9375rem;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+
+.handoff-menu [role="menuitemradio"]:hover,
+.handoff-menu [role="menuitemradio"]:focus-visible {
+  background: var(--wash);
+}
+
+.handoff-menu [role="menuitemradio"]:focus-visible {
+  outline-offset: -2px;
+}
+
+.handoff-menu [aria-checked="true"] {
+  color: var(--pen);
+  font-weight: 600;
+}
+
+.handoff-item {
+  display: grid;
+  flex: 1;
+}
+
+.handoff-item small {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.note-deeper {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.note-paste {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.note-paste label {
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.note-paste textarea {
+  width: 100%;
+  min-height: 5rem;
+  padding: 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9375rem;
+  resize: vertical;
+}
+
+.note-paste .note-save {
+  justify-self: start;
+}
+
+.note-sent-hint {
+  margin: 0 0 0.75rem;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+/* A notice has no button, so the text keeps the same room on its right as on its left. */
+.toast-notice {
+  padding-right: 1rem;
 }
