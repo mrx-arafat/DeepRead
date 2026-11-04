@@ -14,7 +14,6 @@ import type {
 import { buildChapterText, buildPassage, cacheKey } from "./ai-inputs.ts";
 import type { AppEnv } from "./app-env.ts";
 import {
-  adminOnly,
   apiError,
   blockNotFound,
   bookNotFound,
@@ -278,14 +277,14 @@ export function aiRoutes(deps: { llm: Ai; accounts?: Accounts }): Hono<AppEnv> {
     const current = chapter.blocks[at];
     if (!current) return blockNotFound(c);
 
+    const task = mode === "word" ? "word" : "explain";
     const prompt = explainPrompt(mode, {
       bookTitle: book.title,
       chapterTitle: chapter.title,
-      passage: buildPassage(chapter.blocks, at),
+      passage: buildPassage(chapter.blocks, at, task),
       selection,
       language: LANGUAGES[lang],
     });
-    const task = mode === "word" ? "word" : "explain";
     const key = cacheKey({
       task,
       mode,

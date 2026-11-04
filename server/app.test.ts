@@ -1126,10 +1126,15 @@ describe("DeepRead API", () => {
       // A single tapped word is its own task, with its own effort level (TASK_PROFILES).
       expect(text).toContain("word|");
       expect(text).toContain("first language is Bangla");
-      expect(text).toContain("[Text just before]\nFirst Chapter\n\nAlpha paragraph has five words.");
-      expect(text).toContain("[The reader is on this paragraph]\nBeta paragraph is the one the reader taps.");
-      expect(text).toContain("[Text just after]\nGamma paragraph comes after.");
+      // A word only needs the paragraph before it; a note gets the wider context (ai-inputs.ts).
+      expect(text).toContain(
+        "[Text just before]\nAlpha paragraph has five words.\n\n[The reader is on this paragraph]\nBeta paragraph is the one the reader taps.\n\"\"\"",
+      );
       expect(text).toContain('The reader tapped: "reader"');
+
+      const note = textOf(await readSse(await send("POST", "/api/ai/explain", explainBody(id, { mode: "simple" }))));
+      expect(note).toContain("[Text just before]\nFirst Chapter\n\nAlpha paragraph has five words.");
+      expect(note).toContain("[Text just after]\nGamma paragraph comes after.");
     });
 
     it("should report a failed generation as an error event and never cache it", async () => {

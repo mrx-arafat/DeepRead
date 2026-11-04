@@ -17,17 +17,23 @@ export function buildChapterText(blocks: Block[]): string {
   ].join("\n\n");
 }
 
-// How many paragraphs around the tapped one the model sees. The explain prompts lean on earlier paragraphs
-// for "what has just happened"; with only one, answers guessed at the situation.
-const BLOCKS_BEFORE = 6;
-const BLOCKS_AFTER = 2;
+// How many paragraphs around the tapped one the model sees, per task. The explain prompts lean on earlier
+// paragraphs for "what has just happened"; with only one, answers guessed at the situation. A word card only
+// needs the sense its sentence gives the word: on six taps across a philosophy book and two novels (matter,
+// acquaintance, induction, sensible, spirits, mistress) one paragraph before gave the same sense, the same
+// field's Bangla term and as natural an example as six before and two after, with about half the input tokens.
+const CONTEXT_BLOCKS = {
+  explain: { before: 6, after: 2 },
+  word: { before: 1, after: 0 },
+} as const;
 
 /** The tapped paragraph with its neighbours, each group labelled so the model knows where the reader is. */
-export function buildPassage(blocks: Block[], at: number): string {
+export function buildPassage(blocks: Block[], at: number, task: keyof typeof CONTEXT_BLOCKS): string {
   const current = blocks[at];
   if (!current) throw new Error(`no block at index ${at}`);
-  const before = blocks.slice(Math.max(0, at - BLOCKS_BEFORE), at);
-  const after = blocks.slice(at + 1, at + 1 + BLOCKS_AFTER);
+  const context = CONTEXT_BLOCKS[task];
+  const before = blocks.slice(Math.max(0, at - context.before), at);
+  const after = blocks.slice(at + 1, at + 1 + context.after);
   const parts: string[] = [];
   if (before.length > 0) parts.push(`[Text just before]\n${before.map((block) => block.text).join("\n\n")}`);
   parts.push(`[The reader is on this paragraph]\n${current.text}`);
