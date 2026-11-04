@@ -13,7 +13,7 @@ import type {
   SourcePageText,
   SourcePageTextRun,
 } from "../shared/source-page.ts";
-import { runLocalOcr } from "./parser/pdfVisuals.mjs";
+import { paintRgbImagesAsRgba, runLocalOcr } from "./parser/pdfVisuals.mjs";
 
 export type SourcePageImage = {
   data: Uint8Array<ArrayBuffer>;
@@ -411,6 +411,9 @@ async function renderSourcePage(
     const width = Math.max(1, Math.floor(viewport.width));
     const height = Math.max(1, Math.floor(viewport.height));
     const canvas = createCanvas(width, height);
+    // Skip pdf.js 6.3.289's quadratic RGB to RGBA loop (about 100 ms per 1600x1200 photo); same pixels.
+    paintRgbImagesAsRgba(page.commonObjs);
+    paintRgbImagesAsRgba(page.objs);
     await page.render({
       canvas: canvas as unknown as HTMLCanvasElement,
       viewport,

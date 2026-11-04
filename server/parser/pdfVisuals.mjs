@@ -364,6 +364,16 @@ async function guarded(promise, ms, onTimeout) {
 
 /** Bound rendering to four million pixels, retain figures in their original reading order. */
 export async function extractPageVisuals(page, options = {}) {
+  return (await drawPageVisuals(page, options)).done;
+}
+
+/**
+ * The first part of extractPageVisuals: read figure regions, render the page and run page OCR. `done`, already started,
+ * crops, encodes and labels the figures; most of that time is PNG encoding off the main thread, so a caller may start on
+ * the next page meanwhile. `done` yields at most `candidates` figures of about `pixels` pixels in all, and `labelOcr`
+ * says whether it may run local OCR.
+ */
+export async function drawPageVisuals(page, options = {}) {
   const {
     pageNumber = page.pageNumber,
     textItems = [],
@@ -387,9 +397,10 @@ export async function extractPageVisuals(page, options = {}) {
   const warnings = [],
     figures = [],
     ocrItems = [];
+  const finished = () => ({ candidates: 0, pixels: 0, labelOcr: false, ocrUsed: false, done: Promise.resolve({ figures, ocrItems, warnings, ocrUsed: false }) });
   let scanned = requestedScanned;
   if (!images && !(scanned && ocr))
-    return { figures, ocrItems, warnings, ocrUsed: false };
+    return finished();
   const { OPS } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   // Images shared by several pages land in the document's store while operator lists are read.
   paintRgbImagesAsRgba(page.commonObjs);
@@ -410,7 +421,7 @@ export async function extractPageVisuals(page, options = {}) {
   if (scanned && textItems.length && !regions.length && !forceOcr)
     scanned = false;
   if (!regions.length && !scanned)
-    return { figures, ocrItems, warnings, ocrUsed: false };
+    return finished();
   const { createCanvas } = await import("@napi-rs/canvas");
   const base = page.getViewport({ scale: 1 });
   const scale = Math.min(
@@ -440,7 +451,7 @@ export async function extractPageVisuals(page, options = {}) {
     let ink = 0;
     for (let i = 0; i < pixels.length; i += 4)
       if (pixels[i] + pixels[i + 1] + pixels[i + 2] < 720) ink++;
-    if (ink < 4) return { figures, ocrItems, warnings, ocrUsed: false };
+    if (ink < 4) return finished();
   }
   if (scanned && ocr) {
     try {
@@ -468,95 +479,102 @@ export async function extractPageVisuals(page, options = {}) {
         : regions.slice(0, maxFigures);
   if (!scanned && regions.length > maxFigures)
     warnings.push(`Page ${pageNumber}: kept the first ${maxFigures} figures.`);
-  for (const { bounds: b } of selected) {
-    if (Date.now() >= deadline) {
-      warnings.push("PDF visual extraction timed out.");
-      break;
-    }
-    const rect = bounds(b, viewport.transform);
-    const x = Math.max(0, Math.floor(Math.min(rect[0], rect[2]))),
-      y = Math.max(0, Math.floor(Math.min(rect[1], rect[3])));
-    const width = Math.min(
-        canvas.width - x,
-        Math.ceil(Math.max(rect[0], rect[2])) - x,
-      ),
-      height = Math.min(
-        canvas.height - y,
-        Math.ceil(Math.max(rect[1], rect[3])) - y,
-      );
-    if (width <= 0 || height <= 0) continue;
-    const crop = createCanvas(width, height);
-    crop
-      .getContext("2d")
-      .drawImage(canvas, x, y, width, height, 0, 0, width, height);
-    const png = await crop.encode("png");
-    if (png.length > 2 * 1024 * 1024) {
-      warnings.push(
-        `Page ${pageNumber}: a figure exceeded the image size limit.`,
-      );
-      continue;
-    }
-    let ocrText;
-    let alt = scanned
-      ? `Original scanned page ${pageNumber}`
-      : `Figure on page ${pageNumber}`;
-    if (!scanned && ocr && figures.length < 2) {
-      try {
-        const labels = ocrTsvItems(
-          await ocrRunner(png, {
-            timeoutMs: Math.max(1, budget(ocrTimeoutMs) - 250),
-            language: ocrLanguage,
-          }),
-          { convertToPdfPoint: (x, y) => [x, height - y] },
-        )
-          .map((item) => item.s)
-          .join(" ");
-        if (labels) {
-          alt += `: ${labels.slice(0, 1000)}`;
-          const nativeWords = new Set(
-            textItems
-              .filter(
-                (item) =>
-                  item.x >= b[0] &&
-                  item.x <= b[2] &&
-                  item.y >= b[1] &&
-                  item.y <= b[3],
-              )
-              .flatMap(
-                (item) => item.s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [],
-              ),
-          );
-          const words = labels.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-          if (
-            words.filter((word) => nativeWords.has(word)).length <
-            words.length * 0.8
-          )
-            ocrText = labels.slice(0, 1000);
-        }
-      } catch (error) {
-        if (!warnings.includes(error.message)) warnings.push(error.message);
+  const labelOcr = !scanned && ocr && selected.length > 0 && !ocrRunner.unavailable;
+  const pixels = selected.reduce((n, { bounds: b }) => n + (b[2] - b[0]) * (b[3] - b[1]), 0) * scale * scale;
+  const done = (async () => {
+    for (const { bounds: b } of selected) {
+      if (Date.now() >= deadline) {
+        warnings.push("PDF visual extraction timed out.");
+        break;
       }
+      const rect = bounds(b, viewport.transform);
+      const x = Math.max(0, Math.floor(Math.min(rect[0], rect[2]))),
+        y = Math.max(0, Math.floor(Math.min(rect[1], rect[3])));
+      const width = Math.min(
+          canvas.width - x,
+          Math.ceil(Math.max(rect[0], rect[2])) - x,
+        ),
+        height = Math.min(
+          canvas.height - y,
+          Math.ceil(Math.max(rect[1], rect[3])) - y,
+        );
+      if (width <= 0 || height <= 0) continue;
+      const crop = createCanvas(width, height);
+      crop
+        .getContext("2d")
+        .drawImage(canvas, x, y, width, height, 0, 0, width, height);
+      const png = await crop.encode("png");
+      if (png.length > 2 * 1024 * 1024) {
+        warnings.push(
+          `Page ${pageNumber}: a figure exceeded the image size limit.`,
+        );
+        continue;
+      }
+      let ocrText;
+      let alt = scanned
+        ? `Original scanned page ${pageNumber}`
+        : `Figure on page ${pageNumber}`;
+      if (!scanned && ocr && figures.length < 2) {
+        try {
+          const labels = ocrTsvItems(
+            await ocrRunner(png, {
+              timeoutMs: Math.max(1, budget(ocrTimeoutMs) - 250),
+              language: ocrLanguage,
+            }),
+            { convertToPdfPoint: (x, y) => [x, height - y] },
+          )
+            .map((item) => item.s)
+            .join(" ");
+          if (labels) {
+            alt += `: ${labels.slice(0, 1000)}`;
+            const nativeWords = new Set(
+              textItems
+                .filter(
+                  (item) =>
+                    item.x >= b[0] &&
+                    item.x <= b[2] &&
+                    item.y >= b[1] &&
+                    item.y <= b[3],
+                )
+                .flatMap(
+                  (item) => item.s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [],
+                ),
+            );
+            const words = labels.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+            if (
+              words.filter((word) => nativeWords.has(word)).length <
+              words.length * 0.8
+            )
+              ocrText = labels.slice(0, 1000);
+          }
+        } catch (error) {
+          if (!warnings.includes(error.message)) warnings.push(error.message);
+        }
+      }
+      figures.push({
+        type: "image",
+        kind: "image",
+        text: "",
+        page: pageNumber,
+        x: b[0],
+        y: b[3],
+        width: b[2] - b[0],
+        height: b[3] - b[1],
+        scanned,
+        image: {
+          src: `data:image/png;base64,${png.toString("base64")}`,
+          width,
+          height,
+          alt,
+          ...(ocrText ? { ocrText } : {}),
+        },
+      });
     }
-    figures.push({
-      type: "image",
-      kind: "image",
-      text: "",
-      page: pageNumber,
-      x: b[0],
-      y: b[3],
-      width: b[2] - b[0],
-      height: b[3] - b[1],
-      scanned,
-      image: {
-        src: `data:image/png;base64,${png.toString("base64")}`,
-        width,
-        height,
-        alt,
-        ...(ocrText ? { ocrText } : {}),
-      },
-    });
-  }
-  return { figures, ocrItems, warnings, ocrUsed: ocrItems.length > 0 };
+    return { figures, ocrItems, warnings, ocrUsed: ocrItems.length > 0 };
+  })();
+  // A caller that timed out never reads it; keep a late failure from becoming an unhandled rejection.
+  done.catch(() => {});
+  return { candidates: selected.length, pixels, labelOcr, ocrUsed: ocrItems.length > 0, done };
 }
 
 // This watchdog runs in its own process: terminating a PDF worker cannot remove its kill timer.

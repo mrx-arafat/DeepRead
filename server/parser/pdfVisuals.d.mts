@@ -67,7 +67,22 @@ export function extractPageVisuals(
   warnings: string[];
   ocrUsed: boolean;
 }>;
-export type OcrRunner = ((png: Buffer, options: OcrOptions) => Promise<string>) & { unavailable?: Error | null };
+export function drawPageVisuals(
+  page: import("pdfjs-dist").PDFPageProxy,
+  options?: VisualOptions,
+): Promise<{
+  candidates: number;
+  pixels: number;
+  labelOcr: boolean;
+  ocrUsed: boolean;
+  done: Promise<{
+    figures: PdfFigure[];
+    ocrItems: CompactOcrItem[];
+    warnings: string[];
+    ocrUsed: boolean;
+  }>;
+}>;
+export type OcrRunner =((png: Buffer, options: OcrOptions) => Promise<string>) & { unavailable?: Error | null };
 export function ocrRunnerForOneParse(
   runner?: (png: Buffer, options: OcrOptions) => Promise<string>,
 ): OcrRunner;

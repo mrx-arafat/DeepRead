@@ -13,7 +13,7 @@ import { basename, dirname } from "node:path";
 import { createRequire } from "node:module";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { separateMatter } from "./matter.mjs";
-import { extractPageVisuals, ocrRunnerForOneParse } from "./pdfVisuals.mjs";
+import { drawPageVisuals, ocrRunnerForOneParse } from "./pdfVisuals.mjs";
 
 /**
  * @typedef {import("../../shared/types.ts").Block} Block
@@ -71,6 +71,15 @@ function withTimeout(promise, ms, label) {
   let timer;
   const guard = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new StepTimeout(label, ms)), ms);
+  });
+  return Promise.race([promise, guard]).finally(() => clearTimeout(timer));
+}
+
+/** withTimeout against a fixed end time, reported as `ms`; a promise that has already settled always wins. */
+function beforeTime(promise, end, ms, label) {
+  let timer;
+  const guard = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new StepTimeout(label, ms)), Math.max(0, end - Date.now()));
   });
   return Promise.race([promise, guard]).finally(() => clearTimeout(timer));
 }
@@ -208,33 +217,85 @@ async function extract(filePath, o, warnings) {
     const visualWarnings = new Map();
     const warnVisual = (message) => visualWarnings.set(message, (visualWarnings.get(message) ?? 0) + 1);
     const ocrRunner = ocrRunnerForOneParse();
+    const readEarly = new Map();
+    let lookedAhead = false;
+    // Pages keep their figures and visual warnings strictly in page order, so the warnings and the figure budget
+    // come out the same however a page's PNG encodes overlap the next page.
+    const keepVisuals = (visuals, figures) => {
+      for (const message of visuals.warnings) warnVisual(message);
+      for (const figure of visuals.figures) {
+        const bytes = Math.ceil(figure.image.src.length * 0.75);
+        if (figureCount >= 256 || figureBytes + bytes > 64 * 1024 * 1024) {
+          warnVisual("Some figures were omitted because the book reached its figure storage limit.");
+          break;
+        }
+        figures.push(figure);
+        figureBytes += bytes;
+        figureCount++;
+      }
+    };
+    const unsettled = []; // { candidates, settle } for pages whose visuals are not kept yet, oldest first
+    const settleAll = async () => {
+      while (unsettled.length) await unsettled.shift().settle();
+    };
     for (let p = 1; p <= doc.numPages; p++) {
       if (Date.now() > deadline) {
         throw new PdfParseError("timeout", `Parsing exceeded ${o.totalTimeoutMs} ms at page ${p} of ${doc.numPages}.`);
       }
       try {
-        const page = await withTimeout(doc.getPage(p), o.pageTimeoutMs, `Loading page ${p}`);
-        const tc = await withTimeout(page.getTextContent(), o.pageTimeoutMs, `Reading text of page ${p}`);
+        const early = readEarly.get(p);
+        readEarly.delete(p);
+        if (early?.error) throw early.error;
+        const page = early?.page ?? await withTimeout(doc.getPage(p), o.pageTimeoutMs, `Loading page ${p}`);
+        const tc = early?.tc ?? await withTimeout(page.getTextContent(), o.pageTimeoutMs, `Reading text of page ${p}`);
         let rawAlnum = tc.items.reduce((n, it) => n + (typeof it.str === "string" ? alnum(cleanStr(it.str)) : 0), 0);
         let items = compactItems(tc, page.view);
         const originalText = items.map((it) => it.s).join("");
         const garbled = textQuality(originalText).garbled;
         const scanned = originalText.replace(/\s/g, "").length < 40 || garbled;
+        // Once OCR cannot change any page's text, the remaining pages' text alone decides parsePdf's scanned check.
+        // Read it before drawing this page, so a book that check rejects is not rendered and encoded page by page first.
+        if (scanned && !lookedAhead && (o.images || o.ocr) && (!o.ocr || ocrRunner.unavailable)) {
+          lookedAhead = true;
+          const current = { num: p, view: page.view, items, figures: [], rawAlnum, droppedAlnum: 0, hfAlnum: 0 };
+          const textPages = [...pages, current].filter((pg) => visibleChars(pg.items) >= 40).length;
+          const rest = await readTextAhead(doc, p + 1, textPages, o, deadline, readEarly);
+          if (rest) return { numPages: doc.numPages, info, outline, pages: [...pages, current, ...rest] };
+        }
         const figures = [];
         if (o.images || (o.ocr && scanned)) {
           const budget = Math.max(1, Math.min(o.pageTimeoutMs, deadline - Date.now()));
-          try {
-            const visuals = await withTimeout(extractPageVisuals(page, {
-              pageNumber: p, textItems: items, scanned, forceOcr: garbled,
-              images: o.images, ocr: o.ocr,
-              ocrLanguage: o.ocrLanguage ?? process.env.DEEPREAD_OCR_LANG ?? "eng",
-              timeoutMs: budget, totalBudgetMs: budget,
-              ocrTimeoutMs: Math.min(o.ocrTimeoutMs, budget),
-              maxFigures: Math.max(0, Math.min(12, 256 - figureCount)),
-              ocrRunner,
-            }), budget + 100, `Reading figures and OCR on page ${p}`);
-            for (const message of visuals.warnings) warnVisual(message);
-            if (visuals.ocrUsed && visuals.ocrItems.length) {
+          const label = `Reading figures and OCR on page ${p}`, end = Date.now() + budget + 100;
+          // maxFigures counts the figures kept so far: settle pages still encoding first when their figures could change it.
+          if (figureCount + unsettled.reduce((n, u) => n + u.candidates, 0) > 244) await settleAll();
+          const drawn = await beforeTime(drawPageVisuals(page, {
+            pageNumber: p, textItems: items, scanned, forceOcr: garbled,
+            images: o.images, ocr: o.ocr,
+            ocrLanguage: o.ocrLanguage ?? process.env.DEEPREAD_OCR_LANG ?? "eng",
+            timeoutMs: budget, totalBudgetMs: budget,
+            ocrTimeoutMs: Math.min(o.ocrTimeoutMs, budget),
+            maxFigures: Math.max(0, Math.min(12, 256 - figureCount)),
+            ocrRunner,
+          }), end, budget + 100, label).catch((error) => ({ error, candidates: 0 }));
+          const settle = async () => {
+            try {
+              if (drawn.error) throw drawn.error;
+              const visuals = await beforeTime(drawn.done, end, budget + 100, label);
+              keepVisuals(visuals, figures);
+              return visuals;
+            } catch (e) {
+              warnVisual(`Some page figures or OCR could not be read (${e.message}).`);
+            }
+          };
+          // Without OCR this page's text is final, so a page-sized PNG (about 150 ms to encode at four million pixels)
+          // may finish encoding while the next pages load. Small figure crops encode in about 10 ms and are kept at
+          // once: overlapping those saved little and raised peak memory. One page with figures encodes at a time.
+          const withoutOcr = !!drawn.error || (!drawn.ocrUsed && !drawn.labelOcr);
+          if (!withoutOcr || drawn.candidates > 0) await settleAll();
+          if (withoutOcr && (drawn.candidates === 0 || drawn.pixels >= 1_000_000)) unsettled.push({ candidates: drawn.candidates, settle });
+          else {
+            const visuals = await settle();
+            if (visuals?.ocrUsed && visuals.ocrItems.length) {
               const recovered = visuals.ocrItems.map((it) => it.s).join(" ");
               if (!textQuality(recovered).garbled && alnum(recovered) >= 40) {
                 items = visuals.ocrItems;
@@ -242,18 +303,6 @@ async function extract(filePath, o, warnings) {
                 ocrPages++;
               }
             }
-            for (const figure of visuals.figures) {
-              const bytes = Math.ceil(figure.image.src.length * 0.75);
-              if (figureCount >= 256 || figureBytes + bytes > 64 * 1024 * 1024) {
-                warnVisual("Some figures were omitted because the book reached its figure storage limit.");
-                break;
-              }
-              figures.push(figure);
-              figureBytes += bytes;
-              figureCount++;
-            }
-          } catch (e) {
-            warnVisual(`Some page figures or OCR could not be read (${e.message}).`);
           }
         }
         try {
@@ -280,6 +329,7 @@ async function extract(filePath, o, warnings) {
         }
       }
     }
+    await settleAll();
     if (failures) warnings.push(`${failures} page(s) could not be read and were skipped.`);
     if (ocrPages) warnings.push(`Recovered text with local OCR on ${ocrPages} page(s); recognition may contain mistakes. The original page is retained when figures are enabled.`);
     let warningCount = 0;
@@ -292,6 +342,35 @@ async function extract(filePath, o, warnings) {
     // destroy() terminates the (fake) worker; guard it too so cleanup can never hang the caller.
     await withTimeout(task.destroy(), 5_000, "Closing the PDF").catch(() => {});
   }
+}
+
+/** parsePdf's scanned check: a book needs 15% of its pages (at least one) with 40 or more visible characters. */
+const visibleChars = (items) => items.reduce((n, it) => n + it.s.replace(/\s/g, "").length, 0);
+const tooFewTextPages = (textPages, numPages) => textPages < Math.max(1, 0.15 * numPages);
+
+/**
+ * Read the text of pages `from`..end into `readEarly` (for the main loop to reuse) until the book has enough text pages
+ * to pass the scanned check. Returns the pages read, with their text only, when the book will fail that check, and
+ * null when it will pass or a page could not be read (the main loop then meets that page's failure as usual).
+ */
+async function readTextAhead(doc, from, textPages, o, deadline, readEarly) {
+  const read = [];
+  for (let q = from; q <= doc.numPages && tooFewTextPages(textPages, doc.numPages); q++) {
+    if (Date.now() > deadline) return null;
+    let page, tc;
+    try {
+      page = await withTimeout(doc.getPage(q), o.pageTimeoutMs, `Loading page ${q}`);
+      tc = await withTimeout(page.getTextContent(), o.pageTimeoutMs, `Reading text of page ${q}`);
+    } catch (error) {
+      readEarly.set(q, { error });
+      return null;
+    }
+    readEarly.set(q, { page, tc });
+    const items = compactItems(tc, page.view);
+    if (visibleChars(items) >= 40) textPages++;
+    read.push({ num: q, view: page.view, items, figures: [] });
+  }
+  return tooFewTextPages(textPages, doc.numPages) ? read : null;
 }
 
 /** Flatten the outline and resolve every destination to a 1-based page + y. */
@@ -1652,10 +1731,10 @@ export async function parsePdf(filePath, options = {}) {
 
   if (numPages === 0) throw new PdfParseError("empty", "The PDF has no pages.");
   // scanned / garbled detection before any layout work
-  const perPage = pages.map((p) => p.items.reduce((n, it) => n + it.s.replace(/\s/g, "").length, 0));
+  const perPage = pages.map((p) => visibleChars(p.items));
   const textPages = perPage.filter((n) => n >= 40).length;
   const totalChars = perPage.reduce((a, b) => a + b, 0);
-  if (textPages < Math.max(1, 0.15 * numPages)) {
+  if (tooFewTextPages(textPages, numPages)) {
     throw new PdfParseError(
       "scanned",
       `This PDF has no usable text layer: only ${textPages} of ${numPages} pages contain text (${(totalChars / numPages).toFixed(1)} characters per page on average). Local OCR could not recover enough readable text. Install Tesseract and the book’s language data (DEEPREAD_OCR_LANG), or import a PDF with a readable text layer.`,

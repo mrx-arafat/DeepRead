@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ParsedBook } from "../../shared/types.ts";
 import { parsePdf } from "./parsePdf.mjs";
 import type { ParseOptions } from "./parsePdf.mjs";
@@ -315,6 +315,46 @@ function scannedPdf(illustrated = false, mixedNativeLabel = false): Buffer {
 }
 
 const hasTesseract = spawnSync("tesseract", ["--version"], { timeout: 2000, stdio: "ignore" }).status === 0;
+
+it("rejects a book without a text layer before drawing any of its pages", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "deepread-scanned-book-"));
+  const image = deflateSync(Buffer.alloc(16 * 16 * 3, 40));
+  const pages = 10;
+  const content = "q 612 0 0 792 0 0 cm /Scan Do Q";
+  const objects: Array<string | Buffer> = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${Array.from({ length: pages }, (_, at) => `${at + 5} 0 R`).join(" ")}] /Count ${pages} >>`,
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    Buffer.concat([Buffer.from(`<< /Type /XObject /Subtype /Image /Width 16 /Height 16 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${image.length} >>\nstream\n`), image, Buffer.from("\nendstream")]),
+    ...Array.from({ length: pages }, () => "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 3 0 R /Resources << /XObject << /Scan 4 0 R >> >> >>"),
+  ];
+  const chunks = [Buffer.from("%PDF-1.4\n")];
+  const offsets: number[] = [];
+  let length = chunks[0]!.length;
+  for (const [at, object] of objects.entries()) {
+    offsets.push(length);
+    const chunk = Buffer.concat([Buffer.from(`${at + 1} 0 obj\n`), Buffer.from(object), Buffer.from("\nendobj\n")]);
+    chunks.push(chunk);
+    length += chunk.length;
+  }
+  chunks.push(Buffer.from(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${length}\n%%EOF\n`));
+  const path = join(dir, "scanned-book.pdf");
+  await writeFile(path, Buffer.concat(chunks));
+  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const task = getDocument({ data: new Uint8Array(Buffer.concat(chunks)), verbosity: 0 });
+  const render = vi.spyOn(Object.getPrototypeOf(await (await task.promise).getPage(1)), "render");
+  try {
+    await task.destroy();
+    await expect(parsePdf(path, { ocr: false })).rejects.toMatchObject({
+      code: "scanned",
+      message: expect.stringMatching(/^This PDF has no usable text layer: only 0 of 10 pages contain text \(0\.0 characters per page on average\)\./),
+    });
+    expect(render).not.toHaveBeenCalled();
+  } finally {
+    render.mockRestore();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 it.skipIf(!hasTesseract)("recovers actual scanned image text with local OCR and retains its original page", async () => {
   const dir = await mkdtemp(join(tmpdir(), "deepread-scan-"));
