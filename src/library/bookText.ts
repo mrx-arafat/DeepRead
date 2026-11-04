@@ -116,9 +116,15 @@ export function splitTitle(title: string): { main: string; sub: string | null } 
   return { main, sub };
 }
 
+// Made once: a segmenter costs as much to build as it does to split a title.
+const graphemes = new Intl.Segmenter();
+
 /** A title short enough to sit inside a sentence. Cuts between words, and never inside a letter the reader sees as one (Bangla). */
 export function shortTitle(title: string, max = 60): string {
-  const letters = Array.from(new Intl.Segmenter().segment(title.trim()), (part) => part.segment);
+  const whole = title.trim();
+  // A letter the reader sees is at least one UTF-16 unit, so a title this short has no more than `max` of them.
+  if (whole.length <= max) return whole;
+  const letters = Array.from(graphemes.segment(whole), (part) => part.segment);
   if (letters.length <= max) return letters.join("");
   const kept = letters.slice(0, max);
   // A cut in the middle of a word reads badly; back up to the last space unless that would lose most of the title.

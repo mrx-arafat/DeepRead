@@ -191,6 +191,34 @@ function atBookEnd(): boolean {
 const same = (a: Position, b: Position) =>
   a.chapterId === b.chapterId && a.percent === b.percent && a.minutesLeft === b.minutesLeft && a.completed === b.completed;
 
+/**
+ * Runs `run` once `delay` ms have passed since the last `poke`. Scroll events come every frame, so instead of clearing
+ * and setting a timer for each, one timer waits and, when it fires early, waits again for the time still missing.
+ */
+function whenStill(delay: number, run: () => void): { poke: () => void; cancel: () => void } {
+  let timer: number | undefined;
+  let last = 0;
+  const fire = () => {
+    const missing = last + delay - performance.now();
+    if (missing > 0) {
+      timer = window.setTimeout(fire, missing);
+      return;
+    }
+    timer = undefined;
+    run();
+  };
+  return {
+    poke: () => {
+      last = performance.now();
+      timer ??= window.setTimeout(fire, delay);
+    },
+    cancel: () => {
+      window.clearTimeout(timer);
+      timer = undefined;
+    },
+  };
+}
+
 export type Place = Required<Pick<ReadingProgress, "chapterId" | "blockId" | "offset">>;
 
 /** The block at the eye line and how far into it the line there starts. */
@@ -397,8 +425,6 @@ export function useReadingPosition(
       return;
     }
     let measuring: number | undefined;
-    let keeping: number | undefined;
-    let saving: number | undefined;
     // The place at the last measurement: once the page is leaving, its text is gone and the eye line cannot be read.
     let latest: Place | null = null;
     // A cleanup from the source visit must remain quiet even when Return/Stay Here has just cleared its marker.
@@ -447,19 +473,20 @@ export function useReadingPosition(
       });
     };
 
+    const keeping = whenStill(300, keep);
+    const saving = whenStill(1200, () => save());
+
     const onScroll = () => {
       if (restored.current && restored.current.scrollY !== window.scrollY) restored.current = null;
       measuring ??= window.setTimeout(measure, tierParams().measureDebounceMs);
-      window.clearTimeout(keeping);
-      keeping = window.setTimeout(keep, 300);
-      window.clearTimeout(saving);
-      saving = window.setTimeout(save, 1200);
+      keeping.poke();
+      saving.poke();
     };
 
     measure();
     // Opening a chapter is being there, even for a reader who leaves without scrolling.
-    keeping = window.setTimeout(keep, 300);
-    saving = window.setTimeout(save, 1200);
+    keeping.poke();
+    saving.poke();
     // A reader who scrolls and leaves within the delay above must still be found where they stopped. Switching
     // away on a phone is how a tab ends, and it gives no other warning.
     const hidden = () => document.visibilityState === "hidden" && save();
@@ -480,8 +507,8 @@ export function useReadingPosition(
       document.removeEventListener("visibilitychange", hidden);
       save(true);
       window.clearTimeout(measuring);
-      window.clearTimeout(keeping);
-      window.clearTimeout(saving);
+      keeping.cancel();
+      saving.cancel();
     };
   }, [book, start, bookId, navigate, detourKey]);
 

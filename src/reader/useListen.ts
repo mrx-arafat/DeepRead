@@ -3,7 +3,7 @@ import type { Block } from "../../shared/types.ts";
 import { inPages, showOnPage } from "./paging.ts";
 import { prepareSpeech, speak, whenVoiceFree } from "./speech.ts";
 import { placeInView, scrollTopFor, type Place } from "./sentenceView.ts";
-import { rangeInBlock, sentenceIndex, sentencesOf, setHighlight, wordAt, type SentenceAt } from "./textRanges.ts";
+import { rangeInBlock, sentenceIndex, sentencesOf, setHighlight, wordAt, type Sentence, type SentenceAt } from "./textRanges.ts";
 import { isTitleId, titleId } from "./listenBlocks.ts";
 import { blockElement, ensureMounted, pin, useMountVersion, type BlockPlace } from "./mountRegistry.ts";
 import { forSpeech, pauseBetween, type Spoken } from "./voicing.ts";
@@ -46,7 +46,12 @@ export type Listen = {
  * `blocks` are all the blocks on the page, in order; it may grow while reading, and reading carries on into it.
  */
 export function useListen(blocks: Block[], rate: number, nextChapter: NextChapter): Listen {
-  const sentences = useMemo(() => sentencesOf(blocks), [blocks]);
+  // Split into sentences only once the voice needs them: every chapter that arrives would otherwise be split, though
+  // most readers never press Listen.
+  const allSentences = useMemo(() => {
+    let list: Sentence[] | null = null;
+    return () => (list ??= sentencesOf(blocks));
+  }, [blocks]);
   const mounts = useMountVersion();
   const chapters = useMemo(() => {
     const result = new Map<string, string>();
@@ -93,23 +98,24 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
     [headings],
   );
 
-  const index = useMemo(() => (at ? sentenceIndex(sentences, at) : -1), [sentences, at]);
-  const sentence = index === -1 ? null : (sentences[index] ?? null);
+  const index = useMemo(() => (at ? sentenceIndex(allSentences(), at) : -1), [allSentences, at]);
+  const sentence = index === -1 ? null : (allSentences()[index] ?? null);
   // The effects below key on where the sentence is, not on the object: re-renders and appended chapters
   // must not restart the sentence being spoken.
   const place = sentence && `${sentence.blockId}:${sentence.start}`;
 
   // When a sentence ends, the next one is looked up in the newest list: a chapter may have arrived meanwhile.
-  const latest = useRef(sentences);
+  const latest = useRef(allSentences);
   const following = useRef(nextChapter);
   useEffect(() => {
-    latest.current = sentences;
+    latest.current = allSentences;
     following.current = nextChapter;
-  }, [sentences, nextChapter]);
+  }, [allSentences, nextChapter]);
 
   // Reading reached the end of what is loaded: carry on as soon as the next chapter arrives.
   useEffect(() => {
     if (!waiting || !at) return;
+    const sentences = allSentences();
     const done = sentenceIndex(sentences, at);
     const ended = sentences[done];
     const after = sentences[done + 1];
@@ -117,7 +123,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
     setWaiting(false);
     gap.current = pauseBetween(spoken(ended), spoken(after), rate);
     setAt({ blockId: after.blockId, start: after.start });
-  }, [waiting, sentences, at, rate, spoken]);
+  }, [waiting, allSentences, at, rate, spoken]);
 
   // The sentence is gone from the page (the reader opened another part of the book): close the player.
   useEffect(() => {
@@ -178,13 +184,13 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   }, [reveal]);
 
   useEffect(() => {
-    const places = sentence ? [sentence, sentences[index + 1]].flatMap((item) => {
+    const places = sentence ? [sentence, allSentences()[index + 1]].flatMap((item) => {
       const place = item && blockPlace(item.blockId);
       return place ? [place] : [];
     }) : [];
     pin("listen", places);
     return () => pin("listen", []);
-  }, [place, sentences, blockPlace]);
+  }, [place, allSentences, blockPlace]);
 
   // Tell the reader when the sentence is out of view. Waits for scrolling to settle, so the page following
   // the voice does not make the answer flicker.
@@ -225,7 +231,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
     let cancel = () => {};
     const start = () => {
       // The natural voice takes a moment to make a sentence, so the next one is made while this one is read.
-      const sentences = latest.current;
+      const sentences = latest.current();
       const index = sentenceIndex(sentences, sentence);
       const next = index === -1 ? undefined : sentences[index + 1];
       cancel = speak(voiced.text, {
@@ -238,7 +244,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
         },
         onEnd: () => {
           resume.current = null;
-          const list = latest.current;
+          const list = latest.current();
           const done = sentenceIndex(list, sentence);
           const after = done === -1 ? undefined : list[done + 1];
           if (after) {
@@ -278,6 +284,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
     (step: number) => {
       resume.current = null;
       setAt((current) => {
+        const sentences = allSentences();
         const from = current ? sentenceIndex(sentences, current) : -1;
         if (from === -1) return current;
         const target = sentences[Math.min(Math.max(from + step, 0), sentences.length - 1)];
@@ -286,7 +293,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
       // The reader asked for it from the player: show where the voice is, wherever the page was left.
       setReveal((count) => count + 1);
     },
-    [sentences],
+    [allSentences],
   );
 
   const begin = useCallback((target: SentenceAt | undefined) => {
@@ -298,20 +305,22 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
   }, []);
 
   const startAt = useCallback(
-    (blockId: string, offset = 0) =>
-      begin(sentences.find((s) => s.blockId === blockId && offset < s.end) ?? sentences.find((s) => s.blockId === blockId)),
-    [sentences, begin],
+    (blockId: string, offset = 0) => {
+      const sentences = allSentences();
+      begin(sentences.find((s) => s.blockId === blockId && offset < s.end) ?? sentences.find((s) => s.blockId === blockId));
+    },
+    [allSentences, begin],
   );
 
   const startAtLine = useCallback(
     (blockId: string, line: number) => {
       mountBlock(blockId);
-      const inBlock = sentences.filter((s) => s.blockId === blockId);
+      const inBlock = allSentences().filter((s) => s.blockId === blockId);
       // The first sentence that still reaches below the line: the one being read there, not the paragraph's first.
       const reaching = inBlock.find((s) => (rangeInBlock(blockId, s)?.getBoundingClientRect().bottom ?? 0) > line);
       begin(reaching ?? inBlock[0]);
     },
-    [sentences, begin, mountBlock],
+    [allSentences, begin, mountBlock],
   );
 
   const toggle = useCallback(() => {

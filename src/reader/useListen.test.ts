@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { showOnPage } from "./paging.ts";
 import { useListen } from "./useListen.ts";
 import { ensureMounted, pin } from "./mountRegistry.ts";
+import { sentencesOf } from "./textRanges.ts";
 
 const hook = vi.hoisted(() => ({
   effects: [] as Array<() => void | (() => void)>,
@@ -28,10 +29,10 @@ vi.mock("./mountRegistry.ts", () => ({
   pin: vi.fn(),
 }));
 vi.mock("./textRanges.ts", () => ({
-  sentencesOf: () => [
+  sentencesOf: vi.fn(() => [
     { blockId: "b1", start: 0, end: 11, text: "First line." },
     { blockId: "b2", start: 0, end: 12, text: "Second line." },
-  ],
+  ]),
   sentenceIndex: () => 0,
   rangeInBlock: () => ({ getBoundingClientRect: () => ({ top: 100, bottom: 120 }) }),
   setHighlight: vi.fn(),
@@ -79,5 +80,17 @@ describe("useListen", () => {
     expect(pin).toHaveBeenLastCalledWith("listen", []);
     listen.stop();
     expect(pin).toHaveBeenLastCalledWith("listen", []);
+  });
+
+  it("should split the page into sentences only once the voice needs them", () => {
+    hook.effects = [];
+    hook.refs = [];
+    hook.states = 1; // the player is closed: no sentence is being read
+    vi.mocked(sentencesOf).mockClear();
+    const listen = useListen([{ id: "b1", type: "paragraph", text: "First line.", page: 1 }], 1, { coming: false, error: null, open: vi.fn() });
+    for (const effect of hook.effects) effect();
+    expect(sentencesOf).not.toHaveBeenCalled();
+    listen.startAt("b1");
+    expect(sentencesOf).toHaveBeenCalledTimes(1);
   });
 });
