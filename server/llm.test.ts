@@ -36,6 +36,8 @@ if (process.argv[2] === "exec") {
       ignoresUserConfig: args.includes("--ignore-user-config"),
       instructions: readFileSync(JSON.parse(setting("model_instructions_file")), "utf8"),
       toolsOff: args.filter((arg) => /^features\\..*=false$/.test(arg)).map((arg) => arg.slice(9, -6)),
+      skillInstructions: setting("skills.include_instructions"),
+      analytics: setting("analytics.enabled"),
       lastArg: args.at(-1),
       prompt: input.slice(directive.length + 1),
       cwd: process.cwd(),
@@ -298,6 +300,11 @@ describe("createCodexLlm", () => {
     const info = JSON.parse(await completeText(createCodexLlm({ bin: fakeBin, home }), request(`echo\n${hugePrompt}`)));
     expect(info).toMatchObject({ sandbox: "read-only", ignoresUserConfig: true, instructions: "You are a tutor.", lastArg: "-" });
     expect(info.toolsOff).toEqual(expect.arrayContaining(["shell_tool", "unified_exec", "computer_use", "browser_use"]));
+    // Tools and skills DeepRead never uses, which only made every request longer.
+    expect(info.toolsOff).toEqual(expect.arrayContaining(["multi_agent", "goals", "view_image"]));
+    expect(info.skillInstructions).toBe("false");
+    // Nor does it wait on Codex sending its usage metrics before it exits.
+    expect(info.analytics).toBe("false");
     expect(info.prompt).toBe(hugePrompt);
     expectPrivateDirectoryGone(info.cwd);
   });

@@ -20,6 +20,8 @@ const GOOGLE = "https://translate.googleapis.com/translate_a/single";
 // Measured: 60 paragraphs (18,000 characters) came back in 0.6 s, so a chapter is usually one request.
 const MICROSOFT_MAX_TEXTS = 100;
 const MICROSOFT_MAX_CHARS = 40_000;
+// A chapter of 200 short paragraphs is three requests: one after another they took 3.3 s, side by side about one.
+const MICROSOFT_AT_ONCE = 3;
 // Google takes the text in the address, which it refuses past a length: a longer paragraph goes in pieces.
 const GOOGLE_MAX_CHARS = 4_500;
 // Google takes one paragraph a request and is quick to suspect a robot, so only a few go at once.
@@ -179,27 +181,40 @@ async function google(texts: string[], lang: LangCode, options: EngineOptions): 
 
 const by = (engine: Service, texts: string[]): Translated[] => texts.map((text) => ({ text, engine }));
 
-/** One batch with `engine`: under auto, Google translates what Microsoft cannot. */
-async function translateBatch(batch: string[], lang: LangCode, engine: TranslationEngine, options: EngineOptions): Promise<Translated[]> {
-  if (engine === "google") return by("google", await google(batch, lang, options));
+/** One batch from Microsoft. Under auto its failure comes back instead of being thrown, so Google can stand in for it. */
+async function fromMicrosoft(batch: string[], lang: LangCode, engine: TranslationEngine, options: EngineOptions): Promise<string[] | TranslationError> {
   try {
-    return by("microsoft", await microsoft(batch, lang, options));
+    return await microsoft(batch, lang, options);
   } catch (error) {
     if (engine === "microsoft" || !(error instanceof TranslationError)) throw error;
-    try {
-      return by("google", await google(batch, lang, options));
-    } catch (fallback) {
-      if (!(fallback instanceof TranslationError)) throw fallback;
-      throw new TranslationError(`${error.message}; ${fallback.message}`);
-    }
+    return error;
+  }
+}
+
+/** Google, for a batch Microsoft could not translate; when Google cannot either, the failure names both. */
+async function googleInstead(batch: string[], lang: LangCode, refused: TranslationError, options: EngineOptions): Promise<Translated[]> {
+  try {
+    return by("google", await google(batch, lang, options));
+  } catch (fallback) {
+    if (!(fallback instanceof TranslationError)) throw fallback;
+    throw new TranslationError(`${refused.message}; ${fallback.message}`);
   }
 }
 
 /** English `texts` in `lang`, in order. Throws TranslationError when the services cannot translate them. */
 export async function translateTexts(texts: string[], lang: LangCode, engine: TranslationEngine, options: EngineOptions = {}): Promise<Translated[]> {
+  const groups = batches(texts);
   const made: Translated[] = [];
-  // One batch at a time: a chapter is rarely more than one, and Google, when it stands in, already sends several at once.
-  for (const batch of batches(texts)) made.push(...(await translateBatch(batch, lang, engine, options)));
+  // Google goes one batch at a time, here and when it stands in below: it already sends several requests at once.
+  if (engine === "google") {
+    for (const batch of groups) made.push(...by("google", await google(batch, lang, options)));
+    return made;
+  }
+  const tried = await inTurns(groups, MICROSOFT_AT_ONCE, (batch) => fromMicrosoft(batch, lang, engine, options));
+  for (const [at, batch] of groups.entries()) {
+    const result = tried[at] ?? new TranslationError("Microsoft sent nothing back");
+    made.push(...(result instanceof TranslationError ? await googleInstead(batch, lang, result, options) : by("microsoft", result)));
+  }
   return made;
 }
 

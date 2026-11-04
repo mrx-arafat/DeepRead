@@ -377,7 +377,9 @@ export function createClaudeLlm(options: CliLlmOptions = {}): CliLlm {
 }
 
 // Codex is a coding agent: every tool it has that could act on the computer is switched off, and the sandbox is
-// read-only besides. Names a Codex version does not know are ignored, so older versions still start.
+// read-only besides. The tools after those only made every request longer: with them and Codex's skills list, a request
+// was 27,600 bytes before DeepRead's prompt, and 4,300 without. Names a Codex version does not know are ignored, so older
+// versions still start.
 const CODEX_TOOLS_OFF = [
   "shell_tool",
   "unified_exec",
@@ -390,6 +392,9 @@ const CODEX_TOOLS_OFF = [
   "plugins",
   "skill_search",
   "tool_suggest",
+  "multi_agent",
+  "goals",
+  "view_image",
 ].flatMap((feature) => ["-c", `features.${feature}=false`]);
 
 const CODEX_INSTRUCTIONS = "instructions.md";
@@ -444,6 +449,12 @@ export function createCodexLlm({ home, ...options }: CodexLlmOptions): CliLlm {
         "-c",
         'model_reasoning_effort="low"',
         ...CODEX_TOOLS_OFF,
+        // Codex's own skills, described to the model in about 10,000 bytes on every request; DeepRead uses none.
+        "-c",
+        "skills.include_instructions=false",
+        // Its usage metrics, which it sends to OpenAI before it exits: the answer was done about 150 ms before Codex was.
+        "-c",
+        "analytics.enabled=false",
         "-",
       ],
       env: () => ({ ...helperEnv(), CODEX_HOME: home }),

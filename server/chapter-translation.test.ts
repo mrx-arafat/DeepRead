@@ -78,6 +78,24 @@ describe("translateTexts", () => {
     expect(calls.map((call) => call.texts.length)).toEqual([2, 2, 1]);
   });
 
+  it("should send a long chapter's Microsoft requests side by side, at most three at once, and keep their order", async () => {
+    let open = 0;
+    let most = 0;
+    const { fetchImpl, calls } = services({
+      microsoft: async (texts) => {
+        open += 1;
+        most = Math.max(most, open);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        open -= 1;
+        return Response.json(texts.map((text) => ({ translations: [{ text: `ms:${text}` }] })));
+      },
+    });
+    const long = Array.from({ length: 9 }, (_, at) => `${at}`.repeat(15_000));
+    expect((await translateTexts(long, "bn", "auto", { fetchImpl })).map((made) => made.text)).toEqual(long.map((text) => `ms:${text}`));
+    expect(calls.map((call) => call.texts.length)).toEqual([2, 2, 2, 2, 1]);
+    expect(most).toBe(3);
+  });
+
   it("should send Google a paragraph at a time, cutting a long one at sentence ends, and join its pieces", async () => {
     const { fetchImpl, calls } = services();
     const sentences = Array.from({ length: 300 }, (_, at) => `Sentence number ${at} says something about the table.`);
