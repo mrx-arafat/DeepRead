@@ -44,7 +44,7 @@ export interface VisualOptions {
   images?: boolean;
   forceOcr?: boolean;
   totalBudgetMs?: number;
-  ocrRunner?: (png: Buffer, options: OcrOptions) => Promise<string>;
+  ocrRunner?: OcrRunner;
 }
 export function detectFigureRegions(
   operatorList: { fnArray: number[]; argsArray: unknown[][] },
@@ -67,3 +67,16 @@ export function extractPageVisuals(
   warnings: string[];
   ocrUsed: boolean;
 }>;
+export type OcrRunner = ((png: Buffer, options: OcrOptions) => Promise<string>) & { unavailable?: Error | null };
+export function ocrRunnerForOneParse(
+  runner?: (png: Buffer, options: OcrOptions) => Promise<string>,
+): OcrRunner;
+export interface PdfImageData {
+  kind?: number;
+  width: number;
+  height: number;
+  data?: Uint8Array | Uint8ClampedArray | null;
+  bitmap?: unknown;
+}
+export function rgbImageAsRgba<T extends PdfImageData | null | undefined>(image: T): T;
+export function paintRgbImagesAsRgba(objs: { resolve(id: string, data?: unknown): void } | null | undefined): void;

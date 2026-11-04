@@ -13,7 +13,7 @@ import { basename, dirname } from "node:path";
 import { createRequire } from "node:module";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { separateMatter } from "./matter.mjs";
-import { extractPageVisuals } from "./pdfVisuals.mjs";
+import { extractPageVisuals, ocrRunnerForOneParse } from "./pdfVisuals.mjs";
 
 /**
  * @typedef {import("../../shared/types.ts").Block} Block
@@ -207,6 +207,7 @@ async function extract(filePath, o, warnings) {
     let ocrPages = 0;
     const visualWarnings = new Map();
     const warnVisual = (message) => visualWarnings.set(message, (visualWarnings.get(message) ?? 0) + 1);
+    const ocrRunner = ocrRunnerForOneParse();
     for (let p = 1; p <= doc.numPages; p++) {
       if (Date.now() > deadline) {
         throw new PdfParseError("timeout", `Parsing exceeded ${o.totalTimeoutMs} ms at page ${p} of ${doc.numPages}.`);
@@ -230,6 +231,7 @@ async function extract(filePath, o, warnings) {
               timeoutMs: budget, totalBudgetMs: budget,
               ocrTimeoutMs: Math.min(o.ocrTimeoutMs, budget),
               maxFigures: Math.max(0, Math.min(12, 256 - figureCount)),
+              ocrRunner,
             }), budget + 100, `Reading figures and OCR on page ${p}`);
             for (const message of visuals.warnings) warnVisual(message);
             if (visuals.ocrUsed && visuals.ocrItems.length) {

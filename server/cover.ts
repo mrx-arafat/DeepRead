@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import type { Canvas } from "@napi-rs/canvas";
+import { paintRgbImagesAsRgba } from "./parser/pdfVisuals.mjs";
 
 export type CoverImage = { data: Uint8Array<ArrayBuffer>; type: "image/webp" | "image/jpeg" };
 
@@ -163,6 +164,9 @@ async function drawCover(pdfPath: string): Promise<CoverImage | null> {
     if (!(aspect >= MIN_ASPECT && aspect <= MAX_ASPECT)) return null;
     const scaled = page.getViewport({ scale: COVER_WIDTH / viewport.width });
     const canvas = createCanvas(COVER_WIDTH, Math.round(scaled.height));
+    // A photo cover would otherwise take pdf.js's slow RGB path; the pixels are the same either way.
+    paintRgbImagesAsRgba(page.commonObjs);
+    paintRgbImagesAsRgba(page.objs);
     await page.render({ canvas: canvas as unknown as HTMLCanvasElement, viewport: scaled, recordImages: true }).promise;
     const text = await page.getTextContent();
     const words = text.items

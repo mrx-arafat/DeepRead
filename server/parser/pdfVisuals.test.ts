@@ -3,7 +3,9 @@ import { OPS, getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import {
   detectFigureRegions,
   extractPageVisuals,
+  ocrRunnerForOneParse,
   ocrTsvItems,
+  rgbImageAsRgba,
   runLocalOcr,
 } from "./pdfVisuals.mjs";
 
@@ -290,4 +292,40 @@ it("skips blank scanned pages and can OCR without retaining images", async () =>
   } finally {
     await drawn.destroy();
   }
+});
+
+it("hands pdf.js RGB images as RGBA with exactly the pixels it would paint itself", async () => {
+  // 5x21: one full 16-row chunk and a 25-pixel last chunk, where pdf.js 6.3.289 repeats a top pixel at the end.
+  const [width, height] = [5, 21];
+  const rgb = Uint8ClampedArray.from({ length: width * height * 3 }, (_, i) => (i * 37 + 11) & 255);
+  const hex = Buffer.from(rgb).toString("hex");
+  const task = getDocument({
+    data: pdf(`q ${width} 0 0 ${height} 0 ${800 - height} cm /I Do Q`, [
+      `<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /ASCIIHexDecode /Length ${hex.length + 1} >>\nstream\n${hex}>\nendstream`,
+    ]),
+    verbosity: 0,
+  });
+  try {
+    const page = await (await task.promise).getPage(1);
+    const { createCanvas } = await import("@napi-rs/canvas");
+    const canvas = createCanvas(600, 800);
+    await page.render({ canvas: canvas as unknown as HTMLCanvasElement, viewport: page.getViewport({ scale: 1 }) }).promise;
+    const painted = canvas.getContext("2d").getImageData(0, 0, width, height).data;
+    const converted = rgbImageAsRgba({ kind: 2, width, height, data: rgb });
+    expect(converted.kind).toBe(3);
+    expect(Buffer.from(converted.data)).toEqual(Buffer.from(painted));
+  } finally {
+    await task.destroy();
+  }
+});
+
+it("starts no further OCR once Tesseract is missing", async () => {
+  let calls = 0;
+  const run = ocrRunnerForOneParse(async () => {
+    calls++;
+    throw Object.assign(new Error("Local OCR is unavailable; install Tesseract and its language data."), { code: "ocr_unavailable" });
+  });
+  for (let page = 0; page < 3; page++) await expect(run(Buffer.from("png"), {})).rejects.toThrow("Local OCR is unavailable");
+  expect(calls).toBe(1);
+  expect(run.unavailable?.message).toMatch("Local OCR is unavailable");
 });

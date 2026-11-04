@@ -272,6 +272,79 @@ export async function runLocalOcr(
   }
 }
 
+/** A parse asks for OCR on every figure; once Tesseract is missing it stays missing, so later calls fail at once with
+ *  the same error instead of each starting a watchdog process that cannot succeed. `unavailable` holds that error. */
+export function ocrRunnerForOneParse(runner = runLocalOcr) {
+  const run = async (png, options) => {
+    if (run.unavailable) throw run.unavailable;
+    try {
+      return await runner(png, options);
+    } catch (error) {
+      if (error?.code === "ocr_unavailable") run.unavailable = error;
+      throw error;
+    }
+  };
+  run.unavailable = null;
+  return run;
+}
+
+// pdf.js ImageKind values and the row count putBinaryImageData paints at a time (pdfjs-dist 6.3.289).
+const RGB_24BPP = 2;
+const RGBA_32BPP = 3;
+const CHUNK_ROWS = 16;
+const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+
+/**
+ * pdfjs-dist 6.3.289 paints an RGB image 16 rows at a time, and the tail loop of its RGB to RGBA conversion starts at
+ * the image's first byte instead of the chunk's, so every chunk walks all the bytes before it (fixed upstream in
+ * src/shared/image_utils.js). For a 1600x1200 photo that is about 100 ms of writes that land past the chunk and are
+ * dropped. Handed the same pixels as RGBA, pdf.js copies them instead. The one visible quirk of the old loop is kept:
+ * in a last, partial chunk whose pixel count is not a multiple of 4, the final 1 to 3 pixels repeat pixels from the
+ * top of the image. Anything unusual is left for pdf.js to paint itself.
+ * SHORTCUT: mirrors pdfjs-dist 6.3.289 exactly; when pdfjs-dist is upgraded past the upstream fix, the pixel test in
+ * pdfVisuals.test.ts fails on that quirk, and this whole workaround should be deleted rather than adjusted.
+ */
+export function rgbImageAsRgba(image) {
+  if (!littleEndian || image?.kind !== RGB_24BPP || image.bitmap) return image;
+  const { width, height, data } = image;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return image;
+  if (!(data instanceof Uint8ClampedArray || data instanceof Uint8Array) || data.byteOffset !== 0 || data.length !== width * height * 3) return image;
+  const pixels = width * height;
+  const rgba = new Uint8ClampedArray(pixels * 4);
+  const out = new Uint32Array(rgba.buffer);
+  // Three little-endian words hold four pixels: R1G1B1R2 G2B2R3G3 B3R4G4B4.
+  const src = new Uint32Array(data.buffer, 0, data.length >> 2);
+  let p = 0;
+  for (let w = 0; w + 2 < src.length; w += 3, p += 4) {
+    const a = src[w], b = src[w + 1], c = src[w + 2];
+    out[p] = a | 0xff000000;
+    out[p + 1] = (a >>> 24) | (b << 8) | 0xff000000;
+    out[p + 2] = (b >>> 16) | (c << 16) | 0xff000000;
+    out[p + 3] = (c >>> 8) | 0xff000000;
+  }
+  for (let s = p * 3; p < pixels; p++, s += 3) out[p] = data[s] | (data[s + 1] << 8) | (data[s + 2] << 16) | 0xff000000;
+  const lastPixels = width * (height % CHUNK_ROWS);
+  if (height > CHUNK_ROWS && lastPixels % 4) {
+    const start = pixels - lastPixels;
+    const whole = lastPixels - (lastPixels % 4);
+    for (let t = 0; t < lastPixels % 4; t++) out[start + whole + t] = out[whole + t];
+  }
+  image.kind = RGBA_32BPP;
+  image.data = rgba;
+  return image;
+}
+
+/** Route RGB images resolved into this pdf.js object store (page.objs, page.commonObjs) through rgbImageAsRgba. */
+const convertingStores = new WeakSet();
+export function paintRgbImagesAsRgba(objs) {
+  if (!objs || typeof objs.resolve !== "function" || convertingStores.has(objs)) return;
+  convertingStores.add(objs);
+  const resolve = objs.resolve;
+  objs.resolve = function (id, data) {
+    return resolve.call(this, id, rgbImageAsRgba(data));
+  };
+}
+
 async function guarded(promise, ms, onTimeout) {
   let timer;
   try {
@@ -318,6 +391,8 @@ export async function extractPageVisuals(page, options = {}) {
   if (!images && !(scanned && ocr))
     return { figures, ocrItems, warnings, ocrUsed: false };
   const { OPS } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  // Images shared by several pages land in the document's store while operator lists are read.
+  paintRgbImagesAsRgba(page.commonObjs);
   const operators =
     images || scanned
       ? await guarded(page.getOperatorList(), budget(timeoutMs))
@@ -350,6 +425,8 @@ export async function extractPageVisuals(page, options = {}) {
     Math.max(1, Math.ceil(viewport.width)),
     Math.max(1, Math.ceil(viewport.height)),
   );
+  // Only from here: the page's images already resolved above came from the operator list and are never painted.
+  paintRgbImagesAsRgba(page.objs);
   const task = page.render({
     canvas,
     viewport,
@@ -367,6 +444,8 @@ export async function extractPageVisuals(page, options = {}) {
   }
   if (scanned && ocr) {
     try {
+      // Known to be missing: fail before encoding a page-sized PNG nobody will read.
+      if (ocrRunner.unavailable) throw ocrRunner.unavailable;
       ocrItems.push(
         ...ocrTsvItems(
           await ocrRunner(await canvas.encode("png"), {
