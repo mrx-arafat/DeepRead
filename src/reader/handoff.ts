@@ -83,6 +83,7 @@ function promptText(passage: HandoffPassage, before: string | null, paragraph: s
     "3. The deeper meaning: what it shows about people, the mind, or life. Name the psychology or philosophy behind it in plain words.",
     "4. Two real-life examples from everyday life (home, work, school, a phone) where the same thing happens.",
     `5. The hard words in the selected part, each with a simple meaning and the ${passage.language} word in ${passage.language} script.`,
+    "6. A visual that helps me see it: if you can make images, create a simple picture or diagram of the idea; if not, draw a clear diagram, flowchart or table in text.",
     "Short sentences. No praise, no questions back. Answer in English.",
   ].join("\n");
 }

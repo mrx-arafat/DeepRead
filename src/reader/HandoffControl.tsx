@@ -139,7 +139,7 @@ export function HandoffControl({ link, where, onChoose, onSent }: Props) {
               <HandoffMark target={target} size={18} />
               <span className="handoff-item">
                 {item.name}
-                {target !== "copy" && !item.open && <small>Copies the prompt, then opens it</small>}
+                {target !== "copy" && !item.open && <small>Copies the prompt for you to paste</small>}
               </span>
               {chosen && <Check size={16} aria-hidden />}
             </button>

@@ -331,7 +331,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
           : link.target === "copy"
             ? "Prompt copied. Paste it into your chat."
             : !open
-              ? `Prompt copied. Paste it into ${name}.`
+              ? `Prompt copied. ${name} cannot take it from a link: paste it into its box (⌘V or Ctrl+V, or long-press and Paste), then send.`
               : "Prompt copied. Paste it if the chat opens empty.",
       ),
     );
