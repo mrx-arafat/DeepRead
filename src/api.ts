@@ -34,7 +34,7 @@ import type {
   TranslationSettings,
   TranslationTest,
 } from "../shared/types.ts";
-import { progressFiler } from "./library/shelfCache.ts";
+import { currentReader, progressFiler } from "./library/shelfCache.ts";
 
 export class ApiFailure extends Error {
   readonly code: string;
@@ -48,7 +48,7 @@ export class ApiFailure extends Error {
   }
 }
 
-const NOT_REACHABLE = "DeepRead is not reachable. Check that it is running, then try again.";
+export const NOT_REACHABLE = "DeepRead is not reachable. Check that it is running, then try again.";
 
 async function failure(res: Response): Promise<ApiFailure> {
   const body = (await res.json().catch(() => null)) as Partial<ApiError> | null;
@@ -104,7 +104,10 @@ function connectWatched(path: string, body: FormData, { onSent, signal }: Upload
 async function accepted(res: Response): Promise<Response> {
   if (!res.ok) {
     const error = await failure(res);
-    if (error.code === "sign_in_required") window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+    if (error.code === "sign_in_required") {
+      sessionChanging();
+      window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+    }
     throw error;
   }
   return res;
@@ -140,22 +143,83 @@ async function afterSaving(bookId?: string): Promise<void> {
   clearTimeout(timer);
 }
 
+async function bookDetail(id: string): Promise<BookDetail> {
+  await afterSaving(id);
+  return request<BookDetail>(`/api/books/${id}`);
+}
+
+// A book's details asked for as the reader opens it from the library, before the reader page has drawn: the page takes
+// this answer instead of asking again. Taken once, by the same reader, within EARLY_MS. Anything this browser changes in
+// the book drops it, so the page never gets details older than what its own request would have brought.
+const early = new Map<string, { reader: string | null; at: number; detail: Promise<BookDetail> }>();
+const EARLY_MS = 5000;
+
+function changing(id: string): void {
+  early.delete(id);
+}
+
+// The shelf asked for as the app starts, beside the session question rather than after it: the server answers for the
+// browser's cookie, so the list needs nothing from that answer. The library's first list takes it, once. Signing in,
+// out or as someone else drops it, as it is then another reader's; a failure is asked again, never reported from here.
+let startupList: Promise<BookSummary[]> | null = null;
+
+function sessionChanging(): void {
+  startupList = null;
+}
+
 export const api = {
+  /** Asks for the shelf now, as the app starts on the library: its first `listBooks` takes the answer. */
+  prefetchBooks: (): void => {
+    startupList = request<BookSummary[]>("/api/books");
+    startupList.catch(() => {});
+  },
   listBooks: async () => {
+    const asked = startupList;
+    startupList = null;
+    if (asked) {
+      try {
+        return await asked;
+      } catch {
+        // Asked again below, for the reader signed in now.
+      }
+    }
     await afterSaving();
     return request<BookSummary[]>("/api/books");
   },
-  getBook: async (id: string) => {
-    await afterSaving(id);
-    return request<BookDetail>(`/api/books/${id}`);
+  getBook: (id: string): Promise<BookDetail> => {
+    const asked = early.get(id);
+    early.delete(id);
+    if (asked && asked.reader === currentReader() && Date.now() - asked.at < EARLY_MS) return asked.detail;
+    return bookDetail(id);
   },
-  updateBook: (id: string, update: BookUpdate) => request<BookDetail>(`/api/books/${id}`, json("PATCH", update)),
-  deleteBook: (id: string) => request<void>(`/api/books/${id}`, { method: "DELETE" }),
+  /** Asks for the book's details now, for the reader page that is about to open it (`getBook` takes the answer). */
+  prefetchBook: (id: string): void => {
+    const detail = bookDetail(id);
+    // Nobody may take it: a failure is the page's to report when it asks again.
+    detail.catch(() => {});
+    early.set(id, { reader: currentReader(), at: Date.now(), detail });
+  },
+  updateBook: (id: string, update: BookUpdate) => {
+    changing(id);
+    return request<BookDetail>(`/api/books/${id}`, json("PATCH", update));
+  },
+  deleteBook: (id: string) => {
+    changing(id);
+    return request<void>(`/api/books/${id}`, { method: "DELETE" });
+  },
   /** Pins the book to the top of the reader's shelf. Resolves with the time the server pinned it. */
-  pinBook: async (id: string) => (await request<{ pinnedAt: string }>(`/api/books/${id}/pin`, { method: "PUT" })).pinnedAt,
-  unpinBook: (id: string) => request<void>(`/api/books/${id}/pin`, { method: "DELETE" }),
-  setReadingStatus: async (id: string, status: ReadingStatus): Promise<ReadingStatus> =>
-    (await request<{ readingStatus: ReadingStatus }>(`/api/books/${id}/reading-status`, json("PUT", { status }))).readingStatus,
+  pinBook: async (id: string) => {
+    changing(id);
+    return (await request<{ pinnedAt: string }>(`/api/books/${id}/pin`, { method: "PUT" })).pinnedAt;
+  },
+  unpinBook: (id: string) => {
+    changing(id);
+    return request<void>(`/api/books/${id}/pin`, { method: "DELETE" });
+  },
+  setReadingStatus: async (id: string, status: ReadingStatus): Promise<ReadingStatus> => {
+    changing(id);
+    return (await request<{ readingStatus: ReadingStatus }>(`/api/books/${id}/reading-status`, json("PUT", { status }))).readingStatus;
+  },
   getChapter: (bookId: string, chapterId: string, signal?: AbortSignal) =>
     request<Chapter>(`/api/books/${bookId}/chapters/${chapterId}`, { signal }),
   getResumeContext: (bookId: string, progress: ReadingProgress, signal?: AbortSignal) => {
@@ -170,6 +234,7 @@ export const api = {
     return { book: (await res.json()) as BookDetail, alreadyHad: res.status === 200 };
   },
   saveProgress: (bookId: string, chapterId: string, blockId: string, offset: number) => {
+    changing(bookId);
     const file = progressFiler();
     // `keepalive`: the save made as the page closes is still delivered.
     const done = request<ReadingProgress>(`/api/books/${bookId}/progress`, { ...json("PUT", { chapterId, blockId, offset }), keepalive: true }).then(
@@ -204,8 +269,14 @@ export const api = {
   session: () => request<SessionInfo>("/api/session"),
   profiles: () => request<PublicProfile[]>("/api/profiles"),
   /** Signs in for 30 days. Rejects with code "wrong_code" (401) or "too_many_tries" (429). */
-  signIn: (profileId: string, code: string) => request<Session>("/api/session", json("POST", { profileId, code })),
-  signOut: () => request<void>("/api/session", { method: "DELETE" }),
+  signIn: (profileId: string, code: string) => {
+    sessionChanging();
+    return request<Session>("/api/session", json("POST", { profileId, code }));
+  },
+  signOut: () => {
+    sessionChanging();
+    return request<void>("/api/session", { method: "DELETE" });
+  },
 
   adminProfiles: () => request<AdminProfile[]>("/api/admin/profiles"),
   createProfile: (profile: NewProfile) => request<AdminProfile>("/api/admin/profiles", json("POST", profile)),
@@ -222,8 +293,14 @@ export const api = {
   /** Signs the profile out on every device it is signed in on. Rejects with 400 for the admin's own profile. */
   signOutProfile: (id: string) => request<void>(`/api/admin/profiles/${id}/sign-out`, { method: "POST" }),
   /** The admin reads as `id` until stopImpersonating. */
-  impersonate: (id: string) => request<Session>(`/api/admin/impersonate/${id}`, { method: "POST" }),
-  stopImpersonating: () => request<Session>("/api/admin/impersonate", { method: "DELETE" }),
+  impersonate: (id: string) => {
+    sessionChanging();
+    return request<Session>(`/api/admin/impersonate/${id}`, { method: "POST" });
+  },
+  stopImpersonating: () => {
+    sessionChanging();
+    return request<Session>("/api/admin/impersonate", { method: "DELETE" });
+  },
   adminShares: () => request<AdminShare[]>("/api/admin/shares"),
   adminStopShare: (share: AdminShare) =>
     request<void>(`/api/admin/shares/${share.owner.id}/${share.bookId}/${share.recipient.id}`, { method: "DELETE" }),

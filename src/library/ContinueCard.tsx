@@ -6,6 +6,7 @@ import { readingNote } from "./bookText.ts";
 import type { StartedBook } from "./bookText.ts";
 import { BookTitle } from "./BookTitle.tsx";
 import { Cover } from "./Cover.tsx";
+import { startOpening } from "./openBook.ts";
 
 /** The book read last, with direct resume and an optional reminder of the saved passage. */
 export function ContinueCard({ book, compact = false, onContext }: { book: StartedBook; compact?: boolean; onContext: () => void }): ReactElement {
@@ -13,7 +14,7 @@ export function ContinueCard({ book, compact = false, onContext }: { book: Start
   const note = readingNote(book);
   const actions = (
     <div className="continue-actions">
-      <Link href={`/book/${book.id}`} className="button continue-action" title={book.title}>
+      <Link href={`/book/${book.id}`} className="button continue-action" title={book.title} onClick={() => startOpening(book.id, book.progress.chapterId)}>
         Continue
         <span className="visually-hidden"> reading {book.title}</span>
         <ArrowRight size={18} aria-hidden />

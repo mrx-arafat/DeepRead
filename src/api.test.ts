@@ -149,6 +149,56 @@ describe("streamText", () => {
   });
 });
 
+describe("api.prefetchBook", () => {
+  const counting = (calls: string[]) =>
+    vi.stubGlobal("fetch", (path: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${path}`);
+      return Promise.resolve(new Response(JSON.stringify({ id: "a-b", asked: calls.length })));
+    });
+
+  it("should give the reader page the details asked for as the book was opened, without asking again", async () => {
+    const calls: string[] = [];
+    counting(calls);
+    api.prefetchBook("a-b");
+    await expect(api.getBook("a-b")).resolves.toEqual({ id: "a-b", asked: 1 });
+    expect(calls).toEqual(["GET /api/books/a-b"]);
+  });
+
+  it("should ask again when the book changed after its details were asked for", async () => {
+    const calls: string[] = [];
+    counting(calls);
+    api.prefetchBook("a-b");
+    await api.saveProgress("a-b", "c1", "c1-b1", 0);
+    await expect(api.getBook("a-b")).resolves.toEqual({ id: "a-b", asked: 3 });
+    expect(calls.filter((call) => call === "GET /api/books/a-b")).toHaveLength(2);
+  });
+});
+
+describe("api.prefetchBooks", () => {
+  const counting = (calls: string[]) =>
+    vi.stubGlobal("fetch", (path: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${path}`);
+      return Promise.resolve(new Response(path === "/api/books" ? JSON.stringify([{ asked: calls.length }]) : "{}"));
+    });
+
+  it("should give the library's first list the shelf asked for as the app started, without asking again", async () => {
+    const calls: string[] = [];
+    counting(calls);
+    api.prefetchBooks();
+    await expect(api.listBooks()).resolves.toEqual([{ asked: 1 }]);
+    expect(calls).toEqual(["GET /api/books"]);
+  });
+
+  it("should ask again for the reader who signed in after the app started", async () => {
+    const calls: string[] = [];
+    counting(calls);
+    api.prefetchBooks();
+    await api.signIn("p1", "1234");
+    await expect(api.listBooks()).resolves.toEqual([{ asked: 3 }]);
+    expect(calls).toEqual(["GET /api/books", "POST /api/session", "GET /api/books"]);
+  });
+});
+
 describe("api.saveProgress", () => {
   it("should open another book immediately while waiting for saves to the book just left", async () => {
     const calls: string[] = [];

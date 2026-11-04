@@ -51,6 +51,24 @@ describe("shelf cache", () => {
     expect(readShelf("cy")).toEqual({ books: null, storage: null });
   });
 
+  it("should keep the books the server lists unchanged, and tell nobody when nothing changed", () => {
+    rememberBooks("ann", [book("a"), book("b")]);
+    const [a, b] = readShelf("ann").books!;
+    const watcher = vi.fn();
+    const stop = watchShelves(watcher);
+
+    rememberBooks("ann", [book("a"), book("b")]);
+    expect(watcher).not.toHaveBeenCalled();
+
+    rememberBooks("ann", [book("a"), { ...book("b"), title: "Renamed" }]);
+    stop();
+    const [keptA, newB] = readShelf("ann").books!;
+    expect(watcher).toHaveBeenCalledTimes(1);
+    expect(keptA).toBe(a);
+    expect(newB).not.toBe(b);
+    expect(newB?.title).toBe("Renamed");
+  });
+
   it("should forget every reader's shelf on sign out", () => {
     rememberBooks("ann", [book("a")]);
     rememberBooks("bob", [book("b")]);

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { memo, useEffect, useId, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import { Link } from "wouter";
 import type { BookSummary, BookUpdate, ReadingStatus } from "../../shared/types.ts";
@@ -8,6 +8,7 @@ import { BookTitle } from "./BookTitle.tsx";
 import { readingNote, shortTitle } from "./bookText.ts";
 import { Avatar } from "../profiles/Avatar.tsx";
 import { Cover } from "./Cover.tsx";
+import { startOpening } from "./openBook.ts";
 import { ShareDialog } from "./ShareDialog.tsx";
 
 export type Mode = "view" | "edit" | "delete" | "share";
@@ -24,15 +25,16 @@ type Props = {
   focusMenu: boolean;
   /** Who is reading, with profiles on: they may share their own books with the others. Null without profiles. */
   readerId: string | null;
-  onMode: (mode: Mode) => void;
-  onPin: () => void;
-  onStatus: (status: ReadingStatus) => void;
+  // The book comes with each call, so one function serves every row and a row is drawn again only when its own props change.
+  onMode: (id: string, mode: Mode) => void;
+  onPin: (book: BookSummary) => void;
+  onStatus: (book: BookSummary, status: ReadingStatus) => void;
   onSave: (id: string, update: BookUpdate) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 };
 
 /** One book on the shelf: its cover (a link to the book), how far the reader is, and what else can be done to it. */
-export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu, readerId, onMode, onPin, onStatus, onSave, onRemove }: Props) {
+export const BookRow = memo(function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu, readerId, onMode, onPin, onStatus, onSave, onRemove }: Props) {
   const questionId = useId();
   const link = useRef<HTMLAnchorElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -62,7 +64,7 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
 
   function close() {
     returnFocus.current = true;
-    onMode("view");
+    onMode(book.id, "view");
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLLIElement>) {
@@ -70,6 +72,7 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
     if (event.key === "Escape" && mode === "delete" && !busy) close();
   }
 
+  const open = () => startOpening(book.id, book.progress?.chapterId);
   const note = readingNote(book);
   const { sharedBy } = book;
   return (
@@ -77,7 +80,7 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
       {/* The tooltip carries the whole title: a long one is cut short on the cover. The cover opens the book for a
           pointer only: the title under it is the book's one link for the keyboard and for a screen reader, which
           would otherwise meet the same link twice in a row, under the same name. */}
-      <Link href={`/book/${book.id}`} className="shelf-link" title={book.title} aria-hidden="true" tabIndex={-1}>
+      <Link href={`/book/${book.id}`} className="shelf-link" title={book.title} aria-hidden="true" tabIndex={-1} onClick={open}>
         <Cover book={book} />
         {/* Who shared it, as a small picture in the cover's corner: a line of words under it would push the book's
             status menu out of line with its neighbours'. The sentence for a screen reader is with the book's words. */}
@@ -89,7 +92,7 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
       </Link>
       <div className="shelf-description">
         {/* BookTitle carries the tooltip with the whole title, so the link has none of its own. */}
-        <h3><Link ref={link} href={`/book/${book.id}`}><BookTitle title={book.title} /></Link></h3>
+        <h3><Link ref={link} href={`/book/${book.id}`} onClick={open}><BookTitle title={book.title} /></Link></h3>
         {book.author && <p>{book.author}</p>}
       </div>
       {/* Always there, so books that have not been started line up with the ones that have. */}
@@ -126,18 +129,18 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
             disabled={pending !== null}
             triggerRef={menuButton}
             pinned={book.pinnedAt !== undefined}
-            onPin={onPin}
+            onPin={() => onPin(book)}
             shared={sharedBy !== undefined}
-            onEdit={sharedBy ? undefined : () => onMode("edit")}
-            onShare={sharedBy || readerId === null ? undefined : () => onMode("share")}
-            onRemove={() => onMode("delete")}
+            onEdit={sharedBy ? undefined : () => onMode(book.id, "edit")}
+            onShare={sharedBy || readerId === null ? undefined : () => onMode(book.id, "share")}
+            onRemove={() => onMode(book.id, "delete")}
           />
         </div>
       )}
       {mode !== "delete" && (
         <div className="shelf-status">
           <label className="visually-hidden" htmlFor={`status-${book.id}`}>Reading status for {book.title}</label>
-          <select id={`status-${book.id}`} value={book.readingStatus} disabled={pending !== null} onChange={(event) => onStatus(event.target.value as ReadingStatus)}>
+          <select id={`status-${book.id}`} value={book.readingStatus} disabled={pending !== null} onChange={(event) => onStatus(book, event.target.value as ReadingStatus)}>
             <option value="saved">Saved for later</option>
             <option value="reading">Reading</option>
             <option value="finished">Finished</option>
@@ -155,4 +158,4 @@ export function BookRow({ book, mode, pending, deleteError, focusLink, focusMenu
       {mode === "share" && readerId !== null && <ShareDialog book={book} readerId={readerId} onClose={close} />}
     </li>
   );
-}
+});

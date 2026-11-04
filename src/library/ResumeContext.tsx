@@ -5,6 +5,7 @@ import { Link } from "wouter";
 import type { ResumeContextResponse } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import type { StartedBook } from "./bookText.ts";
+import { startOpening } from "./openBook.ts";
 
 interface Props {
   book: StartedBook;
@@ -90,7 +91,10 @@ export function ResumeContext({ book, onClose }: Props): ReactElement {
               readingDetour: { bookId: book.id, returnTo: { chapterId: book.progress.chapterId, blockId: book.progress.blockId, offset: book.progress.offset ?? 0 } },
             }}
             className="quiet-button resume-view-source"
-            onClick={onClose}
+            onClick={() => {
+              startOpening(book.id, content?.chapter?.id);
+              onClose();
+            }}
           >
             View highlight in book <ArrowRight size={16} aria-hidden />
           </Link>
@@ -104,7 +108,7 @@ export function ResumeContext({ book, onClose }: Props): ReactElement {
             <RotateCcw size={16} aria-hidden /> Try again
           </button>
         )}
-        {error ? <button type="button" className="button" onClick={onClose}>Back to shelf</button> : <Link href={`/book/${book.id}`} className="button" onClick={onClose}>
+        {error ? <button type="button" className="button" onClick={onClose}>Back to shelf</button> : <Link href={`/book/${book.id}`} className="button" onClick={() => { startOpening(book.id, book.progress.chapterId); onClose(); }}>
           {missing ? "Open book" : "Continue"}<ArrowRight size={18} aria-hidden />
         </Link>}
       </div>

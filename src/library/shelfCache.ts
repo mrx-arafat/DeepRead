@@ -20,6 +20,11 @@ export function setReader(key: string): void {
   current = key;
 }
 
+/** Who is reading, as the session last said; null before it has. */
+export function currentReader(): string | null {
+  return current;
+}
+
 /** Calls `watcher` whenever a shelf changes, until the returned function is called. */
 export function watchShelves(watcher: () => void): () => void {
   watchers.add(watcher);
@@ -36,11 +41,26 @@ function keep(reader: string, shelf: Shelf): void {
   for (const watcher of watchers) watcher();
 }
 
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * A book the server describes as the shelf already does keeps its object, and a list with nothing new changes nothing:
+ * the library draws again only the rows whose books did change (most visits back from a book change one, or none).
+ */
 export function rememberBooks(reader: string, books: BookSummary[]): void {
-  keep(reader, { ...readShelf(reader), books });
+  const before = readShelf(reader).books;
+  const known = new Map(before?.map((book) => [book.id, book]));
+  const kept = books.map((book) => {
+    const old = known.get(book.id);
+    return old && (old === book || same(old, book)) ? old : book;
+  });
+  if (before && kept.length === before.length && kept.every((book, at) => book === before[at])) return;
+  keep(reader, { ...readShelf(reader), books: kept });
 }
 
 export function rememberStorage(reader: string, storage: StorageView): void {
+  const before = readShelf(reader).storage;
+  if (before && same(before, storage)) return;
   keep(reader, { ...readShelf(reader), storage });
 }
 

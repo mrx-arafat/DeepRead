@@ -1,5 +1,5 @@
 import { ArrowRight, Bookmark, FileUp, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation } from "wouter";
 import { formatBytes } from "../shared/bytes.ts";
 import { LANGUAGES } from "../shared/types.ts";
@@ -11,6 +11,8 @@ import type { Mode } from "./library/BookRow.tsx";
 import { addFailure, filterBooks, latestRead, shortTitle, splitPinned } from "./library/bookText.ts";
 import type { StartedBook } from "./library/bookText.ts";
 import { LibrarySearch } from "./library/LibrarySearch.tsx";
+import { startOpening } from "./library/openBook.ts";
+import { loadReader } from "./loadReader.ts";
 import { Cover } from "./library/Cover.tsx";
 import { ContinueCard } from "./library/ContinueCard.tsx";
 import { ResumeContext } from "./library/ResumeContext.tsx";
@@ -27,6 +29,7 @@ import { useSession } from "./profiles/session.tsx";
 import { forgetHeldNotes, noteOwner } from "./reader/noteSync.ts";
 
 const ADD_BUTTON = "add";
+const READER_AFTER_MS = 500;
 const STATUS_FILTERS: { value: ReadingStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "reading", label: "Reading" },
@@ -75,6 +78,22 @@ export function LibraryPage() {
   const [focusAfterRemoval, setFocusAfterRemoval] = useState<string | null>(null);
   // The book whose row just moved between the Pinned and Your books lists: focus goes to its "More actions" button. Set for one render.
   const [focusMenuOf, setFocusMenuOf] = useState<string | null>(null);
+  // The rows' actions are the same functions on every render, each calling this render's handler, so a row whose own
+  // props are unchanged is not drawn again when something else on the page changes (an upload's progress, the storage line).
+  const latest = useRef({ show, togglePin, setReadingStatus, save, remove });
+  useLayoutEffect(() => {
+    latest.current = { show, togglePin, setReadingStatus, save, remove };
+  });
+  const rowActions = useMemo(
+    () => ({
+      onMode: (id: string, mode: Mode) => latest.current.show(id, mode),
+      onPin: (book: BookSummary) => void latest.current.togglePin(book),
+      onStatus: (book: BookSummary, status: ReadingStatus) => void latest.current.setReadingStatus(book, status),
+      onSave: (id: string, update: BookUpdate) => latest.current.save(id, update),
+      onRemove: (id: string) => latest.current.remove(id),
+    }),
+    [],
+  );
   const input = useRef<HTMLInputElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   const selectedFilter = useRef<HTMLButtonElement>(null);
@@ -101,6 +120,15 @@ export function LibraryPage() {
       current = false;
     };
   }, [attempt, reader]);
+
+  const shelfShown = books !== null;
+  useEffect(() => {
+    if (!shelfShown) return;
+    // The reader's code, asked for once the shelf is up (not before: the list and the covers come first), so opening a
+    // book does not wait for it.
+    const later = setTimeout(() => loadReader().catch(() => {}), READER_AFTER_MS);
+    return () => clearTimeout(later);
+  }, [shelfShown]);
 
   useEffect(() => {
     if (focusAfterRemoval === null) return;
@@ -282,11 +310,7 @@ export function LibraryPage() {
         focusLink={focusAfterRemoval === book.id}
         focusMenu={focusMenuOf === book.id}
         readerId={session?.profile.id ?? null}
-        onMode={(mode) => show(book.id, mode)}
-        onPin={() => void togglePin(book)}
-        onStatus={(status) => void setReadingStatus(book, status)}
-        onSave={save}
-        onRemove={remove}
+        {...rowActions}
       />
     );
   }
@@ -435,7 +459,7 @@ export function LibraryPage() {
                     <div className="up-next-cover" aria-hidden><Cover book={upNext} /></div>
                     <div><h4><BookTitle title={upNext.title} /></h4>{upNext.author && <p>{upNext.author}</p>}</div>
                   </div>
-                  <Link className="up-next-link" href={`/book/${upNext.id}`} aria-label={`Open ${upNext.title}`}>Open book <ArrowRight size={18} aria-hidden /></Link>
+                  <Link className="up-next-link" href={`/book/${upNext.id}`} aria-label={`Open ${upNext.title}`} onClick={() => startOpening(upNext.id, upNext.progress?.chapterId)}>Open book <ArrowRight size={18} aria-hidden /></Link>
                 </section>
               )}
             </div>
