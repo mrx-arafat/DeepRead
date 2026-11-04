@@ -70,6 +70,7 @@ function promptText(passage: HandoffPassage, before: string | null, paragraph: s
   const by = passage.author ? ` by ${passage.author}` : "";
   return [
     `I am reading "${passage.bookTitle}"${by}, chapter "${passage.chapterTitle}", in English. My first language is ${passage.language}.`,
+    "I want to truly understand the part I selected, so teach it to me like a patient teacher.",
     "",
     "The part of the book I am on (the words I selected are between >> and <<):",
     '"""',
@@ -77,13 +78,14 @@ function promptText(passage: HandoffPassage, before: string | null, paragraph: s
     marked(paragraph, passage.selection),
     '"""',
     "",
-    "Go deep on the selected part:",
-    "1. Say it again in very simple English, as if to a 15-year-old.",
-    "2. What is happening at this point in the book, and why the author says this here.",
-    "3. The deeper meaning: what it shows about people, the mind, or life. Name the psychology or philosophy behind it in plain words.",
-    "4. Two real-life examples from everyday life (home, work, school, a phone) where the same thing happens.",
-    `5. The hard words in the selected part, each with a simple meaning and the ${passage.language} word in ${passage.language} script.`,
-    "6. A visual that helps me see it: if you can make images, create a simple picture or diagram of the idea; if not, draw a clear diagram, flowchart or table in text.",
+    "Explain the selected part in these 6 parts, in this order, each under its own short heading:",
+    "1. Simple meaning: say it again in very simple English, as if to a 15-year-old.",
+    "2. In the book: what is happening at this point in the book, and why the author says this here.",
+    "3. Deeper meaning: what it shows about people, the mind, or life. Name the psychology or philosophy behind it in plain words.",
+    "4. Real life: two examples from everyday life (home, work, school, a phone) where the same thing happens.",
+    `5. Hard words: the hard words in the selected part, each with a simple meaning and the ${passage.language} word in ${passage.language} script.`,
+    "6. See it: one visual that makes this idea easy to see. Pick the kind that fits it best and that your chat shows well (a table, a diagram, a timeline, a before-and-after, a chart).",
+    "Write parts 1 to 5 in full first: the visual comes last and adds to the words, so never answer with only an image.",
     "Short sentences. No praise, no questions back. Answer in English.",
   ].join("\n");
 }
