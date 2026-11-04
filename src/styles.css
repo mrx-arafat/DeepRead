@@ -6427,21 +6427,55 @@ p[data-block] + .block-translation:is(:lang(ar), :lang(ur)) {
   font-weight: 700;
 }
 
+/* The box is part of the card: the card's own blue, a little deeper, rather than a grey field laid on top of it. */
 .note-paste textarea {
   width: 100%;
   min-height: 5rem;
-  padding: 0.65rem;
-  border: 1px solid var(--rule);
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--part-rule);
   border-radius: var(--radius);
-  background: var(--raised);
+  background: color-mix(in srgb, var(--paper) 60%, var(--pen-wash));
   color: var(--ink);
   font: inherit;
   font-size: 0.9375rem;
+  line-height: 1.55;
   resize: vertical;
 }
 
+.note-paste textarea::placeholder {
+  color: var(--ink-faint);
+}
+
+.note-paste textarea:focus-visible {
+  border-color: var(--pen);
+  outline: 2px solid color-mix(in srgb, var(--pen) 35%, transparent);
+  outline-offset: 1px;
+}
+
+/* Saving is the card's one action, so it carries the pen; until something is pasted it steps back. */
 .note-paste .note-save {
   justify-self: start;
+  border-color: var(--pen);
+  background: var(--pen);
+  color: var(--pen-ink);
+}
+
+.note-paste .note-save:hover:not(:disabled) {
+  background: var(--pen);
+  filter: brightness(1.08);
+}
+
+.note-paste .note-save:disabled {
+  border-color: var(--part-rule);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.note-sent-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .note-sent-hint {

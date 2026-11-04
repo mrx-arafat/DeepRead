@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { HANDOFF_TARGETS, type HandoffTarget } from "./handoff.ts";
+import { HandoffMark } from "./HandoffMark.tsx";
 import { PasteAnswer } from "./PasteAnswer.tsx";
 
 /** A passage handed to an outside chat from the selection bar: where its answer comes back to. A note only once the answer is pasted. */
@@ -16,16 +17,28 @@ export function HandoffCard({ sent, onClose, onSave }: Props) {
   const copyOnly = sent.target === "copy";
   const name = copyOnly ? "the chat" : HANDOFF_TARGETS[sent.target].name;
   const label = copyOnly ? "Prompt copied" : `Sent to ${name}`;
+  // What the reader does next depends on the chat: some take the prompt from the link and wait for send, some answer at
+  // once, and some (Gemini) take nothing from a link, so the copied prompt has to be pasted first.
+  const hint = copyOnly
+    ? "Paste the prompt into your chat, then bring its answer back here."
+    : !HANDOFF_TARGETS[sent.target].open
+      ? `Paste the prompt into ${name} and send it, then bring its answer back here.`
+      : sent.target === "perplexity" || sent.target === "google"
+        ? `${name} is answering. Bring its answer back here when it is done.`
+        : `Press send in ${name}, then bring its answer back here.`;
   return (
     <aside className="note note-sent" aria-label={`${label}: ${sent.quote.slice(0, 60)}`}>
       <header className="note-head">
-        <span className="note-label">{label}</span>
+        <span className="note-label note-sent-label">
+          <HandoffMark target={sent.target} size={15} />
+          {label}
+        </span>
         <button type="button" className="icon-button" aria-label="Remove note" onClick={onClose}>
           <X size={16} aria-hidden />
         </button>
       </header>
       <blockquote className="note-quote">{sent.quote}</blockquote>
-      <p className="note-sent-hint">{copyOnly ? "Paste the prompt into your chat, then bring its answer back here." : `Press send in ${name}, then bring its answer back here.`}</p>
+      <p className="note-sent-hint">{hint}</p>
       <footer className="note-foot">
         <PasteAnswer from={name} onSave={(text) => onSave(sent, text)} />
       </footer>
