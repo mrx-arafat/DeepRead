@@ -72,6 +72,29 @@ describe("concurrent parsed book loading", () => {
     expect(state.reads()).toBe(2);
   });
 
+  it("keeps the book being read parsed, and more than four small books with it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "deepread-loading-"));
+    folders.push(dir);
+    const raw = createLocalStore(dir);
+    const reads: string[] = [];
+    const library = createLibrary(dir, { store: { ...raw, read: (key) => (reads.push(key), raw.read(key)) } });
+    const ids: string[] = [];
+    for (let n = 0; n < 6; n++) {
+      const uploadPath = await library.newUploadPath(`Book ${n}`);
+      await writeFile(uploadPath, "%PDF-fixture");
+      ids.push((await library.add({ uploadPath, sha256: String(n).repeat(64), parsed: { ...fixture(), title: `Book ${n}` }, cover: null })).id);
+    }
+    const bookReads = () => reads.filter((key) => key.endsWith("/book.json")).length;
+    // The first book is read between each of the others, as a reader goes back to it.
+    for (const id of ids) {
+      await library.book(id);
+      await library.book(ids[0]!);
+    }
+    expect(bookReads()).toBe(6);
+    for (const id of ids) await library.book(id);
+    expect(bookReads()).toBe(6);
+  });
+
   it("does not publish a stale read after deletion and reimport of the same ID", async () => {
     const state = await setup();
     const old = state.library.book(state.id);

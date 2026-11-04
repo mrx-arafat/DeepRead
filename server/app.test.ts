@@ -3,6 +3,7 @@
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { gunzipSync } from "node:zlib";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiProviderId, AiStatus, ApiError, BookDetail, BookSummary, Chapter, HighlightColor, Note, ParsedBook, SectionKind, StorageView } from "../shared/types.ts";
@@ -910,6 +911,39 @@ describe("DeepRead API", () => {
 
       expect((await send("DELETE", `/api/books/${book.id}`)).status).toBe(204);
       expect((await app.request(chapterUrl, { headers: { "if-none-match": etag } })).status).toBe(404);
+    });
+
+    it("should gzip a long chapter for a client that takes gzip, under the same tag marked weak", async () => {
+      const long = sampleBook("Long Book");
+      long.chapters[0]!.blocks[1]!.text = "A sentence long enough to be worth compressing. ".repeat(60);
+      const id = await addBook(long);
+      const chapterUrl = `/api/books/${id}/chapters/c1`;
+      const plain = await app.request(chapterUrl);
+      const tag = plain.headers.get("etag") ?? "";
+      const zipped = await app.request(chapterUrl, { headers: { "accept-encoding": "gzip, deflate, br" } });
+      expect(zipped.headers.get("content-encoding")).toBe("gzip");
+      expect(zipped.headers.get("etag")).toBe(`W/${tag}`);
+      expect(zipped.headers.get("vary")).toBe("Accept-Encoding");
+      const bytes = Buffer.from(await zipped.arrayBuffer());
+      const text = await plain.text();
+      expect(bytes.length).toBeLessThan(text.length / 4);
+      expect(gunzipSync(bytes).toString("utf8")).toBe(text);
+      expect((await app.request(chapterUrl, { headers: { "accept-encoding": "gzip", "if-none-match": `W/${tag}` } })).status).toBe(304);
+      expect((await app.request(chapterUrl, { headers: { "accept-encoding": "gzip;q=0" } })).headers.get("content-encoding")).toBeNull();
+    });
+
+    it("should answer a notes poll with 304 until the notes change", async () => {
+      const id = await addBook();
+      const highlight = (noteId: string, blockId = "c1-b2", quote = "Beta") => ({ id: noteId, chapterId: "c1", blockId, quote, mode: "highlight", lang: "bn", color: "yellow", offset: 0 });
+      expect((await send("PUT", `/api/books/${id}/notes/h1`, { note: highlight("h1"), before: null })).status).toBe(204);
+      const notesUrl = `/api/books/${id}/notes`;
+      const tag = (await app.request(notesUrl)).headers.get("etag") ?? "";
+      expect(tag).toMatch(/^"[^"]+"$/);
+      expect((await app.request(notesUrl, { headers: { "if-none-match": tag } })).status).toBe(304);
+      expect((await send("PUT", `/api/books/${id}/notes/h2`, { note: highlight("h2", "c1-b3", "Gamma"), before: null })).status).toBe(204);
+      const changed = await app.request(notesUrl, { headers: { "if-none-match": tag } });
+      expect(changed.status).toBe(200);
+      expect(((await changed.json()) as Note[]).map((note) => note.id)).toEqual(["h1", "h2"]);
     });
   });
 

@@ -44,7 +44,9 @@ const PLAIN_NAME = /^[A-Za-z0-9_-]{1,100}$/;
 const MAX_SLUG = 48;
 const HASH_CHARS = 8;
 const LONG_HASH_CHARS = 16;
-const PARSED_BOOKS_KEPT = 4;
+// Parsed books kept in memory, counted by the bytes of their book.json (a parsed book takes about 2 to 3.5 times that):
+// many small books fit, and a few huge ones cannot fill the memory. The book read last is kept however big it is.
+const PARSED_BOOK_BYTES_KEPT = 20 * 1024 * 1024;
 // The cover is WebP; JPEG only where this computer's image library cannot write WebP.
 const COVER_FILES: Record<CoverImage["type"], string> = { "image/webp": "cover.webp", "image/jpeg": "cover.jpg" };
 // Not a book id (ids have no spaces), so adding books queues apart from any one book's work.
@@ -329,17 +331,26 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
   }
 
   // A reader taps words constantly and each tap needs the whole book; parsing book.json every time adds up.
-  const parsedBooks = new Map<string, ParsedBook>();
+  // Least recently read first, each with the bytes of its book.json.
+  const parsedBooks = new Map<string, { book: ParsedBook; bytes: number }>();
+  let parsedBytes = 0;
   // Opening details and chapter text concurrently shares the same download and JSON parse.
   const loadingBooks = new Map<string, Promise<ParsedBook | null>>();
   const sourcePages = new Map<string, SourcePageImage>();
   const drawingPages = new Map<string, Promise<SourcePageImage | null>>();
-  function remember(id: string, book: ParsedBook): void {
+  function forgetParsed(id: string): void {
+    const kept = parsedBooks.get(id);
+    if (!kept) return;
     parsedBooks.delete(id);
-    parsedBooks.set(id, book);
-    if (parsedBooks.size > PARSED_BOOKS_KEPT) {
-      const oldest = parsedBooks.keys().next();
-      if (!oldest.done) parsedBooks.delete(oldest.value);
+    parsedBytes -= kept.bytes;
+  }
+  function remember(id: string, book: ParsedBook, bytes: number): void {
+    forgetParsed(id);
+    parsedBooks.set(id, { book, bytes });
+    parsedBytes += bytes;
+    for (const oldest of parsedBooks.keys()) {
+      if (parsedBytes <= PARSED_BOOK_BYTES_KEPT || oldest === id) break;
+      forgetParsed(oldest);
     }
   }
 
@@ -492,14 +503,19 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
   async function loadBook(id: string): Promise<ParsedBook | null> {
     await ready();
     const cached = parsedBooks.get(id);
-    if (cached) return cached;
+    if (cached) {
+      // Read again: the last to be let go.
+      parsedBooks.delete(id);
+      parsedBooks.set(id, cached);
+      return cached.book;
+    }
     const loading = loadingBooks.get(id);
     if (loading) return loading;
-    const run = readJson(keyOf(id, "book.json")).then((value) => {
+    const run = store.read(keyOf(id, "book.json")).then((data) => {
+      const book = data && (JSON.parse(data.toString("utf8")) as ParsedBook);
       // Removal invalidates this read, including when the same book was imported again meanwhile.
       if (loadingBooks.get(id) !== run) return null;
-      const book = value as ParsedBook | null;
-      if (book) remember(id, book);
+      if (book) remember(id, book, data.length);
       return book;
     }).finally(() => {
       // Failures can be retried, without clearing a newer read after removal and reimport.
@@ -772,7 +788,7 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
         for (const key of sourcePages.keys()) if (key.startsWith(`${id}/`)) sourcePages.delete(key);
         // meta.json first: the book leaves the library in one step, and the rest of its files go after it.
         await changeMeta(id, null, () => store.remove([keyOf(id, "meta.json")]));
-        parsedBooks.delete(id);
+        forgetParsed(id);
         loadingBooks.delete(id);
         // After meta.json, so a pin made meanwhile either saw the book gone or is cleared here.
         await forgetPin(id).catch((error: unknown) => console.warn(`could not clear away the pin of removed book ${id}:`, error));

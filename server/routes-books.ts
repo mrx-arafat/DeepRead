@@ -3,11 +3,13 @@ import { createWriteStream } from "node:fs";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
+import { promisify } from "node:util";
+import { constants, gzip } from "node:zlib";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { isHighlightColor, MAX_REFLECTION_CHARS, MAX_SAVED_ANSWER_CHARS } from "../shared/types.ts";
-import type { BookUpdate, Note, ParsedBook, ReadingProgress, ResumeContextResponse } from "../shared/types.ts";
+import type { BookUpdate, Chapter, Note, ParsedBook, ReadingProgress, ResumeContextResponse } from "../shared/types.ts";
 import { resumeText } from "../shared/resumeText.ts";
 import type { AppEnv } from "./app-env.ts";
 import type { ParsePdf, RenderCover } from "./deps.ts";
@@ -42,6 +44,7 @@ const MAX_TITLE_CHARS = 200;
 const MAX_AUTHOR_CHARS = 120;
 // The longest passage the reader can ask about (routes-ai.ts takes the same).
 const MAX_QUOTE_CHARS = 5_000;
+const gzipAsync = promisify(gzip);
 
 /** Checks a PATCH body field by field; the Response is the 400 to send instead. */
 function readBookUpdate(c: Context, body: Record<string, unknown>): BookUpdate | Response {
@@ -196,6 +199,60 @@ function revalidatedJson(c: Context, text: string): Response {
   return notModified(c, headers.ETag) ? c.body(null, 304, headers) : c.body(text, 200, headers);
 }
 
+/** Whether the client takes gzip: Accept-Encoding names it, and not with q=0. Browsers do, and so does Cloudflare's tunnel. */
+function takesGzip(c: Context): boolean {
+  return (c.req.header("accept-encoding") ?? "").split(",").some((part) => {
+    const [coding, ...params] = part.split(";").map((piece) => piece.trim().toLowerCase());
+    return coding === "gzip" && !params.some((param) => /^q=0(?:\.0*)?$/.test(param));
+  });
+}
+
+// Smaller than this, gzip saves too little to bother. Its fastest level: on a big chapter it takes a third of the time of
+// the default level for a body 7% bigger (17 KB instead of 16 KB, from 62 KB).
+const MIN_GZIP_CHARS = 1024;
+
+type ChapterBody = { text: string; tag: string; gzipped?: Promise<Uint8Array<ArrayBuffer> | null> };
+
+// A chapter's JSON, its tag and its gzip, each made once: library.ts never changes a parsed book it has loaded, so neither
+// do they. Keyed by the parsed chapter itself, so they go when library.ts lets that book go.
+const chapterBodies = new WeakMap<Chapter, ChapterBody>();
+
+function chapterBody(chapter: Chapter): ChapterBody {
+  let body = chapterBodies.get(chapter);
+  if (!body) {
+    const text = JSON.stringify(chapter);
+    body = { text, tag: strongTag(text) };
+    chapterBodies.set(chapter, body);
+  }
+  return body;
+}
+
+/**
+ * A chapter, gzipped for a client that takes it: a chapter is the biggest JSON the reader fetches, and a phone reaching
+ * DeepRead through the tunnel waits on the home connection's upload for every byte of it.
+ */
+async function sendChapter(c: Context, chapter: Chapter): Promise<Response> {
+  const body = chapterBody(chapter);
+  const headers = { "Content-Type": "application/json", "Cache-Control": "private, no-cache", ETag: body.tag, Vary: "Accept-Encoding" };
+  const zip = takesGzip(c) && body.text.length >= MIN_GZIP_CHARS;
+  // The gzip is another encoding of the same JSON, so its tag is the same one marked weak (as a weak comparison matches).
+  if (zip) headers.ETag = `W/${body.tag}`;
+  if (notModified(c, body.tag)) return c.body(null, 304, headers);
+  if (zip) {
+    body.gzipped ??= gzipAsync(body.text, { level: constants.Z_BEST_SPEED }).then(
+      (zipped) => new Uint8Array(zipped),
+      (error: unknown) => {
+        // Never expected; the JSON as it is still answers.
+        console.warn("could not gzip a chapter:", error);
+        return null;
+      },
+    );
+    const zipped = await body.gzipped;
+    if (zipped) return c.body(zipped, 200, { ...headers, "Content-Encoding": "gzip" });
+  }
+  return c.body(body.text, 200, { ...headers, ETag: body.tag });
+}
+
 /** The books of whoever is reading: every route works on c.var.library. */
 export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover; variant?: ReturnType<typeof createFigureVariants> }): Hono<AppEnv> {
   const variant = deps.variant ?? createFigureVariants();
@@ -333,7 +390,7 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     const book = await library.book(id);
     if (!book) return bookNotFound(c);
     const chapter = book.chapters.find((candidate) => candidate.id === c.req.param("chapterId"));
-    return chapter ? revalidatedJson(c, JSON.stringify(chapter)) : chapterNotFound(c);
+    return chapter ? sendChapter(c, chapter) : chapterNotFound(c);
   });
 
   routes.get("/:id/resume", async (c) => {
@@ -446,7 +503,8 @@ export function booksRoutes(deps: { parsePdf: ParsePdf; renderCover: RenderCover
     const id = c.req.param("id");
     if (!isReadableBookId(id)) return invalidId(c);
     const notes = await library.notes(id);
-    return notes ? c.json(notes) : bookNotFound(c);
+    // The reader asks again every half minute for notes made on other devices: unchanged, they answer 304 without them.
+    return notes ? revalidatedJson(c, JSON.stringify(notes)) : bookNotFound(c);
   });
 
   // One note at a time, never the whole list: a list sent from one device would wipe notes added on another.
