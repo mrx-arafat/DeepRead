@@ -121,6 +121,23 @@ function offsetAtLine(block: HTMLElement, line: number): number {
   return indexAtLine(text.length, (index) => charRange(block, index).getBoundingClientRect().bottom, line);
 }
 
+/**
+ * About where the line at `line` starts, in a block of `length` characters whose box runs from `top` to `bottom`: the
+ * share of the text that the box has above the line. For prose it lands within a line or two of `offsetAtLine`, from one
+ * rectangle instead of a search that measures a range of characters at every step.
+ */
+export function interpolatedOffset(length: number, top: number, bottom: number, line: number): number {
+  if (bottom <= line) return length;
+  if (top >= line || bottom <= top) return 0;
+  return Math.floor((length * (line - top)) / (bottom - top));
+}
+
+/** `offsetAtLine`, estimated, for the tick that runs while the page moves and the exact line is not needed. */
+function offsetNearLine(block: HTMLElement, line: number): number {
+  const box = block.getBoundingClientRect();
+  return interpolatedOffset(blockText(block).length, box.top, box.bottom, line);
+}
+
 /** The line holding a logical character offset, even when inline styles split its text nodes. */
 function lineTop(block: HTMLElement, offset: number): number {
   return blockText(block).length > 0 ? charRange(block, offset).getBoundingClientRect().top : block.getBoundingClientRect().top;
@@ -427,18 +444,27 @@ export function useReadingPosition(
     let measuring: number | undefined;
     // The place at the last measurement: once the page is leaving, its text is gone and the eye line cannot be read.
     let latest: Place | null = null;
+    // Scroll events so far, and the count at which `latest` was last measured exactly: a tick that runs after that, with
+    // no scrolling since, must not replace the exact place with an estimate.
+    let scrolled = 0;
+    let exactAt = -1;
     // A cleanup from the source visit must remain quiet even when Return/Stay Here has just cleared its marker.
     const visiting = detourIn(history.state, bookId) !== null;
     const protectedPlace = () => restored.current?.scrollY === window.scrollY ? restored.current.place : null;
 
-    const measure = () => {
-      measuring = undefined;
+    // While the page moves, the offset is estimated from the share of the paragraph above the eye line: the percentage is
+    // a whole number and cannot show the difference, and the search this replaces measures a range of characters per
+    // step, a forced layout each. The exact line is found once the reader stops (`settling`), at the first measure, on a
+    // resize, and in pages, where a turn is a stop.
+    const measure = (exact = false) => {
       const spot = spotAtEyeLine();
       const id = spot?.chapter.dataset.chapter;
       if (!spot || !id) return;
-      const offset = spot.block ? offsetAtLine(spot.block, eyeLine()) : 0;
+      const precise = exact || inPages();
+      const offset = !spot.block ? 0 : precise ? offsetAtLine(spot.block, eyeLine()) : offsetNearLine(spot.block, eyeLine());
       const fraction = fractionRead(spot, offset);
-      latest = placeOf(spot, offset);
+      if (precise) exactAt = scrolled;
+      if (precise || exactAt !== scrolled) latest = placeOf(spot, offset);
       const completed = atBookEnd();
       const next: Position = {
         chapterId: id,
@@ -475,15 +501,22 @@ export function useReadingPosition(
 
     const keeping = whenStill(300, keep);
     const saving = whenStill(1200, () => save());
+    // The exact line, once the page has stood as still as a tick waits.
+    const settling = whenStill(tierParams().measureDebounceMs, () => measure(true));
 
     const onScroll = () => {
       if (restored.current && restored.current.scrollY !== window.scrollY) restored.current = null;
-      measuring ??= window.setTimeout(measure, tierParams().measureDebounceMs);
+      scrolled += 1;
+      measuring ??= window.setTimeout(() => {
+        measuring = undefined;
+        measure();
+      }, tierParams().measureDebounceMs);
       keeping.poke();
       saving.poke();
+      settling.poke();
     };
 
-    measure();
+    measure(true);
     // Opening a chapter is being there, even for a reader who leaves without scrolling.
     keeping.poke();
     saving.poke();
@@ -494,7 +527,7 @@ export function useReadingPosition(
     const resized = () => {
       const anchor = restored.current;
       if (anchor && restorePlace(anchor.place)) anchor.scrollY = window.scrollY;
-      measure();
+      measure(true);
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", resized);
@@ -509,6 +542,7 @@ export function useReadingPosition(
       window.clearTimeout(measuring);
       keeping.cancel();
       saving.cancel();
+      settling.cancel();
     };
   }, [book, start, bookId, navigate, detourKey]);
 

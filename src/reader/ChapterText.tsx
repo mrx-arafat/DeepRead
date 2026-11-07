@@ -225,7 +225,7 @@ export function ChapterText({ blocks, notes, bookId, chapterId, actions, transla
   const order = useMemo(() => ({ chapterId, blockIds: blocks.filter((block) => block.type !== "image").map((block) => block.id) }), [chapterId, blocks]);
   const cursor = useWordCursor(blocks.find((block) => block.type !== "image" && block.text.trim())?.id, (word) => ask(word, "keyboard"), order);
   const tags = useMemo(() => headingTags(blocks), [blocks]);
-  const chunks = useMemo(() => chunksOf(blocks, params.rowsPerChunk), [blocks, params.rowsPerChunk]);
+  const chunks = useMemo(() => chunksOf(blocks, params.rowsPerChunk, params.charsPerChunk), [blocks, params.rowsPerChunk, params.charsPerChunk]);
   // How much of the chapter's text comes before each block: the same count the server makes for the shelf.
   const charsBefore = useMemo(() => {
     const before = new Map<string, number>();

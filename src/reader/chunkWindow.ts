@@ -5,14 +5,24 @@ import type { Block } from "../../shared/types.ts";
 /** A few dozen rows that mount and unmount together; `key` is the first block's id and never changes for a chapter. */
 export type Chunk = { key: string; blocks: Block[]; /** Index of the first block among the chapter's blocks. */ start: number };
 
-/** Rows grouped `rowsPerChunk` at a time; a figure stands alone, so decoding an image never forces prose to render. */
-export function chunksOf(blocks: readonly Block[], rowsPerChunk: number): Chunk[] {
+/**
+ * Rows grouped `rowsPerChunk` at a time, and no more than `charsPerChunk` characters together: a chunk is laid out in one
+ * frame when it mounts, and a novel's paragraphs run to thousands of characters, so rows alone do not bound that frame.
+ * A block longer than the budget stands alone. A figure stands alone, so decoding an image never forces prose to render.
+ */
+export function chunksOf(blocks: readonly Block[], rowsPerChunk: number, charsPerChunk = Infinity): Chunk[] {
   const chunks: Chunk[] = [];
+  let chars = 0;
   blocks.forEach((block, at) => {
     const previous = chunks.at(-1);
-    if (block.type === "image" || !previous || previous.blocks[0]?.type === "image" || previous.blocks.length >= rowsPerChunk) {
+    const length = block.type === "image" ? 0 : block.text.length;
+    if (block.type === "image" || !previous || previous.blocks[0]?.type === "image" || previous.blocks.length >= rowsPerChunk || chars + length > charsPerChunk) {
       chunks.push({ key: block.id, blocks: [block], start: at });
-    } else previous.blocks.push(block);
+      chars = length;
+    } else {
+      previous.blocks.push(block);
+      chars += length;
+    }
   });
   return chunks;
 }

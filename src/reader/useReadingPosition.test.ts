@@ -3,7 +3,7 @@ import type { BookDetail, Chapter } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { refreshDeviceTier } from "../deviceTier.ts";
 import { registerWindow } from "./mountRegistry.ts";
-import { blockAtTop, detourIn, keepingLine, placeIn, useReadingPosition } from "./useReadingPosition.ts";
+import { blockAtTop, detourIn, interpolatedOffset, keepingLine, placeIn, useReadingPosition } from "./useReadingPosition.ts";
 
 const hooks = vi.hoisted(() => ({
   refs: [] as Array<{ current: unknown }>, states: [] as unknown[], effects: [] as Array<{ dependencies?: unknown[]; effect: () => void | (() => void); cleanup?: () => void; changed: boolean; layout: boolean }>,
@@ -35,6 +35,16 @@ vi.mock("react-dom", () => ({ flushSync: (change: () => void) => change() }));
 vi.mock("wouter/use-browser-location", () => ({ useHistoryState: () => history.state }));
 vi.mock("../api.ts", () => ({ api: { saveProgress: vi.fn().mockResolvedValue({}) } }));
 vi.mock("./paging.ts", () => ({ inPages: () => hooks.pages, pageFrame: () => ({ top: 50, bottom: 750 }) }));
+
+describe("interpolatedOffset", () => {
+  it("takes the share of the block that lies above the eye line, and the ends for a block wholly on one side", () => {
+    expect(interpolatedOffset(600, -50, 550, 96)).toBe(146);
+    expect(interpolatedOffset(1000, 0, 1000, 333.7)).toBe(333);
+    expect(interpolatedOffset(600, 200, 800, 96)).toBe(0);
+    expect(interpolatedOffset(600, 200, 200, 96)).toBe(0);
+    expect(interpolatedOffset(600, -700, 50, 96)).toBe(600);
+  });
+});
 
 describe("placeIn", () => {
   it("should read the place kept with a page of history, alongside whatever else is there", () => {
@@ -211,6 +221,33 @@ describe("useReadingPosition detours", () => {
     expect(page.characterMeasurements()).toBe(before);
     vi.advanceTimersByTime(1);
     expect(page.characterMeasurements()).toBeGreaterThan(before);
+  });
+
+  it("measures no character ranges while the page moves, and the exact line once it stops", () => {
+    const page = reader({ place: source });
+    page.render();
+    page.scroll(2050);
+    vi.advanceTimersByTime(100);
+    // Still moving: the tick (150ms after the first scroll) will run, but the settle waits again from here.
+    page.scroll(2050);
+    const before = page.characterMeasurements();
+    vi.advanceTimersByTime(100);
+    expect(page.characterMeasurements()).toBe(before);
+    vi.advanceTimersByTime(100);
+    expect(page.characterMeasurements()).toBeGreaterThan(before);
+  });
+
+  it("saves a page left in the middle of a scroll from the latest tick's estimate", () => {
+    const page = reader({ place: source });
+    page.render();
+    page.scroll(2050);
+    vi.advanceTimersByTime(100);
+    page.scroll(2050);
+    vi.advanceTimersByTime(100);
+    vi.mocked(api.saveProgress).mockClear();
+    page.unmount();
+    // The block spans -50..550 on screen with the eye line at 96: 146 of its 600 characters lie above it.
+    expect(api.saveProgress).toHaveBeenCalledWith("book", "c1", "return", 146);
   });
 
   it("keeps the previous reading place when the eye line enters a placeholder", () => {

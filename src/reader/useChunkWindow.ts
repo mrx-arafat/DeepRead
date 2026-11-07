@@ -165,7 +165,8 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
   const { windowing } = params;
   const keyOf = useMemo(() => chunkKeys(chunks), [chunks]);
   const [layout, setLayout] = useState<Layout>(() => (windowing ? initialLayout() : DEFAULT_LAYOUT));
-  const epoch = epochOf([layout.signature, layout.width, translated, params.rowsPerChunk]);
+  // A chunk is a grouping of rows: heights measured under another grouping belong to other chunks with the same key.
+  const epoch = epochOf([layout.signature, layout.width, translated, params.rowsPerChunk, params.charsPerChunk]);
   const chapterKey = `${bookId}:${chapterId}`;
   // Measured in this epoch, for calibrating the estimates of chunks not measured yet.
   const samples = useRef<{ epoch: string; byKey: Map<string, HeightSample> }>({ epoch: "", byKey: new Map() });
@@ -323,10 +324,10 @@ export function useChunkWindow({ container, bookId, chapterId, chunks, noteChunk
   // are carried over by block id, so the commit shows them as rows, and the row at the eye line is held where the reader
   // saw it, so the commit can be corrected for the far placeholders changing height. The observers start over on the
   // new elements, which they report before anything is evicted.
-  const chunkingRef = useRef({ chunks, rowsPerChunk: params.rowsPerChunk, windowing });
+  const chunkingRef = useRef({ chunks, rowsPerChunk: params.rowsPerChunk, charsPerChunk: params.charsPerChunk, windowing });
   const chunking = chunkingRef.current;
-  if (chunking.chunks !== chunks || chunking.rowsPerChunk !== params.rowsPerChunk || chunking.windowing !== windowing) {
-    chunkingRef.current = { chunks, rowsPerChunk: params.rowsPerChunk, windowing };
+  if (chunking.chunks !== chunks || chunking.rowsPerChunk !== params.rowsPerChunk || chunking.charsPerChunk !== params.charsPerChunk || chunking.windowing !== windowing) {
+    chunkingRef.current = { chunks, rowsPerChunk: params.rowsPerChunk, charsPerChunk: params.charsPerChunk, windowing };
     observers.current?.near.disconnect();
     observers.current?.keep.disconnect();
     observers.current?.size.disconnect();

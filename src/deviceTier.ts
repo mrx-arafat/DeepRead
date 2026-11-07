@@ -26,8 +26,13 @@ export type TierSignals = {
 export type TierParams = {
   /** Text chunks are mount units: far ones become placeholders. Off keeps every chunk mounted, as today on desktop. */
   windowing: boolean;
-  /** Rows of book text per chunk. */
+  /** Rows of book text per chunk, at most. */
   rowsPerChunk: number;
+  /**
+   * Characters of book text per chunk, at most (a longer block stands alone). A chunk is laid out in one frame when it
+   * mounts, so this, not the row count, bounds that frame: a novel's paragraphs run to thousands of characters each.
+   */
+  charsPerChunk: number;
   /** IntersectionObserver rootMargin inside which a chunk mounts (percentages are of the viewport). */
   mountRootMargin: string;
   /** rootMargin a mounted chunk must leave before it unmounts: wider than mountRootMargin, so a chunk at the edge does not flap. */
@@ -61,6 +66,7 @@ export const TIER_PARAMS: Record<Tier, TierParams> = {
   desktop: {
     windowing: false,
     rowsPerChunk: 48,
+    charsPerChunk: Infinity,
     mountRootMargin: "0px",
     keepRootMargin: "0px",
     initialChunks: Infinity,
@@ -79,6 +85,7 @@ export const TIER_PARAMS: Record<Tier, TierParams> = {
   normal: {
     windowing: true,
     rowsPerChunk: 48,
+    charsPerChunk: 4000,
     mountRootMargin: "150% 0px 150% 0px",
     keepRootMargin: "300% 0px 300% 0px",
     initialChunks: 3,
@@ -97,6 +104,7 @@ export const TIER_PARAMS: Record<Tier, TierParams> = {
   low: {
     windowing: true,
     rowsPerChunk: 24,
+    charsPerChunk: 1500,
     mountRootMargin: "150% 0px 150% 0px",
     keepRootMargin: "250% 0px 250% 0px",
     initialChunks: 2,

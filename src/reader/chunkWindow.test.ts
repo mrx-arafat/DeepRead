@@ -13,6 +13,15 @@ describe("chunksOf", () => {
     expect(chunks.map((chunk) => [chunk.key, chunk.blocks.length, chunk.start])).toEqual([["b0", 24, 0], ["b24", 24, 24], ["b48", 2, 48], ["fig", 1, 50], ["c0", 3, 51]]);
     expect(chunkKeys(chunks).get("b30")).toBe("b24");
   });
+
+  it("closes a chunk before it passes the character budget and lets a long block stand alone", () => {
+    // Each paragraph is 96 characters: three fit in 300, a fourth would not.
+    const long: Block = { id: "long", type: "paragraph", page: 1, text: "x".repeat(500) };
+    const chunks = chunksOf([...paragraphs(5), long, ...paragraphs(2, "c")], 48, 300);
+    expect(chunks.map((chunk) => [chunk.key, chunk.blocks.length, chunk.start])).toEqual([["b0", 3, 0], ["b3", 2, 3], ["long", 1, 5], ["c0", 2, 6]]);
+    // No budget given: only the rows bound a chunk.
+    expect(chunksOf([...paragraphs(5), long], 48)).toHaveLength(1);
+  });
 });
 
 describe("windowOf", () => {
