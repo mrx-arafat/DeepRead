@@ -128,4 +128,41 @@ describe("speak", () => {
     expect(engine.queue.map((utterance) => utterance.text)).toEqual(["difficult"]);
     expect(events).toEqual(["ended", "interrupted"]);
   });
+
+  it("should start the natural voice when a sentence is read before it has loaded, and not for a single word", async () => {
+    const enableNatural = vi.fn(() => Promise.resolve());
+    vi.doMock("./natural.ts", () => ({ naturalReady: () => false, enableNatural }));
+    const { speak, setNaturalVoiceWanted } = await import("./speech.ts");
+    setNaturalVoiceWanted(true);
+
+    speak("difficult", { engine: "device" });
+    expect(enableNatural).not.toHaveBeenCalled();
+    speak("A whole sentence.");
+    expect(enableNatural).toHaveBeenCalledOnce();
+    // The device voice reads until the natural one is ready.
+    expect(engine.queue.map((utterance) => utterance.text)).toEqual(["A whole sentence."]);
+  });
+
+  it("should make the coming sentence the moment the natural voice is ready, so it takes over without a silence", async () => {
+    let ready = false;
+    let finishLoading = () => {};
+    const made: string[] = [];
+    vi.doMock("./natural.ts", () => ({
+      naturalReady: () => ready,
+      enableNatural: () => new Promise<void>((resolve) => void (finishLoading = resolve)),
+      synthesize: async (text: string) => void made.push(text),
+    }));
+    const { prepareSpeech, setNaturalVoiceWanted } = await import("./speech.ts");
+    setNaturalVoiceWanted(true);
+
+    // The device voice reads two sentences while the natural one loads; each names the sentence after it.
+    prepareSpeech("The second sentence.", 1);
+    prepareSpeech("The third sentence.", 1);
+    expect(made).toEqual([]);
+    ready = true;
+    finishLoading();
+    await settle();
+    // Only the one still to come: the second is already being read.
+    expect(made).toEqual(["The third sentence."]);
+  });
 });

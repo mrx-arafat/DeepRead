@@ -1,6 +1,6 @@
 // Read-aloud through the browser's built-in voices (works offline, no keys), or through the natural voice (natural.ts)
 // when the reader chose it and it is ready.
-import { naturalReady, play, synthesize } from "./natural.ts";
+import { enableNatural, naturalReady, play, synthesize } from "./natural.ts";
 import type { Playing } from "./natural.ts";
 import { pickVoice } from "./voicing.ts";
 
@@ -73,9 +73,26 @@ export type SpeakOptions = {
   onError?: (message: string) => void;
 };
 
+// The sentence to make once the natural voice has loaded: the newest one asked for while it was loading.
+let coming: { text: string; rate: number } | null = null;
+
 /** Gets the voice ready for the sentence about to be read, so it starts without a wait. */
 export function prepareSpeech(text: string, rate: number): void {
-  if (wantNatural && naturalReady()) void synthesize(text, rate).catch(() => {});
+  if (!wantNatural) return;
+  if (naturalReady()) {
+    void synthesize(text, rate).catch(() => {});
+    return;
+  }
+  // Still loading, with the device voice reading meanwhile: the sentence is made the moment the voice is ready, so
+  // the natural voice takes over at the next sentence without a silence while its first one is made.
+  const waiting = coming !== null;
+  coming = { text, rate };
+  if (waiting) return;
+  void enableNatural().then(() => {
+    const next = coming;
+    coming = null;
+    if (next && wantNatural && naturalReady()) void synthesize(next.text, next.rate).catch(() => {});
+  });
 }
 
 function speakNatural(text: string, options: SpeakOptions): () => void {
@@ -126,7 +143,11 @@ function speakNatural(text: string, options: SpeakOptions): () => void {
 /** Speak `text`, replacing anything already being spoken. Returns a function that stops it. */
 export function speak(text: string, options: SpeakOptions = {}): () => void {
   interruptNatural();
-  if (wantNatural && naturalReady() && options.engine !== "device") return speakNatural(text, options);
+  if (wantNatural && options.engine !== "device") {
+    if (naturalReady()) return speakNatural(text, options);
+    // Reading aloud is what asks for the natural voice: it starts now, and the device voice reads until it is ready.
+    void enableNatural();
+  }
   if (!canSpeak) {
     options.onError?.("This browser cannot read aloud.");
     return () => {};

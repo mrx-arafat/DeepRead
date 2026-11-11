@@ -59,6 +59,11 @@ export type TierParams = {
   notesPollMs: number;
   /** Transitions and streaming animations in the reader. */
   animations: boolean;
+  /**
+   * Load the natural voice as a book opens, so it is ready before Listen is pressed. Off on a phone, where its model
+   * (over a gigabyte of memory while it loads) is fetched only when the reader presses Listen or chooses the voice.
+   */
+  voiceWarmup: boolean;
 };
 
 /** The desktop row is today's behaviour; the phone rows start from the design and are tuned from measurements. */
@@ -81,6 +86,7 @@ export const TIER_PARAMS: Record<Tier, TierParams> = {
     measureDebounceMs: 150,
     notesPollMs: 30_000,
     animations: true,
+    voiceWarmup: true,
   },
   normal: {
     windowing: true,
@@ -100,6 +106,7 @@ export const TIER_PARAMS: Record<Tier, TierParams> = {
     measureDebounceMs: 150,
     notesPollMs: 120_000,
     animations: true,
+    voiceWarmup: false,
   },
   low: {
     windowing: true,
@@ -119,6 +126,7 @@ export const TIER_PARAMS: Record<Tier, TierParams> = {
     measureDebounceMs: 250,
     notesPollMs: 0,
     animations: false,
+    voiceWarmup: false,
   },
 };
 

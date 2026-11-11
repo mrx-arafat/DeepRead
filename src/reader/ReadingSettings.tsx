@@ -9,7 +9,7 @@ import { setAiStatus, useReaderKey } from "./aiStatusStore.ts";
 import { HANDOFF_TARGET_IDS, HANDOFF_TARGETS, type HandoffTarget } from "./handoff.ts";
 import { helperRows } from "./helperState.ts";
 import type { Viewer } from "./helperState.ts";
-import { NATURAL_DOWNLOAD_MB, useNaturalState } from "./natural.ts";
+import { enableNatural, NATURAL_DOWNLOAD_MB, useNaturalState } from "./natural.ts";
 import { keepingPlace } from "./useChapterTranslation.ts";
 import { keepingLine } from "./useReadingPosition.ts";
 
@@ -161,19 +161,27 @@ const VOICE_OPTIONS: Option<Prefs["voice"]>[] = [
 function VoiceChoice({ voice }: { voice: Prefs["voice"] }) {
   const natural = useNaturalState();
   const percent = Math.round(natural.progress * 100);
+  // Choosing the natural voice is asking for it: it downloads now, with its progress shown here.
+  const chooseVoice = (value: Prefs["voice"]) => {
+    setPrefs({ voice: value });
+    if (value === "natural") void enableNatural();
+  };
   const hint =
     voice === "device"
       ? `The voice built into this computer. Natural is a more human voice that runs on this computer and works offline once it has downloaded (${NATURAL_DOWNLOAD_MB} MB, once).`
       : natural.status === "ready"
         ? "The natural voice runs on this computer and works offline."
         : natural.status === "downloading"
-          ? `Downloading the natural voice: ${percent}%. This device's voice reads until it is ready.`
+          ? // Once the file is in (at once, when the browser already has it) the voice still takes a few seconds to start.
+            percent < 100
+            ? `Downloading the natural voice: ${percent}%. This device's voice reads until it is ready.`
+            : "Starting the natural voice. This device's voice reads until it is ready."
           : natural.message
             ? natural.message
-            : "Getting the natural voice ready...";
+            : "The natural voice starts when you press Listen. This device's voice reads until it is ready.";
   return (
     <div className="settings-group">
-      <Choice name="voice" legend="Read-aloud voice" value={voice} options={VOICE_OPTIONS} onChange={(value) => setPrefs({ voice: value })} />
+      <Choice name="voice" legend="Read-aloud voice" value={voice} options={VOICE_OPTIONS} onChange={chooseVoice} />
       <p className="settings-hint" aria-live="polite">
         {hint}
       </p>

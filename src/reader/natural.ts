@@ -1,20 +1,27 @@
-// The natural voice: Kokoro-82M, a small neural voice, run on this computer's graphics card in the browser. It is fetched
+// The natural voice: Kokoro-82M, a small neural voice, run on this device's graphics card in the browser. It is fetched
 // once when the reader asks for it (about 326 MB, kept by the browser), then works offline. DeepRead never ships it:
 // the code comes from jsDelivr, pinned to one version, and the model from Hugging Face.
+//
+// The voice lives in a worker of its own (naturalWorker.ts), so loading it and making a sentence never hold up the page.
+// This file is the page's side of it: when the worker starts, what it reported, and when it ends. Ending the worker is
+// what gives the voice's memory back (over a gigabyte while it loads), so a device that cannot use the voice is never
+// left holding it, and what the device turned out to be is remembered, so the next book does not find out again.
 import { useSyncExternalStore } from "react";
-import { chunksOf, fastEnough, trimSilence, wordTimes } from "./naturalTiming.ts";
+import { wordTimes } from "./naturalTiming.ts";
 
-const LIBRARY = "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm";
-const MODEL = "onnx-community/Kokoro-82M-v1.0-ONNX";
-/** An American voice, the library's best rated. */
-const VOICE = "af_heart";
 export const NATURAL_DOWNLOAD_MB = 326;
 
-type Kokoro = {
-  generate(text: string, options: { voice: string; speed: number }): Promise<{ audio: Float32Array; sampling_rate: number }>;
-};
-type Progress = { status?: string; file?: string; loaded?: number; total?: number };
-type Gpu = { requestAdapter(): Promise<unknown> };
+/** What the page asks the voice's worker for. */
+export type VoiceRequest = { type: "load" } | { type: "clip"; id: number; text: string; speed: number };
+/** What the worker answers: how loading went, then a clip (or a failure) for each one asked for. */
+export type VoiceReply =
+  | { type: "progress"; progress: number }
+  | { type: "ready" }
+  | { type: "slow" }
+  | { type: "unsupported" }
+  | { type: "failed"; message: string }
+  | { type: "clip"; id: number; audio: Float32Array<ArrayBuffer>; sampleRate: number }
+  | { type: "clip-failed"; id: number; message: string };
 
 export type NaturalStatus =
   /** Not asked for, or switched off. */
@@ -25,14 +32,69 @@ export type NaturalStatus =
   | "unsupported"
   /** It runs, but not fast enough to keep ahead of the voice. */
   | "slow"
+  /** The page stopped while it was loading: this device has not the memory for it. */
+  | "crashed"
   | "failed";
 
 export type NaturalState = { status: NaturalStatus; /** 0 to 1, while downloading. */ progress: number; message: string | null };
 
-let state: NaturalState = { status: "off", progress: 0, message: null };
+const OFF: NaturalState = { status: "off", progress: 0, message: null };
+const SLOW: NaturalState = { status: "slow", progress: 0, message: "This device is too slow for the natural voice, so DeepRead keeps the voice built into it." };
+const CRASHED: NaturalState = {
+  status: "crashed",
+  progress: 0,
+  message: "The natural voice stopped this page the last time it loaded, so DeepRead keeps the voice built into this device. Choose This device, then Natural, to try again.",
+};
+
+// What this device turned out to be, kept per browser like the reading settings: "slow" and "crashed" keep the voice from
+// loading again. "loading" is there only while it loads on a page the reader can see, and that page holds a Web Lock of
+// the same name for as long: the mark with nobody holding the lock means the last page died with the voice half loaded.
+const STORE_KEY = "deepread.naturalVoice";
+type Remembered = "loading" | "slow" | "crashed";
+
+function remembered(): Remembered | null {
+  try {
+    const value = localStorage.getItem(STORE_KEY);
+    return value === "loading" || value === "slow" || value === "crashed" ? value : null;
+  } catch {
+    // Storage blocked: nothing is remembered, and the voice is tried on each visit as before.
+    return null;
+  }
+}
+
+function remember(value: Remembered | null): void {
+  try {
+    if (value) localStorage.setItem(STORE_KEY, value);
+    else localStorage.removeItem(STORE_KEY);
+  } catch {
+    // Private mode or full storage: the verdict lasts for this visit only.
+  }
+}
+
+/** The state a new page starts in: what an earlier page learned about this device, if it learned anything. */
+function recalled(): NaturalState {
+  const before = remembered();
+  return before === "slow" ? SLOW : before === "crashed" ? CRASHED : OFF;
+}
+
+/** Whether another page of DeepRead is loading the voice right now: its "loading" mark is not a page that stopped. */
+async function loadingElsewhere(): Promise<boolean> {
+  const held = await navigator.locks?.query().then(
+    (snapshot) => snapshot.held ?? [],
+    () => [],
+  );
+  return held?.some((lock) => lock.name === STORE_KEY) ?? false;
+}
+
+let state: NaturalState = recalled();
 const listeners = new Set<() => void>();
-let engine: Kokoro | null = null;
+let worker: Worker | null = null;
+let ready = false;
 let loading: Promise<void> | null = null;
+/** Ends the wait of whoever asked for the load under way. */
+let loaded: (() => void) | null = null;
+/** Counts the times the voice was let go, so a load begun before that does not carry on after it. */
+let letGo = 0;
 
 function set(next: Partial<NaturalState>) {
   state = { ...state, ...next };
@@ -51,61 +113,116 @@ export function useNaturalState(): NaturalState {
 }
 
 /** Whether the natural voice can read the next sentence now. */
-export const naturalReady = (): boolean => engine !== null;
+export const naturalReady = (): boolean => ready;
 
-async function hasGpu(): Promise<boolean> {
-  const gpu = (navigator as Navigator & { gpu?: Gpu }).gpu;
-  return gpu !== undefined && (await gpu.requestAdapter().catch(() => null)) !== null;
+// The "loading" mark stands only while the reader can see the page: a tab the phone closes in the background, or a page
+// the reader leaves, is not the voice stopping the page.
+const markWhileSeen = () => remember(document.visibilityState === "hidden" ? null : "loading");
+const unmark = () => remember(null);
+
+function watchPage(on: boolean) {
+  const change = on ? "addEventListener" : "removeEventListener";
+  document[change]("visibilitychange", markWhileSeen);
+  window[change]("pagehide", unmark);
 }
 
-/** Downloads (the first time), starts and times the voice. Safe to call again: it does nothing once it is ready. */
+/** Ends the voice's worker, which gives back its memory, and fails whatever it was still making. */
+function stop() {
+  worker?.terminate();
+  worker = null;
+  ready = false;
+  for (const clip of asked.values()) clip.reject(new Error("The natural voice was stopped."));
+  asked.clear();
+  clips.clear();
+}
+
+/** The load under way is over: `next` is how it went, and `verdict` what to remember of this device. */
+function settle(next: NaturalState, verdict: Remembered | null) {
+  if (next.status !== "ready") stop();
+  watchPage(false);
+  remember(verdict);
+  set(next);
+  loaded?.();
+  loaded = null;
+}
+
+/**
+ * Downloads (the first time), starts and times the voice. Safe to call again: it loads only a voice that has not been
+ * tried. One that is ready, that this device cannot run, or that failed to load is left as it is, so reading a sentence
+ * aloud never starts the download over; choosing the voice again (disableNatural, then this) is what tries afresh.
+ */
 export function enableNatural(): Promise<void> {
-  if (engine) return Promise.resolve();
-  loading ??= load().finally(() => {
-    loading = null;
+  if (loading) return loading;
+  if (state.status !== "off") return Promise.resolve();
+  const attempt = start();
+  loading = attempt;
+  void attempt.then(() => {
+    if (loading === attempt) loading = null;
   });
-  return loading;
+  return attempt;
 }
 
-async function load(): Promise<void> {
-  if (!(await hasGpu())) {
-    set({ status: "unsupported", progress: 0, message: "This browser cannot use the graphics card for it. Try Chrome or Edge on a recent computer." });
+async function start(): Promise<void> {
+  const began = letGo;
+  if (remembered() === "loading" && !(await loadingElsewhere())) {
+    if (began !== letGo) return;
+    remember("crashed");
+    set(CRASHED);
     return;
   }
-  set({ status: "downloading", progress: 0, message: null });
-  try {
-    const { KokoroTTS } = (await import(/* @vite-ignore */ LIBRARY)) as {
-      KokoroTTS: { from_pretrained(model: string, options: Record<string, unknown>): Promise<Kokoro> };
-    };
-    const tts = await KokoroTTS.from_pretrained(MODEL, {
-      dtype: "fp32",
-      device: "webgpu",
-      progress_callback: (event: Progress) => {
-        if (event.file?.endsWith(".onnx") && event.total) set({ progress: Math.min(1, (event.loaded ?? 0) / event.total) });
-      },
-    });
-    // The first run compiles the voice for this graphics card and is always slow; the second says how fast it really is.
-    const sentence = "Is there any knowledge in the world which is so certain that no reasonable man could doubt it?";
-    await tts.generate(sentence, { voice: VOICE, speed: 1 });
-    const began = performance.now();
-    const probe = await tts.generate(sentence, { voice: VOICE, speed: 1 });
-    const spoken = probe.audio.length / probe.sampling_rate;
-    if (!fastEnough((performance.now() - began) / 1000 / spoken)) {
-      set({ status: "slow", progress: 0, message: "This computer is too slow for the natural voice, so DeepRead keeps the voice built into it." });
-      return;
-    }
-    engine = tts;
-    set({ status: "ready", progress: 1, message: null });
-  } catch (error) {
-    set({ status: "failed", progress: 0, message: error instanceof Error ? error.message : "The natural voice could not be loaded." });
-  }
+  if (began !== letGo) return;
+  const done = load();
+  // Held until the load is over, and let go by the browser if this page dies first.
+  void navigator.locks?.request(STORE_KEY, { mode: "shared" }, () => done);
+  await done;
 }
 
-/** Forgets the voice and frees its memory, as when the reader goes back to the device voice. */
+function load(): Promise<void> {
+  return new Promise((resolve) => {
+    loaded = resolve;
+    set({ status: "downloading", progress: 0, message: null });
+    remember("loading");
+    watchPage(true);
+    const voice = new Worker(new URL("./naturalWorker.ts", import.meta.url), { type: "module" });
+    worker = voice;
+    voice.onmessage = (event: MessageEvent<VoiceReply>) => {
+      // A worker that was ended may still have an answer on its way.
+      if (voice !== worker) return;
+      const reply = event.data;
+      if (reply.type === "progress") set({ progress: reply.progress });
+      else if (reply.type === "ready") {
+        ready = true;
+        settle({ status: "ready", progress: 1, message: null }, null);
+      } else if (reply.type === "slow") settle(SLOW, "slow");
+      else if (reply.type === "unsupported") {
+        settle({ status: "unsupported", progress: 0, message: "This browser cannot use the graphics card for it. Try Chrome or Edge on a recent computer." }, null);
+      } else if (reply.type === "failed") settle({ status: "failed", progress: 0, message: reply.message }, null);
+      else if (reply.type === "clip") {
+        asked.get(reply.id)?.resolve({ audio: reply.audio, sampleRate: reply.sampleRate, seconds: reply.audio.length / reply.sampleRate });
+        asked.delete(reply.id);
+      } else {
+        asked.get(reply.id)?.reject(new Error(reply.message));
+        asked.delete(reply.id);
+      }
+    };
+    // The worker's own code could not start or stopped: the voice is gone, whether it was loading or reading.
+    voice.onerror = () => {
+      if (voice === worker) settle({ status: "failed", progress: 0, message: "The natural voice could not be loaded." }, null);
+    };
+    voice.postMessage({ type: "load" } satisfies VoiceRequest);
+  });
+}
+
+/** Forgets the voice and frees its memory, as when the reader goes back to the device voice. Choosing it again starts afresh. */
 export function disableNatural(): void {
-  engine = null;
-  clips.clear();
-  set({ status: "off", progress: 0, message: null });
+  letGo++;
+  stop();
+  watchPage(false);
+  remember(null);
+  loading = null;
+  loaded?.();
+  loaded = null;
+  set(OFF);
 }
 
 export type Clip = { audio: Float32Array<ArrayBuffer>; sampleRate: number; seconds: number };
@@ -114,45 +231,32 @@ export type Clip = { audio: Float32Array<ArrayBuffer>; sampleRate: number; secon
 // last few are kept in case the reader goes back or pauses (a sentence is spoken again from the word they stopped at).
 const clips = new Map<string, Promise<Clip>>();
 const KEPT = 12;
-let queue: Promise<unknown> = Promise.resolve();
-/** The longest piece the voice is given at once; its limit is about 500 characters. */
-const PIECE = 300;
-/** Silence between the pieces of a long sentence, as a breath. */
-const BREATH_MS = 140;
+/** The clips the worker is making, by the number each was asked under. */
+const asked = new Map<number, { resolve: (clip: Clip) => void; reject: (error: Error) => void }>();
+let lastAsked = 0;
 
 /** The audio for `text` at `speed`, made now or already made. */
 export function synthesize(text: string, speed: number): Promise<Clip> {
   const key = `${speed}|${text}`;
   const known = clips.get(key);
   if (known) return known;
-  const made = (queue = queue.then(() => makeClip(text, speed)));
-  const clip = made as Promise<Clip>;
+  const voice = worker;
+  const clip = new Promise<Clip>((resolve, reject) => {
+    if (!voice || !ready) {
+      reject(new Error("The natural voice is not ready."));
+      return;
+    }
+    const id = ++lastAsked;
+    asked.set(id, { resolve, reject });
+    voice.postMessage({ type: "clip", id, text, speed } satisfies VoiceRequest);
+  });
   clips.set(key, clip);
   // A failure is not kept, so the next ask tries again.
-  clip.catch(() => clips.delete(key));
+  clip.catch(() => {
+    if (clips.get(key) === clip) clips.delete(key);
+  });
   while (clips.size > KEPT) clips.delete(clips.keys().next().value as string);
   return clip;
-}
-
-async function makeClip(text: string, speed: number): Promise<Clip> {
-  const tts = engine;
-  if (!tts) throw new Error("The natural voice is not ready.");
-  const pieces: Float32Array[] = [];
-  let sampleRate = 24000;
-  for (const piece of chunksOf(text, PIECE)) {
-    const made = await tts.generate(piece, { voice: VOICE, speed: Math.min(2, Math.max(0.5, speed)) });
-    sampleRate = made.sampling_rate;
-    pieces.push(trimSilence(made.audio, sampleRate));
-  }
-  const breath = Math.round((sampleRate * BREATH_MS) / 1000);
-  const length = pieces.reduce((sum, piece) => sum + piece.length, 0) + breath * Math.max(0, pieces.length - 1);
-  const audio = new Float32Array(length);
-  let at = 0;
-  for (const piece of pieces) {
-    audio.set(piece, at);
-    at += piece.length + breath;
-  }
-  return { audio, sampleRate, seconds: length / sampleRate };
 }
 
 let context: AudioContext | null = null;

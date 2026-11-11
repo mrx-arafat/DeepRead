@@ -335,7 +335,10 @@ You can also open **Voice settings** from the player while listening.
 It downloads once (326 MB, with a progress figure in the menu), and from then on it runs on your computer's graphics card and works offline.
 It needs a browser with WebGPU, which means a recent Chrome or Edge on a computer from the last few years.
 If your browser or computer cannot run it, or runs it too slowly to keep up with the reading, DeepRead says so in the menu and keeps the voice built into your computer.
-While it downloads, reading aloud carries on with that voice, and a single word said from its card always uses it.
+It remembers that in this browser, so the next book opens without trying the voice again.
+On a computer the natural voice gets ready as a book opens.
+On a phone it starts only when you press **Listen** or choose **Natural**, so opening a book and scrolling stay smooth.
+While it downloads or gets ready, reading aloud carries on with the built-in voice, and a single word said from its card always uses it.
 Choosing **This device** again lets go of the natural voice and its memory.
 The code for it (kokoro-js, pinned to one version) comes from jsDelivr and the voice model from Hugging Face, and only that download uses the network.
 The book text is never sent anywhere to be read aloud.
@@ -551,7 +554,9 @@ Restarting DeepRead also clears the lock.
 Open **Voice settings** from the player or **Aa → Reader preferences**, and read the line under **Read-aloud voice**: it says why.
 A message about the graphics card means this browser has no WebGPU, so try a recent Chrome or Edge.
 A message about speed means this computer could not make speech as fast as it is read, so DeepRead keeps the voice built into it.
-If the download stopped partway, check your connection, then choose **This device** and **Natural** again to start it once more.
+A message that the voice stopped the page means the device ran out of memory while loading it, so DeepRead does not load it again by itself.
+DeepRead remembers both in this browser.
+To have it try once more, or if the download stopped partway (check your connection first), choose **This device** and then **Natural** again.
 
 </details>
 
@@ -1075,7 +1080,9 @@ The top bar and the library use the same functions, so they agree.
 The place is saved a second after the reader stops scrolling, and again as they leave the book or hide the tab, and the library waits for a save on its way before it lists the books.
 
 Reading aloud goes through `speak` in [`src/reader/speech.ts`](src/reader/speech.ts), which uses the browser's voices, or the natural voice ([`src/reader/natural.ts`](src/reader/natural.ts)) once it is chosen and ready.
-The natural voice is Kokoro-82M run on the graphics card.
+The natural voice is Kokoro-82M run on the graphics card, in a worker of its own ([`src/reader/naturalWorker.ts`](src/reader/naturalWorker.ts)), so loading it and making a sentence never hold up the page.
+Ending that worker is what gives the voice's memory back, and `natural.ts` remembers a device that was too slow for the voice, or whose page stopped while loading it, so it is not loaded again on every book.
+On the phone tiers it starts at the first Listen rather than as the book opens (`voiceWarmup` in [`src/deviceTier.ts`](src/deviceTier.ts)).
 Each sentence is made while the one before it is read, the silence the voice leaves round a sentence is trimmed so the pauses are DeepRead's own ([`src/reader/voicing.ts`](src/reader/voicing.ts)), and the spoken word is marked by estimating where it falls in the sentence, because the voice reports no word positions.
 
 ## Privacy
