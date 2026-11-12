@@ -362,8 +362,12 @@ DeepRead explains words and passages with an AI helper, and on a server one choi
   Install one as that user and sign in once, for example `sudo -u deepread -H claude`, and check that the account's terms allow sharing it.
 
 Reading, listening and notes work without any helper.
-So does **chapter translation** (each paragraph shown in the reader's language under it): it uses Microsoft Translator or Google Translate's free public services, needs no key, and keeps every translated paragraph with the book.
-The admin turns it on or off for readers on the admin page, under **Chapter translation**.
+So does **chapter translation** (each paragraph shown in the reader's language under it): with no helper it uses Microsoft Translator or Google Translate's free public services, which need no key, and it keeps every translated paragraph with the book.
+A reader who has a helper gets a better one: the helper reads the book around each paragraph, so it knows who is speaking to whom, and a chapter takes up to a few minutes, and the first paragraphs show after ten to twenty seconds (about half a minute for the first chapter of a book, which also makes the book's notes) while the rest follow.
+That uses the helper like any other question does, and with the API Model each question to it counts as one request against the reader's daily limit.
+A batch of paragraphs (about 4,000 characters, or about 1,500 for the first batch of a chapter) is one, and a second question for paragraphs that failed the checks is another.
+The first chapter translated in a book also makes the book's translator's notes, one or two more requests, once.
+The admin turns it on or off for readers on the admin page, under **Chapter translation**, and chooses whether the helper, the free services, or the helper with the services behind it (Automatic, the default) translate.
 
 ### A voice box for the natural voice
 

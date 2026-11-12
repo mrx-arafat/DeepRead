@@ -213,11 +213,17 @@ export type OpenRouterView = {
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 /**
- * How a chapter is put into the reader's language under each paragraph, by a translation service and not an AI helper.
- * `auto` asks Microsoft first and Google if Microsoft cannot answer.
+ * How a chapter is put into the reader's language under each paragraph. `ai` is the reader's AI helper, which reads the
+ * book's own words around each paragraph and so gets the meaning, the voice and who is speaking to whom; it never falls
+ * back for text (code, tables and text with no words are still left to the services). `auto` asks that helper when the
+ * reader has one, then Microsoft, then Google. `microsoft` and `google` are the free
+ * public services alone, a paragraph at a time with no context.
  */
-export const TRANSLATION_ENGINES = ["auto", "microsoft", "google"] as const;
+export const TRANSLATION_ENGINES = ["auto", "ai", "microsoft", "google"] as const;
 export type TranslationEngine = (typeof TRANSLATION_ENGINES)[number];
+
+/** What made a translation: the AI helper, or one of the free services. */
+export type TranslationMaker = "ai" | "microsoft" | "google";
 
 /** The admin's choice for chapter translation, which holds for every reader. */
 export type TranslationSettings = {
@@ -233,13 +239,18 @@ export type HandoffSettings = { enabled: boolean };
 export type ChapterTranslation = {
   lang: LangCode;
   blocks: Record<string, string>;
-  /** Which service made the translations sent this time. */
-  engine: "microsoft" | "google";
+  /** Which service made most of the translations sent this time. */
+  engine: TranslationMaker;
+  /**
+   * False while an AI helper is still working through the chapter: `blocks` holds the paragraphs done so far and the
+   * reader asks again for the rest. Absent or true: the chapter is whole.
+   */
+  complete?: boolean;
 };
 
 /** The admin's try of the chosen service on one sentence, to see that it works and how it reads. */
 export type TranslationTest =
-  | { ok: true; engine: "microsoft" | "google"; ms: number; sample: string; translation: string }
+  | { ok: true; engine: TranslationMaker; ms: number; sample: string; translation: string }
   | { ok: false; message: string };
 
 /** The admin page's view, with which helper answers for everyone right now, and what the key has spent when OpenRouter says. */

@@ -4,16 +4,20 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { TRANSLATION_ENGINES } from "../shared/types.ts";
-import type { Chapter, LangCode, TranslationSettings } from "../shared/types.ts";
+import type { Chapter, LangCode, ParsedBook, TranslationSettings } from "../shared/types.ts";
+import type { Ai } from "./ai.ts";
 import type { AppEnv } from "./app-env.ts";
 import { isTranslationEngine, TranslationError } from "./chapter-translation.ts";
-import type { Translation } from "./chapter-translation.ts";
+import type { AiHelp, Translation } from "./chapter-translation.ts";
 import type { Accounts } from "./deps.ts";
 import { adminOnly, apiError, bookNotFound, chapterNotFound, invalidBody, invalidId, isLangCode, LANG_HELP, readJsonObject } from "./http.ts";
 import { jsonBody, sendJsonBody } from "./routes-books.ts";
 import type { JsonBody } from "./routes-books.ts";
 import { isReadableBookId, parseSharedBookId } from "./shares.ts";
 import type { Library } from "./library.ts";
+import { accessOf } from "./routes-ai.ts";
+import { bookStyles, styleNotes } from "./translation-style.ts";
+import type { StyleKeeper } from "./translation-style.ts";
 
 const SETTINGS_HELP = 'send JSON like {"enabled": true, "engine": "auto"}.';
 
@@ -56,9 +60,45 @@ export function bookHome(c: Context<AppEnv>, accounts: Accounts | undefined, id:
   return { library: accounts.profiles.library(ownerId), bookId: shared?.bookId ?? id };
 }
 
+/** A chapter about to be translated, with the book it is in and where its notes are kept: what the book's notes are made from. */
+type Notable = { styles: StyleKeeper; library: Library; bookId: string; lang: LangCode; book: ParsedBook; chapter: Chapter };
+
+/**
+ * The AI helper that would translate for whoever is asking, or undefined when they have none (or the admin chose the free
+ * services alone, which need none). It is their helper and nobody else's: with profiles it is the one the admin gave them,
+ * and when it is the API model each request counts against their day, as every other use of it does.
+ * With `notable`, it carries the book's translator's notes (translation-style.ts), so a name, a term and who says আপনি or
+ * তুমি to whom are the same in a chapter as in an "In Bangla" answer. A book with no notes yet has them made first, which
+ * takes a minute once; with notes, the names this chapter brings that they have not seen are added behind the translation.
+ */
+async function helpFor(c: Context<AppEnv>, llm: Ai | undefined, engine: TranslationSettings["engine"], book: Pick<ParsedBook, "title" | "author">, notable?: Notable): Promise<AiHelp | undefined> {
+  if (!llm || (engine !== "auto" && engine !== "ai")) return undefined;
+  const { session } = c.var;
+  // Without profiles the one reader may use anything that works, and the helper they picked answers.
+  const access = session ? accessOf(session.profile) : ({ allowed: "all" } as const);
+  if ((await llm.statusFor(access)).active === null) return undefined;
+  const helper = session ? llm.for(access) : llm;
+  const help: AiHelp = { llm: helper, who: session?.profile.id ?? "all", book: { title: book.title, author: book.author } };
+  if (notable) {
+    const { styles, library, bookId, lang, chapter } = notable;
+    const request = { library, bookId, book: notable.book, lang, helper, chapter };
+    if (await styles.style(library, bookId, lang)) void styles.ensure(request);
+    else await styles.ensure(request);
+    help.notes = async (passage) => {
+      try {
+        return styleNotes(await styles.style(library, bookId, lang), { text: passage });
+      } catch {
+        // The notes are an aid to the translation, never a reason to stop it.
+        return "";
+      }
+    };
+  }
+  return help;
+}
+
 /** What every reader reaches: a chapter's translation, and whether they may have one. */
-export function translationRoutes(deps: Translation & { accounts?: Accounts }): Hono<AppEnv> {
-  const { settings, translator, accounts } = deps;
+export function translationRoutes(deps: Translation & { accounts?: Accounts; llm?: Ai }): Hono<AppEnv> {
+  const { settings, translator, accounts, llm, styles = bookStyles } = deps;
   const routes = new Hono<AppEnv>();
 
   routes.get("/translation", (c) => {
@@ -79,14 +119,17 @@ export function translationRoutes(deps: Translation & { accounts?: Accounts }): 
     const chapter = book.chapters.find((candidate) => candidate.id === c.req.param("chapterId"));
     if (!chapter) return chapterNotFound(c);
     try {
-      const translation = await translator.chapter(bookHome(c, accounts, id), chapter, lang, chosen.engine);
+      const home = bookHome(c, accounts, id);
+      const help = await helpFor(c, llm, chosen.engine, book, { styles, library: home.library, bookId: home.bookId, lang, book, chapter });
+      const translation = await translator.chapter(home, chapter, lang, chosen.engine, help);
       // As big as the chapter: revalidating and gzipped, like it.
       return await sendJsonBody(c, translationBody(chapter, lang, JSON.stringify(translation)));
     } catch (error) {
       if (!(error instanceof TranslationError)) throw error;
-      // Expected now and then: both services are unofficial. The reader is told to try again; the log says why.
+      // Expected now and then: both services are unofficial, and an AI helper can be busy or over its limit. The reader is
+      // told what they can act on, else to try again; the log says why.
       console.warn(`chapter translation failed: ${error.message}`);
-      return apiError(c, 502, "translation_unavailable", "The translation services could not be reached just now.");
+      return apiError(c, 502, "translation_unavailable", error.readerMessage ?? "The translation services could not be reached just now.");
     }
   });
 
@@ -97,8 +140,8 @@ export function translationRoutes(deps: Translation & { accounts?: Accounts }): 
  * The admin's side: whether readers may have chapters translated, which service translates, and a try of it. Only with
  * profiles on, where there is an admin; only the admin reaches these, also while viewing as someone else.
  */
-export function translationAdminRoutes(deps: Translation): Hono<AppEnv> {
-  const { settings, translator } = deps;
+export function translationAdminRoutes(deps: Translation & { llm?: Ai }): Hono<AppEnv> {
+  const { settings, translator, llm } = deps;
   const routes = new Hono<AppEnv>();
   const jsonLimit = bodyLimit({ maxSize: 4 * 1024, onError: (c) => invalidBody(c, "the body is too large.") });
 
@@ -126,11 +169,12 @@ export function translationAdminRoutes(deps: Translation): Hono<AppEnv> {
     return c.json(await settings.save(patch));
   });
 
-  // One sentence with the chosen service: the admin sees at once whether it answers from this computer, and how it reads.
+  // One sentence with the chosen engine: the admin sees at once whether it answers from this computer, and how it reads.
   routes.post("/test", jsonLimit, async (c) => {
     const lang = (await readJsonObject(c))?.lang;
     if (!isLangCode(lang)) return apiError(c, 400, "invalid_lang", LANG_HELP);
-    return c.json(await translator.test(lang, settings.get().engine));
+    const { engine } = settings.get();
+    return c.json(await translator.test(lang, engine, await helpFor(c, llm, engine, { title: "A sample sentence", author: null })));
   });
 
   return routes;

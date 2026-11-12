@@ -1,5 +1,6 @@
 // Chapter translation with an injected fetch, so nothing touches the network: the services' answers are shaped like the
 // ones Microsoft's and Google's endpoints gave. The routes run through createApp on real disk storage in a temp dir.
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,9 +10,14 @@ import type { ApiError, BookSummary, Chapter, ChapterTranslation, ParsedBook, Pu
 import type { Ai } from "./ai.ts";
 import { createApp } from "./app.ts";
 import { createChapterTranslator, createTranslationSettings, TRANSLATION_SAMPLE, TranslationError, translateTexts } from "./chapter-translation.ts";
+import type { AiHelp } from "./chapter-translation.ts";
 import type { ParsePdf } from "./deps.ts";
 import { createLibrary } from "./library.ts";
 import type { Library } from "./library.ts";
+import { LlmError } from "./llm.ts";
+import { parseStyleReply } from "./translation-style.ts";
+import type { BookStyle, StyleKeeper } from "./translation-style.ts";
+import type { Llm } from "./llm.ts";
 import { createProfiles } from "./profiles.ts";
 import type { Profiles } from "./profiles.ts";
 import { sessionKey } from "./session-token.ts";
@@ -146,6 +152,18 @@ describe("translateTexts", () => {
   });
 });
 
+describe("a blank translation from a service", () => {
+  it("should be a failure to fall back from, never a translation to keep", async () => {
+    const blank = services({ microsoft: (texts) => Response.json(texts.map((text, at) => ({ translations: [{ text: at === 1 ? "  " : `ms:${text}` }] }))) });
+    // Under Automatic Google stands in for the whole batch; Microsoft alone fails.
+    const made = await translateTexts(["One paragraph.", "Another paragraph."], "bn", "auto", { fetchImpl: blank.fetchImpl });
+    expect(made.map((one) => one.engine)).toEqual(["google", "google"]);
+    await expect(translateTexts(["One paragraph.", "Another paragraph."], "bn", "microsoft", { fetchImpl: blank.fetchImpl })).rejects.toThrow("blank translation");
+    const emptied = services({ google: () => Response.json([[["", "x"]], null, "en"]) });
+    await expect(translateTexts(["Only paragraph."], "bn", "google", { fetchImpl: emptied.fetchImpl })).rejects.toBeInstanceOf(TranslationError);
+  });
+});
+
 describe("createChapterTranslator", () => {
   let dataDir: string;
   let library: Library;
@@ -174,6 +192,15 @@ describe("createChapterTranslator", () => {
     expect(translated.blocks.figure).toBeUndefined();
     expect(translated.blocks.ocr).toBe("ms:Recovered words.");
     expect(translated.blocks.code).toContain("return value;");
+  });
+
+  it("should make a block again whose kept translation is blank, never count it as translated", async () => {
+    const { fetchImpl, calls } = services();
+    const source = createHash("sha256").update("Appearance and reality.").digest("hex").slice(0, 16);
+    await library.writeTranslation(bookId, "bn", "c1", { blocks: { "c1-b1": { text: " ", engine: "microsoft", source } } });
+    const made = await createChapterTranslator({ fetchImpl }).chapter({ library, bookId }, chapter(TEXTS), "bn", "auto");
+    expect(made.blocks["c1-b1"]).toBe("ms:Appearance and reality.");
+    expect(calls[0]?.texts).toContain("Appearance and reality.");
   });
 
   it("should translate a chapter once, keep it with the book, and translate again only a block whose text changed", async () => {
@@ -256,6 +283,210 @@ describe("createChapterTranslator", () => {
     );
     expect(await library.readTranslation(bookId, "tr", "c1")).toBeNull();
   });
+
+  describe("with an AI helper", () => {
+    const BOOK = { title: "Problems", author: "Russell" };
+    /** Bangla-looking text as long as the English, so it passes the checks a real translation does. */
+    const bangla = (id: string, text: string): string => `অনুবাদ ${id} ${"ক".repeat(Math.max(0, text.length - 13))}।`;
+    /** Four paragraphs of about a thousand characters under a heading: a small first batch, then one for the rest. */
+    const LONG = ["A Heading", ...Array.from({ length: 4 }, (_, at) => `Paragraph ${at}. ${"word ".repeat(200)}`)];
+
+    // A fallback and a refused paragraph are logged for the admin; these tests expect that.
+    beforeEach(() => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    /** An AI helper whose answer is made by `reply` from the paragraphs asked about; every question it was asked is kept. */
+    function helper(reply: (asked: Array<{ id: string; text: string }>, nth: number) => string | Promise<string>) {
+      const questions: Array<{ system: string; user: string; asked: Array<{ id: string; text: string }> }> = [];
+      const llm: Llm = {
+        model: () => "fake",
+        streamText: (request) =>
+          (async function* () {
+            const listed = request.user.split("The paragraphs:\n")[1] ?? "";
+            const asked = [...listed.matchAll(/^=== (\S+) ===\n([\s\S]*?)(?=\n\n=== |$)/gm)].map((one) => ({ id: one[1] ?? "", text: one[2] ?? "" }));
+            questions.push({ system: request.system, user: request.user, asked });
+            yield await reply(asked, questions.length);
+          })(),
+      };
+      const help: AiHelp = { llm, who: "mina", book: BOOK };
+      return { help, questions };
+    }
+    const END = "=== end ===";
+    const faithful = (asked: Array<{ id: string; text: string }>): string => [...asked.map(({ id, text }) => `=== ${id} ===\n${bangla(id, text)}`), END].join("\n\n");
+
+    it("should translate in batches with the paragraphs before as context, answer in parts, and keep the result as the AI's", async () => {
+      const { fetchImpl, calls } = services();
+      let release = (): void => {};
+      const held = new Promise<void>((resolve) => (release = resolve));
+      const { help, questions } = helper(async (asked, nth) => {
+        if (nth === 2) await held;
+        return faithful(asked);
+      });
+      const translator = createChapterTranslator({ fetchImpl });
+      const parsed = chapter(LONG);
+
+      // The first batch (the heading and the first paragraph) arrives while the second is still being made.
+      const part = await translator.chapter({ library, bookId }, parsed, "bn", "auto", help);
+      expect(part.complete).toBe(false);
+      expect(Object.keys(part.blocks)).toEqual(["c1-b0", "c1-b1"]);
+      expect(part.engine).toBe("ai");
+      release();
+      await vi.waitFor(async () => expect((await translator.chapter({ library, bookId }, parsed, "bn", "auto", help)).complete).toBeUndefined());
+
+      const whole = await translator.chapter({ library, bookId }, parsed, "bn", "auto", help);
+      expect(Object.keys(whole.blocks)).toEqual(parsed.blocks.map((block) => block.id));
+      expect(whole.blocks["c1-b4"]).toBe(bangla("c1-b4", parsed.blocks[4]?.text ?? ""));
+      // Nothing went to the free services, and the second question carried the book, and the first batch with its Bangla.
+      expect(calls).toHaveLength(0);
+      expect(questions).toHaveLength(2);
+      expect(questions[1]?.asked.map((one) => one.id)).toEqual(["c1-b2", "c1-b3", "c1-b4"]);
+      expect(questions[1]?.user).toContain('Book: "Problems" by Russell.');
+      expect(questions[1]?.user).toContain(`[English] ${parsed.blocks[1]?.text}\n[Bangla] ${bangla("c1-b1", parsed.blocks[1]?.text ?? "")}`);
+      // Kept with the book as the AI's, and reused with no more questions.
+      const kept = (await library.readTranslation(bookId, "bn", "c1")) as { blocks: Record<string, { engine: string }> };
+      expect(new Set(Object.values(kept.blocks).map((one) => one.engine))).toEqual(new Set(["ai"]));
+      await translator.chapter({ library, bookId }, parsed, "bn", "auto", help);
+      expect(questions).toHaveLength(2);
+    });
+
+    it("should make again with the AI what a service made, but only for a reader who has a helper", async () => {
+      const { fetchImpl, calls } = services();
+      const { help, questions } = helper(faithful);
+      const translator = createChapterTranslator({ fetchImpl });
+      const parsed = chapter(TEXTS);
+      const first = await translator.chapter({ library, bookId }, parsed, "bn", "auto");
+      expect(first.blocks["c1-b1"]).toBe("ms:Appearance and reality.");
+      // A reader without a helper keeps what is there; one with a helper has the chapter made better.
+      expect((await translator.chapter({ library, bookId }, parsed, "bn", "auto")).blocks["c1-b1"]).toBe("ms:Appearance and reality.");
+      const better = await translator.chapter({ library, bookId }, parsed, "bn", "auto", help);
+      expect(better.blocks["c1-b1"]).toBe(bangla("c1-b1", "Appearance and reality."));
+      expect(better.engine).toBe("ai");
+      // One batch, so the first answer is already the whole chapter and says so.
+      expect(better.complete).toBeUndefined();
+      expect(calls).toHaveLength(1);
+      expect(questions).toHaveLength(1);
+    });
+
+    it("should ask again for a paragraph the AI got wrong, then let a service make it and not ask the AI for it again", async () => {
+      const { fetchImpl, calls } = services();
+      const { help, questions } = helper((asked) =>
+        [...asked.map(({ id, text }) => `=== ${id} ===\n${id === "c1-b2" ? text : bangla(id, text)}`), END].join("\n\n"),
+      );
+      const translator = createChapterTranslator({ fetchImpl });
+      const parsed = chapter(TEXTS);
+      const made = await translator.chapter({ library, bookId }, parsed, "bn", "auto", help);
+      // The whole batch, then only the paragraph that was still English; that one is Microsoft's.
+      expect(questions.map((one) => one.asked.map((ask) => ask.id))).toEqual([["c1-b0", "c1-b1", "c1-b2", "c1-b4"], ["c1-b2"]]);
+      expect(questions[1]?.user).toContain("c1-b2: it was still mostly English");
+      expect(made.blocks["c1-b2"]).toBe("ms:The table looks brown.");
+      expect(made.blocks["c1-b1"]).toBe(bangla("c1-b1", "Appearance and reality."));
+      expect(calls.map((call) => call.texts)).toEqual([["The table looks brown."]]);
+      // Opening it again asks nobody: the AI already failed at that very text.
+      await translator.chapter({ library, bookId }, parsed, "bn", "auto", help);
+      expect(questions).toHaveLength(2);
+    });
+
+    it("should hand a chapter to the services when the helper fails, leave the helper alone for a while, and refuse to fall back when only the AI was chosen", async () => {
+      const { fetchImpl, calls } = services();
+      let now = 0;
+      const { help, questions } = helper(() => {
+        throw new LlmError("not_logged_in", "Claude Code is not signed in on this computer.");
+      });
+      const translator = createChapterTranslator({ fetchImpl, now: () => now });
+      const made = await translator.chapter({ library, bookId }, chapter(TEXTS), "bn", "auto", help);
+      expect(made).toMatchObject({ engine: "microsoft", blocks: { "c1-b1": "ms:Appearance and reality." } });
+      // Another chapter soon after goes straight to the services, without waiting on a helper that just failed.
+      await translator.chapter({ library, bookId }, { ...chapter(["Next", "Another paragraph."]), id: "c2" }, "bn", "auto", help);
+      expect(questions).toHaveLength(1);
+      expect(calls).toHaveLength(2);
+      // Later the helper is tried again.
+      now += 4 * 60_000;
+      await translator.chapter({ library, bookId }, { ...chapter(["Last", "One more paragraph."]), id: "c3" }, "bn", "auto", help);
+      expect(questions).toHaveLength(2);
+
+      // Chosen alone, the AI never falls back: the reader is told why, and no service is asked.
+      const before = calls.length;
+      await expect(translator.chapter({ library, bookId }, chapter(TEXTS), "id", "ai", help)).rejects.toMatchObject({ readerMessage: "Claude Code is not signed in on this computer." });
+      await expect(translator.chapter({ library, bookId }, chapter(TEXTS), "tr", "ai")).rejects.toMatchObject({ readerMessage: expect.stringContaining("needs one") });
+      expect(calls).toHaveLength(before);
+    });
+
+    it("should keep the paragraphs the AI got right when its second question fails, and let a service make only the one left", async () => {
+      const { fetchImpl, calls } = services();
+      let nth = 0;
+      const { help, questions } = helper((asked) => {
+        nth += 1;
+        if (nth === 2) throw new LlmError("timeout", "The AI took too long to answer. Please try again.");
+        return [...asked.filter(({ id }) => id !== "c1-b2").map(({ id, text }) => `=== ${id} ===\n${bangla(id, text)}`), END].join("\n\n");
+      });
+      const translator = createChapterTranslator({ fetchImpl });
+      const made = await translator.chapter({ library, bookId }, chapter(TEXTS), "bn", "auto", help);
+      expect(questions).toHaveLength(2);
+      expect(made.blocks["c1-b1"]).toBe(bangla("c1-b1", "Appearance and reality."));
+      expect(made.blocks["c1-b4"]).toBe(bangla("c1-b4", "We will call it a physical object."));
+      expect(made.blocks["c1-b2"]).toBe("ms:The table looks brown.");
+      expect(calls.map((call) => call.texts)).toEqual([["The table looks brown."]]);
+      // A timeout is not the helper's failure at that text, so it is not marked as one and a later visit may try again.
+      const kept = (await library.readTranslation(bookId, "bn", "c1")) as { blocks: Record<string, { engine: string; aiTried?: boolean }> };
+      expect(kept.blocks["c1-b1"]?.engine).toBe("ai");
+      expect(kept.blocks["c1-b2"]).toMatchObject({ engine: "microsoft" });
+      expect(kept.blocks["c1-b2"]?.aiTried).toBeUndefined();
+    });
+
+    it("should keep the prose it made and then fail the chapter, never call it whole, when the services cannot translate a table", async () => {
+      const { fetchImpl } = services({ microsoft: () => new Response("busy", { status: 503 }), google: robotCheck });
+      const { help } = helper(faithful);
+      const translator = createChapterTranslator({ fetchImpl });
+      const withTable: Chapter = { ...chapter(["A Heading", "A paragraph that has words in it."]), blocks: [...chapter(["A Heading", "A paragraph that has words in it."]).blocks, { id: "c1-table", type: "table", text: "one\ttwo\nthree\tfour", page: 1 }] };
+      const part = await translator.chapter({ library, bookId }, withTable, "bn", "auto", help);
+      expect(part.complete).toBe(false);
+      expect(part.blocks["c1-b1"]).toBe(bangla("c1-b1", "A paragraph that has words in it."));
+      expect(part.blocks["c1-table"]).toBeUndefined();
+      await vi.waitFor(async () => {
+        await expect(translator.chapter({ library, bookId }, withTable, "bn", "auto", help)).rejects.toBeInstanceOf(TranslationError);
+      });
+    });
+
+    it("should make the chapter again with the second reader's own helper when the first reader's helper failed the run they both joined", async () => {
+      const { fetchImpl } = services();
+      let release = (): void => {};
+      const held = new Promise<void>((resolve) => (release = resolve));
+      const alice = helper(async () => {
+        await held;
+        throw new LlmError("failed", "You have used today's 100 requests of the admin's API model.");
+      });
+      const bob = helper(faithful);
+      const translator = createChapterTranslator({ fetchImpl });
+      const parsed = chapter(TEXTS);
+      const first = translator.chapter({ library, bookId }, parsed, "bn", "ai", { ...alice.help, who: "alice" });
+      const second = translator.chapter({ library, bookId }, parsed, "bn", "ai", { ...bob.help, who: "bob" });
+      const failure = expect(first).rejects.toMatchObject({ readerMessage: expect.stringContaining("today's 100 requests") });
+      release();
+      await failure;
+      expect((await second).blocks["c1-b1"]).toBe(bangla("c1-b1", "Appearance and reality."));
+      expect(bob.questions).toHaveLength(1);
+    });
+
+    it("should give each batch the notes of its own people, found from the batch and the paragraphs before it", async () => {
+      const { fetchImpl } = services();
+      const { help, questions } = helper(faithful);
+      const passages: string[] = [];
+      const translator = createChapterTranslator({ fetchImpl });
+      const parsed = chapter(LONG);
+      await translator.chapter({ library, bookId }, parsed, "bn", "auto", { ...help, notes: async (passage) => (passages.push(passage), `NOTE ${passages.length}`) });
+      await vi.waitFor(async () => expect((await translator.chapter({ library, bookId }, parsed, "bn", "auto", help)).complete).toBeUndefined());
+      expect(passages).toHaveLength(2);
+      // The first batch has nothing before it; the second is read with the paragraphs before it.
+      expect(passages[0]).toBe(parsed.blocks.slice(0, 2).map((block) => block.text).join("\n\n"));
+      expect(passages[1]).toBe(parsed.blocks.map((block) => block.text).join("\n\n"));
+      expect(questions[0]?.user).toContain("Notes about this book:\nNOTE 1");
+      expect(questions[1]?.user).toContain("Notes about this book:\nNOTE 2");
+    });
+  });
 });
 
 const fakeLlm: Ai = {
@@ -303,10 +534,10 @@ describe("chapter translation over HTTP", () => {
   type Call = (method: string, path: string, cookie?: string, body?: unknown) => Response | Promise<Response>;
 
   /** DeepRead with profiles (ADMIN_PASSKEY set), starting (again) on the data folder: a request to it, sending `cookie`. */
-  async function start(): Promise<Call> {
+  async function start(llm: Ai = fakeLlm): Promise<Call> {
     const profiles = createProfiles({ store: createLocalStore(dataDir), dataDir, limit: null, adminPasskey: PASSKEY, adminName: "Arafat" });
     started.push(profiles);
-    const app = createApp({ ...fakes, accounts: { profiles, sessionKey: sessionKey(await loadSessionSecret(dataDir), PASSKEY) }, translation: translation() });
+    const app = createApp({ ...fakes, llm, accounts: { profiles, sessionKey: sessionKey(await loadSessionSecret(dataDir), PASSKEY) }, translation: translation() });
     return (method, path, cookie = "", body) =>
       app.request(path, {
         method,
@@ -455,6 +686,84 @@ describe("chapter translation over HTTP", () => {
     answers.google = robotCheck;
     const failed = (await (await call("POST", "/api/admin/translation/test", admin, { lang: "bn" })).json()) as TranslationTest;
     expect(failed).toEqual({ ok: false, message: expect.stringMatching(/^Neither Microsoft nor Google could translate .*Microsoft answered 503.*\.$/) });
+  });
+
+  it("should translate with the AI helper for the reader who has one, tell the one who has none why not, and let the admin try it", async () => {
+    const llm: Llm = {
+      model: () => "fake",
+      streamText: (request) =>
+        (async function* () {
+          const asked = [...(request.user.split("The paragraphs:\n")[1] ?? "").matchAll(/^=== (\S+) ===\n([\s\S]*?)(?=\n\n=== |$)/gm)];
+          yield [...asked.map(([, id, text]) => `=== ${id} ===\nবাংলা ${id} ${"ক".repeat(Math.max(0, (text ?? "").length))}।`), "=== end ==="].join("\n\n");
+        })(),
+    };
+    // Only the admin (who may use anything that works) has a helper; Mina has none.
+    const call = await start({ ...fakeLlm, statusFor: async (access) => ({ active: access.allowed === "all" ? "claude" : null, providers: [] }), for: () => llm });
+    const { admin, adminId, mina, minaId } = await signedIn(call);
+    const id = await upload(call, admin, book("Problems", TEXTS));
+    expect((await call("PUT", `/api/books/${id}/shares/${minaId}`, admin)).status).toBe(204);
+    const shared = `${adminId}--${id}`;
+    expect((await call("PUT", "/api/admin/translation", admin, { engine: "ai" })).status).toBe(200);
+
+    const made = (await (await call("GET", `/api/books/${id}/chapters/c1/translation?lang=bn`, admin)).json()) as ChapterTranslation;
+    expect(made.engine).toBe("ai");
+    expect(made.blocks["c1-b1"]).toContain("বাংলা c1-b1");
+    expect(net.calls).toHaveLength(0);
+
+    // Mina has none, and nothing is kept for this chapter in Hindi: she is told what is missing.
+    const refused = await call("GET", `/api/books/${shared}/chapters/c1/translation?lang=hi`, mina);
+    expect(refused.status).toBe(502);
+    expect(((await refused.json()) as ApiError).message).toContain("needs one");
+    // What the admin's helper made is hers to read, too.
+    expect(((await (await call("GET", `/api/books/${shared}/chapters/c1/translation?lang=bn`, mina)).json()) as ChapterTranslation).engine).toBe("ai");
+
+    const tried = (await (await call("POST", "/api/admin/translation/test", admin, { lang: "bn" })).json()) as TranslationTest;
+    expect(tried).toMatchObject({ ok: true, engine: "ai", sample: TRANSLATION_SAMPLE });
+  });
+
+  it("should translate a chapter with the book's translator's notes, making them first when the book has none, and add the names a chapter brings", async () => {
+    const sheet = parseStyleReply(
+      JSON.stringify({
+        narrator: "Marlow tells it in the first person, plain and reflective, in natural চলিত.",
+        characters: [{ name: "Marlow", rendering: "মার্লো", role: "the narrator" }, { name: "Kurtz", rendering: "কুর্টজ", role: "an ivory agent" }],
+        address: [{ from: "Marlow", to: "Kurtz", level: "familiar", why: "friends" }],
+        glossary: [],
+      }),
+      "bn",
+    ) as BookStyle;
+    // The notes do not exist until the first request makes them, as for a book never translated.
+    let made: BookStyle | null = null;
+    const asked: Array<{ chapter?: Chapter }> = [];
+    const styles: StyleKeeper = {
+      style: async () => made,
+      ensure: async (request) => {
+        asked.push({ chapter: request.chapter });
+        made ??= sheet;
+        return made;
+      },
+    };
+    const prompts: string[] = [];
+    const llm: Ai = {
+      ...fakeLlm,
+      statusFor: async () => ({ active: "claude", providers: [] }),
+      streamText: (request) =>
+        (async function* () {
+          prompts.push(request.user);
+          const listed = request.user.split("The paragraphs:\n")[1] ?? "";
+          yield [...[...listed.matchAll(/^=== (\S+) ===\n([\s\S]*?)(?=\n\n=== |$)/gm)].map(([, id, text]) => `=== ${id} ===\nবাংলা ${id} ${"ক".repeat((text ?? "").length)}।`), "=== end ==="].join("\n\n");
+        })(),
+    };
+    const app = createApp({ ...fakes, llm, library: createLibrary(dataDir), translation: { ...translation(), styles } });
+    const form = new FormData();
+    form.set("file", new File([pdfBytes(book("Heart", ["Part One", "Marlow spoke to Kurtz at the station."]))], "book.pdf", { type: "application/pdf" }));
+    const id = ((await (await app.request("/api/books", { method: "POST", body: form })).json()) as BookSummary).id;
+
+    const response = await app.request(`/api/books/${id}/chapters/c1/translation?lang=bn`);
+    expect(((await response.json()) as ChapterTranslation).engine).toBe("ai");
+    expect(prompts[0]).toContain("Notes about this book:");
+    expect(prompts[0]).toContain("মার্লো");
+    // The chapter went to the keeper, which grows the notes with the names it brings.
+    expect(asked[0]?.chapter?.id).toBe("c1");
   });
 });
 

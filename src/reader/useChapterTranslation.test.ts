@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChapterTranslation } from "../../shared/types.ts";
 import { api, ApiFailure } from "../api.ts";
+import { translationApplied } from "./translationCache.ts";
 import { keepingPlace, queueTranslationCommit, useChapterTranslation, type ChapterTranslationState } from "./useChapterTranslation.ts";
 
 // Just enough of React to render the hook again and again: state kept by call order, and effects run again only when
@@ -44,6 +45,7 @@ vi.mock("react", () => ({
   startTransition: scheduling.startTransition,
 }));
 vi.mock("react-dom", () => ({ flushSync: scheduling.flushSync }));
+vi.mock("./translationCache.ts", async (importOriginal) => ({ ...(await importOriginal<typeof import("./translationCache.ts")>()), translationApplied: vi.fn() }));
 vi.mock("./useReadingPosition.ts", () => ({ eyeLine: () => 96 }));
 vi.mock("../api.ts", () => {
   class ApiFailure extends Error {
@@ -187,6 +189,57 @@ describe("useChapterTranslation", () => {
     expect(render("c-large", true)).toEqual({ status: "loading" });
     expect(render("c-large", true)).toEqual({ status: "ready", blocks: large.blocks });
     expect(fetchTranslation).toHaveBeenCalledTimes(1);
+  });
+
+  it("should show the first paragraphs of a chapter an AI helper is still translating, ask for the rest, and keep only the whole", async () => {
+    const parts: Array<() => void> = [];
+    vi.stubGlobal("setTimeout", (callback: () => void) => parts.push(callback));
+    fetchTranslation
+      .mockResolvedValueOnce({ ...arrived, engine: "ai", complete: false })
+      .mockResolvedValueOnce({ lang: "bn", engine: "ai", blocks: { b1: "প্রথম অনুচ্ছেদ।", b2: "দ্বিতীয় অনুচ্ছেদ।" } });
+    render("c-parts", true);
+    await vi.waitFor(() => expect(render("c-parts", true)).toEqual({ status: "ready", blocks: arrived.blocks, translating: true }));
+    // The rest is asked for after a pause, not at once.
+    expect(fetchTranslation).toHaveBeenCalledTimes(1);
+    parts.shift()?.();
+    await vi.waitFor(() => expect(render("c-parts", true)).toEqual({ status: "ready", blocks: { b1: "প্রথম অনুচ্ছেদ।", b2: "দ্বিতীয় অনুচ্ছেদ।" } }));
+    expect(parts).toHaveLength(0);
+
+    // Only the whole chapter is kept: turned off and on again it is not asked for again.
+    render("c-parts", false);
+    expect(render("c-parts", true)).toEqual({ status: "loading" });
+    expect(render("c-parts", true)).toMatchObject({ status: "ready", blocks: { b2: "দ্বিতীয় অনুচ্ছেদ।" } });
+    expect(fetchTranslation).toHaveBeenCalledTimes(2);
+  });
+
+  it("should let neighbouring chapters go only once this one is whole", async () => {
+    const parts: Array<() => void> = [];
+    vi.stubGlobal("setTimeout", (callback: () => void) => parts.push(callback));
+    vi.mocked(translationApplied).mockClear();
+    fetchTranslation
+      .mockResolvedValueOnce({ ...arrived, engine: "ai", complete: false })
+      .mockResolvedValueOnce({ lang: "bn", engine: "ai", blocks: { b1: "প্রথম অনুচ্ছেদ।", b2: "দ্বিতীয় অনুচ্ছেদ।" } });
+    render("c-applied", true);
+    await vi.waitFor(() => expect(render("c-applied", true)).toMatchObject({ status: "ready", translating: true }));
+    expect(translationApplied).not.toHaveBeenCalled();
+    parts.shift()?.();
+    await vi.waitFor(() => expect(render("c-applied", true)).toMatchObject({ status: "ready", blocks: { b2: "দ্বিতীয় অনুচ্ছেদ।" } }));
+    expect(translationApplied).toHaveBeenCalledWith(JSON.stringify(["book", "c-applied", "bn"]));
+  });
+
+  it("should keep the paragraphs already shown when asking for the rest fails, and ask again only when the reader says so", async () => {
+    const parts: Array<() => void> = [];
+    vi.stubGlobal("setTimeout", (callback: () => void) => parts.push(callback));
+    fetchTranslation
+      .mockResolvedValueOnce({ ...arrived, engine: "ai", complete: false })
+      .mockRejectedValueOnce(new ApiFailure("unreachable", "DeepRead is not reachable.", 0));
+    render("c-stalled", true);
+    await vi.waitFor(() => expect(render("c-stalled", true)).toMatchObject({ status: "ready", translating: true }));
+    parts.shift()?.();
+    await vi.waitFor(() => expect(render("c-stalled", true)).toMatchObject({ status: "ready", blocks: arrived.blocks, stalled: { message: "DeepRead is not reachable." } }));
+    // Nothing is asked for again by itself.
+    expect(parts).toHaveLength(0);
+    expect(fetchTranslation).toHaveBeenCalledTimes(2);
   });
 
   it("should say the admin turned translation off, and hand the switch back, when the server refuses", async () => {

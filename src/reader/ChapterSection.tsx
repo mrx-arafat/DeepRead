@@ -85,6 +85,15 @@ export const ChapterSection = memo(function ChapterSection({ chapter, book, note
       {/* Always there, so a screen reader hears the line as it changes; with nothing to say it takes no room. */}
       <div className="translation-status" role="status">
         {translation.status === "loading" && <p>Translating this chapter into {LANGUAGES[lang]}...</p>}
+        {translation.status === "ready" && translation.translating && <p>Translating the rest of this chapter into {LANGUAGES[lang]}...</p>}
+        {translation.status === "ready" && translation.stalled && (
+          <p>
+            {translation.stalled.message}{" "}
+            <button type="button" className="link-button" onClick={translation.stalled.retry}>
+              Try again
+            </button>
+          </p>
+        )}
         {translation.status === "failed" && (
           <p>
             {translation.message}{" "}

@@ -13,7 +13,7 @@ import { parseStreamLine } from "./claude-stream.ts";
 import type { StreamEvent } from "./claude-stream.ts";
 import { parseCodexLine } from "./codex-stream.ts";
 
-export type LlmTask = "word" | "explain" | "preview" | "recap" | "quiz" | "closing" | "ask";
+export type LlmTask = "word" | "explain" | "preview" | "recap" | "quiz" | "closing" | "ask" | "translate" | "style";
 
 /**
  * The one place that decides which Claude model answers what, how hard it thinks, and how long any tool gets.
@@ -33,6 +33,14 @@ export type LlmTask = "word" | "explain" | "preview" | "recap" | "quiz" | "closi
  *   for its answer key.
  * - closing: one or two sentences that arrive whole, after the chapter is read. It is not measured yet: it takes
  *   medium like recap, which also reads the whole chapter and writes a few careful lines.
+ * - translate: a few paragraphs of a chapter in the reader's language, which arrive whole because they are checked before
+ *   they are kept. It takes high, because which of আপনি, তুমি and তুই fits who speaks to whom is a judgement. Measured on 15
+ *   passages of public-domain novels and philosophy, scored 1-5 by Sonnet as a judge against a rubric: Microsoft 2.69; Sonnet
+ *   at high 4.49 (register 4.93, no wrong level of address); at medium 4.43 (register 4.60, one wrong level) and quicker, the
+ *   first paragraphs after a median 10 s against 17 s. The register is what readers were let down on, so high stays.
+ * - style: a book's translator's notes (translation-style.ts), made once per book and language from a sample of its
+ *   chapters and read whole as JSON. It takes high for the same judgement as translate, since the notes fix who says
+ *   আপনি, তুমি or তুই to whom for every later translation of the book.
  */
 export const TASK_PROFILES: Record<
   LlmTask,
@@ -45,6 +53,8 @@ export const TASK_PROFILES: Record<
   recap: { model: "sonnet", effort: "medium", timeoutMs: 300_000 },
   quiz: { model: "sonnet", effort: "high", timeoutMs: 300_000 },
   closing: { model: "sonnet", effort: "medium", timeoutMs: 120_000 },
+  translate: { model: "sonnet", effort: "high", timeoutMs: 180_000 },
+  style: { model: "sonnet", effort: "high", timeoutMs: 180_000 },
 };
 
 export type LlmRequest = {

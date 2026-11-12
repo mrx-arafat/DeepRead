@@ -5,18 +5,19 @@ import { api } from "../api.ts";
 import { reason } from "./profileText.ts";
 
 const ENGINES: Record<TranslationEngine, { name: string; about: string }> = {
-  auto: { name: "Automatic", about: "Microsoft first, and Google if Microsoft cannot answer." },
-  microsoft: { name: "Microsoft Translator", about: "Every chapter from Microsoft." },
-  google: { name: "Google Translate", about: "Every chapter from Google." },
+  auto: { name: "Automatic", about: "The reader's AI helper when they have one, else Microsoft, and Google if Microsoft cannot answer." },
+  ai: { name: "AI helper, book-aware", about: "Only the reader's AI helper for the text, which reads the book around each paragraph (code and tables still go to the free services). A chapter can take a few minutes." },
+  microsoft: { name: "Microsoft Translator", about: "Every chapter from Microsoft, a paragraph at a time." },
+  google: { name: "Google Translate", about: "Every chapter from Google, a paragraph at a time." },
 };
 
 /** Who answered a try, in a sentence. */
-const ANSWERED_BY = { microsoft: "Microsoft", google: "Google" } as const;
+const ANSWERED_BY = { ai: "The AI helper", microsoft: "Microsoft", google: "Google" } as const;
 
 /**
  * Chapter translation, as a card on the admin's page like the API Model's: whether readers may show a chapter in their own
- * language under each paragraph, which free service translates it, and a try of that service on one sentence. It is a
- * translation service, not an AI helper, so it costs nothing and uses no one's AI.
+ * language under each paragraph, what translates it (the reader's AI helper, which reads the book around each paragraph, or a
+ * free service), and a try of that on one sentence.
  */
 export function AdminTranslation() {
   const id = useId();
@@ -82,9 +83,9 @@ export function AdminTranslation() {
         <div>
           <h2 id="chapter-translation-heading">Chapter translation</h2>
           <p className="admin-hint api-card-intro">
-            Readers can show a whole chapter in their own language, under each paragraph. A free translation service does it, not
-            an AI helper, so it costs nothing and uses no one&apos;s AI. Each paragraph is translated once and kept with the book for
-            everyone.
+            Readers can show a whole chapter in their own language, under each paragraph. An AI helper reads the book around each
+            paragraph and writes it the way a published edition would; a free translation service does it when the reader has no
+            helper or it fails. Each paragraph is translated once and kept with the book for everyone.
           </p>
         </div>
         {settings && (
@@ -143,7 +144,7 @@ export function AdminTranslation() {
           <li className="api-setting">
             <fieldset className="api-choices" aria-describedby={`${id}-engines-note`}>
               <legend>
-                <h3>Translation service</h3>
+                <h3>Translated by</h3>
               </legend>
               <div className="api-choice-grid">
                 {TRANSLATION_ENGINES.map((engine) => (
@@ -173,8 +174,10 @@ export function AdminTranslation() {
               </div>
             </fieldset>
             <p id={`${id}-engines-note`} className="admin-hint api-choices-note">
-              Both are free public services that need no account. Now and then one is slow or refuses, which is why Automatic tries
-              the other.
+              The AI helper is what makes a chapter read like a book: it knows who is speaking to whom and what a word means here. It
+              uses the reader&apos;s AI, and with the API Model each batch of paragraphs counts as a request in their day. Microsoft and
+              Google are free public services that need no account and have no memory of the book. Now and then one is slow or
+              refuses, which is why Automatic tries the other.
             </p>
           </li>
 
@@ -182,7 +185,7 @@ export function AdminTranslation() {
             <div className="api-setting-row">
               <div>
                 <h3>Try it</h3>
-                <p className="admin-hint">Translates one sentence with the service chosen above.</p>
+                <p className="admin-hint">Translates one sentence with the engine chosen above.</p>
               </div>
               <div className="api-setting-actions api-try">
                 <label htmlFor={`${id}-lang`} className="api-try-label">

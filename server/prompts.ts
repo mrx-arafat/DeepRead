@@ -12,6 +12,8 @@ export type PassageContext = {
   selection: string;
   /** English name of the reader's own language, e.g. "Bangla". */
   language: string;
+  /** The translator's notes for this book (translation-style.ts styleNotes), or "" when it has none yet. */
+  style?: string;
 };
 
 export type ChapterContext = {
@@ -48,13 +50,28 @@ function passageBlock(ctx: PassageContext): string {
   ].join("\n");
 }
 
+/**
+ * What a translation into the reader's language must do, in the words every prompt that translates uses, so a selection, a
+ * tapped line and a whole chapter ask for the same thing. `hasNotes` says the prompt carries the book's translator's notes.
+ */
+export function translationRules(language: string, hasNotes: boolean): string[] {
+  const bangla = language === "Bangla";
+  return [
+    `- Translate the meaning in this context, not the words one by one. An idiom or a figure of speech becomes the ${language} one that means the same, never its words.`,
+    `- Write natural, everyday ${language}${bangla ? " in চলিত, never সাধু" : ""}, with one steady voice for the narrator. Keep the author's tone, irony and sentence rhythm where ${language} allows.`,
+    `- Choose how each speaker addresses the listener from who is speaking to whom${bangla ? " (আপনি, তুমি or তুই, with the verb forms that go with it)" : ""}: age, rank, closeness and the time of the story. The earlier paragraphs tell you who they are. Keep the same choice for the same two people every time.`,
+    `- Write names of people and places in ${language} script, spelled the same way every time.${hasNotes ? " Where the translator's notes give a spelling, a term or a way two people address each other, follow them exactly." : ""}`,
+    "- Add nothing, leave nothing out, and put no explanation inside the translation. Decide who is speaking to whom before you write the first word, and write the translation once, with no corrections or remarks about it.",
+  ];
+}
+
 const EXPLAIN_TASKS: Record<ExplainMode, (ctx: PassageContext) => string> = {
   word: (ctx) =>
     [
       `The reader tapped: "${ctx.selection}"`,
       "",
       "Reply with exactly these three lines and nothing else:",
-      `${ctx.language}: the ${ctx.language} word or short phrase for the sense it has in this sentence, written in ${ctx.language} script only (no transliteration). One word or short phrase, not a sentence: a single term, with no brackets and no second term. If the word has several senses, pick the one used here. If it is a term of the book's subject (philosophy, logic, a science, law...), think about which term ${ctx.language} textbooks of that subject use and give that standard term, never a term from another field and never a word-for-word coinage.`,
+      `${ctx.language}: the ${ctx.language} word or short phrase for the sense it has in this sentence, written in ${ctx.language} script only (no transliteration). One word or short phrase, not a sentence: a single term, with no brackets and no second term. If the word has several senses, pick the one used here. If it is a term of the book's subject (philosophy, logic, a science, law...), think about which term ${ctx.language} textbooks of that subject use and give that standard term, never a term from another field and never a word-for-word coinage.${ctx.style ? " If the translator's notes give a rendering for this word or name, write exactly that." : ""}`,
       "Meaning: what the tapped word or phrase itself means here, in simple English, at most 14 words. Define the word. Do not retell the sentence.",
       "Example: one new, short everyday sentence that uses it in the same sense, worded the way a native English speaker would naturally say it.",
     ].join("\n"),
@@ -81,9 +98,10 @@ const EXPLAIN_TASKS: Record<ExplainMode, (ctx: PassageContext) => string> = {
       `The reader selected: "${ctx.selection}"`,
       "",
       `Reply in ${ctx.language}, written in ${ctx.language} script. Write these two parts, each starting with its bold label (keep the labels in English):`,
-      `**Translation:** a faithful, natural ${ctx.language} translation of everything the reader selected, the way a skilled literary translator would write it. Keep the meaning and tone exact. Do not translate word for word, do not shorten, do not add anything.`,
+      `**Translation:** the ${ctx.language} translation of everything the reader selected, written the way a published ${ctx.language} edition of this book would read it. Rules for the translation:`,
+      ...translationRules(ctx.language, Boolean(ctx.style)),
       `**Explanation:** 2 to 4 short sentences in everyday ${ctx.language} on what this means at this point in the book, the way a friend would explain it.`,
-      `Write names of people and places in ${ctx.language} script. Use correct, standard ${ctx.language} spelling and grammar.`,
+      `Use correct, standard ${ctx.language} spelling and grammar.`,
     ].join("\n"),
   deep: (ctx) =>
     [
@@ -105,10 +123,15 @@ const EXPLAIN_TASKS: Record<ExplainMode, (ctx: PassageContext) => string> = {
     ].join("\n"),
 };
 
+// The two answers that put something into the reader's language. The others only describe the passage, so the notes would
+// be noise there and would change their cached answers for nothing.
+const NOTED_MODES: readonly ExplainMode[] = ["word", "native"];
+
 export function explainPrompt(mode: ExplainMode, ctx: PassageContext): Prompt {
+  const notes = ctx.style && NOTED_MODES.includes(mode) ? `\n\n${ctx.style}` : "";
   return {
     system: tutor(ctx.language),
-    user: `${passageBlock(ctx)}\n\n${EXPLAIN_TASKS[mode](ctx)}`,
+    user: `${passageBlock(ctx)}${notes}\n\n${EXPLAIN_TASKS[mode](ctx)}`,
   };
 }
 
@@ -268,6 +291,99 @@ export function askPrompt(
       chapterBlock(ctx),
       earlier ? `\nConversation so far:\n${earlier}` : "",
       `\nReader's question: ${question}`,
+    ].join("\n"),
+  };
+}
+
+export type StyleSheetContext = {
+  bookTitle: string;
+  author: string | null;
+  /** English name of the language the book is translated into, e.g. "Bangla". */
+  language: string;
+  /** The pronoun of each respect level, for a language that has such levels; null for one that has none. */
+  levels: { formal: string; familiar: string; intimate: string } | null;
+  /** What names are written in when it is not Latin letters, e.g. "Bangla script"; null for a language that writes them in Latin letters. */
+  script: string | null;
+  /** The book's own text: the stretches of each sampled chapter with the most talk in them. */
+  sample: string;
+};
+
+const STYLE_SYSTEM = (language: string): string =>
+  [
+    `You are a senior literary translator. Before you translate a book into ${language} you write its style sheet: the decisions that keep every later translation of the book the same, so that it reads like one published edition and not like pieces from different hands.`,
+    "You reply with one JSON object and nothing else: no code fences, no words around it.",
+  ].join("\n");
+
+/** The JSON shape both style prompts ask for, as lines of the prompt. `narrator` is only asked for when the sheet is made, not when it grows. */
+function styleShape(ctx: StyleSheetContext, withNarrator: boolean): string[] {
+  const { language, levels, script } = ctx;
+  const written = script ? `written in ${script}, once, in the spelling a ${language} reader will see` : `in ${language}`;
+  return [
+    "{",
+    ...(withNarrator
+      ? [`  "narrator": string, at most 25 words: who tells the book, in what voice, and the ${language} register to keep (${language === "Bangla" ? "plain, natural চলিত, never সাধু" : `natural, everyday ${language}`}),`]
+      : []),
+    `  "characters": [{"name": string as the book writes it, "rendering": string ${written}, "role": string, at most 8 words}],`,
+    ...(levels
+      ? [`  "address": [{"from": string, "to": string, "level": "formal" | "familiar" | "intimate", "why": string, at most 8 words}],`]
+      : []),
+    `  "glossary": [{"term": string as the book writes it, "rendering": string ${written}}]`,
+    "}",
+    "",
+    "Rules:",
+    "- A person's name in `from` and `to` is the same string as in `characters`, or \"narrator\" when the narrator speaks or is spoken to.",
+    ...(levels
+      ? [
+          `- \`level\` is how \`from\` speaks to \`to\`: formal is ${levels.formal}, familiar is ${levels.familiar}, intimate is ${levels.intimate}; the verb forms go with it. Decide each direction on its own, since a servant to a master and a master to a servant differ. Use age, rank, closeness and the era and country of the story. Only for people who speak to each other in the text.`,
+        ]
+      : []),
+    "- `glossary` is for recurring terms, titles, places, institutions or technical words whose rendering must not drift from one chapter to the next (not for ordinary words). For a term of the book's subject, give the standard term that textbooks of that subject use in " +
+      `${language}.`,
+    "- Put the most important entries first. Use only what the text and your knowledge of this book show. A book with no people in it (an essay, a textbook) has empty `characters`" + (levels ? " and `address`" : "") + ".",
+  ];
+}
+
+export function styleSheetPrompt(ctx: StyleSheetContext & { names: string[] }): Prompt {
+  return {
+    system: STYLE_SYSTEM(ctx.language),
+    user: [
+      `Book: ${ctx.bookTitle}`,
+      ...(ctx.author ? [`Author: ${ctx.author}`] : []),
+      ...(ctx.names.length > 0 ? [`Capitalised names that recur in the book, most often first: ${ctx.names.join(", ")}`] : []),
+      "",
+      "Excerpts from the book (the parts with the most talk in them):",
+      '"""',
+      ctx.sample,
+      '"""',
+      "",
+      `Write the style sheet for translating this book into ${ctx.language} as this JSON object:`,
+      ...styleShape(ctx, true),
+      "- At most 10 `characters`" + (ctx.levels ? ", 8 `address` pairs" : "") + " and 10 `glossary` entries.",
+    ].join("\n"),
+  };
+}
+
+export function styleAdditionsPrompt(ctx: StyleSheetContext & { notes: string; newNames: string[] }): Prompt {
+  return {
+    system: STYLE_SYSTEM(ctx.language),
+    user: [
+      `Book: ${ctx.bookTitle}`,
+      ...(ctx.author ? [`Author: ${ctx.author}`] : []),
+      "",
+      "The style sheet made from the earlier chapters:",
+      '"""',
+      ctx.notes,
+      '"""',
+      "",
+      `A new chapter brings names the sheet has not seen: ${ctx.newNames.join(", ")}.`,
+      "Excerpts from the new chapter:",
+      '"""',
+      ctx.sample,
+      '"""',
+      "",
+      "Add only what the sheet is missing. Never repeat an entry it has, and never change one. Reply with this JSON object, with an empty list where there is nothing to add:",
+      ...styleShape(ctx, false),
+      "- At most 5 entries in each list.",
     ].join("\n"),
   };
 }

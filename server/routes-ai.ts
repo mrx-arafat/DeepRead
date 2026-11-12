@@ -39,6 +39,9 @@ import type { Llm } from "./llm.ts";
 import { askPrompt, chapterAidPrompt, checkClosing, closingPrompt, explainPrompt } from "./prompts.ts";
 import type { Prompt } from "./prompts.ts";
 import { parseQuiz, validateQuiz } from "./quiz.ts";
+import { bookHome } from "./routes-translation.ts";
+import { bookStyles, styleNotes } from "./translation-style.ts";
+import type { StyleKeeper } from "./translation-style.ts";
 
 const MAX_ID_FIELD = 200;
 const MAX_SELECTION_CHARS = 5_000;
@@ -230,8 +233,8 @@ async function closingAid(c: Context, library: Library, helper: Llm, bookId: str
  * With profiles, each reader's questions are answered by a helper the admin gave them, and by no other: this is the one place
  * that decides it, so the picker the reader sees only shows what is decided here.
  */
-export function aiRoutes(deps: { llm: Ai; accounts?: Accounts }): Hono<AppEnv> {
-  const { llm, accounts } = deps;
+export function aiRoutes(deps: { llm: Ai; accounts?: Accounts; styles?: StyleKeeper }): Hono<AppEnv> {
+  const { llm, accounts, styles = bookStyles } = deps;
   const routes = new Hono<AppEnv>();
 
   /** The admin's name, so a reader is told whose helper they are using. */
@@ -278,12 +281,21 @@ export function aiRoutes(deps: { llm: Ai; accounts?: Accounts }): Hono<AppEnv> {
     if (!current) return blockNotFound(c);
 
     const task = mode === "word" ? "word" : "explain";
+    const passage = buildPassage(chapter.blocks, at, mode === "native" ? "translate" : task);
+    // The book's translator's notes keep a name, a term and who says আপনি or তুমি to whom the same here as in the chapter
+    // translation. They are kept with the book's owner, whoever is reading it.
+    const home = bookHome(c, accounts, bookId);
+    const sheet = mode === "word" || mode === "native" ? await styles.style(home.library, home.bookId, lang) : null;
+    // The first line translated in a book makes its notes behind the answer: it does not wait for them, and the next one finds
+    // them. With notes, a chapter that brings names they have not seen adds them (it asks the helper only when there are some).
+    if (mode === "native") void styles.ensure({ library: home.library, bookId: home.bookId, book, lang, helper, chapter });
     const prompt = explainPrompt(mode, {
       bookTitle: book.title,
       chapterTitle: chapter.title,
-      passage: buildPassage(chapter.blocks, at, task),
+      passage,
       selection,
       language: LANGUAGES[lang],
+      style: styleNotes(sheet, mode === "word" ? { text: selection, wordsOnly: true } : { text: passage }),
     });
     const key = cacheKey({
       task,

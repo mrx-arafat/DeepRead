@@ -35,7 +35,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // The admin's OpenRouter key and model: only with profiles on, where there is an admin to hold them (with one library, .env does it).
   if (deps.accounts && deps.openrouter) app.route("/api/admin/openrouter", openrouterRoutes({ openrouter: deps.openrouter, llm: deps.llm }));
   // Whether readers may have chapters translated, and by which service: only with profiles on (with one library, the reader may).
-  if (deps.accounts && deps.translation) app.route("/api/admin/translation", translationAdminRoutes(deps.translation));
+  if (deps.accounts && deps.translation) app.route("/api/admin/translation", translationAdminRoutes({ ...deps.translation, llm: deps.llm }));
   // Whether readers get the button that opens a deep dive in an outside chat: only with profiles on (with one library, they do).
   if (deps.accounts && deps.handoff) app.route("/api/admin/handoff", handoffAdminRoutes(deps.handoff));
   // Not `total`: it adds up every profile's books, and one reader's business is their own.
@@ -62,7 +62,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     }
   });
 
-  if (deps.translation) app.route("/api", translationRoutes({ ...deps.translation, accounts: deps.accounts }));
+  if (deps.translation) app.route("/api", translationRoutes({ ...deps.translation, accounts: deps.accounts, llm: deps.llm }));
   if (deps.handoff) app.route("/api", handoffRoutes(deps.handoff));
   // The natural voice: every server says whether it reads it; only one with a voice box has the address that does.
   app.route("/api", voiceRoutes({ voice: deps.voice, accounts: deps.accounts }));

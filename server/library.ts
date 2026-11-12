@@ -1,6 +1,7 @@
 // The books, kept in an ObjectStore (storage.ts): the data folder on this computer, or an R2 bucket.
 // Each book is books/<id>/{source.pdf, book.json, meta.json, notes.json, cache/<key>.json}, plus cover.webp when page 1
-// is a cover, and translations/<lang>/<chapter id>.json for each chapter translated (chapter-translation.ts).
+// is a cover, translations/<lang>/<chapter id>.json for each chapter translated (chapter-translation.ts), and
+// style/<lang>.json, the translator's notes that keep names and respect levels the same in every translation (translation-style.ts).
 // meta.json is written last and removed first, so a book exists exactly while its meta.json does: a crash in between
 // leaves files no listing shows, and the next start clears them away. meta.json carries everything the list view
 // needs, so listing never opens book.json. Once read, the list of books and each meta.json are kept in
@@ -270,6 +271,10 @@ export type Library = {
   readTranslation(id: string, lang: LangCode, chapterId: string): Promise<unknown>;
   /** Keeps it with the book, so it goes when the book goes. Never rejects: one not kept is made again next time. */
   writeTranslation(id: string, lang: LangCode, chapterId: string, value: unknown): Promise<void>;
+  /** The translator's notes translation-style.ts kept for the book in `lang`. Null when none are kept, or they cannot be read. */
+  readStyle(id: string, lang: LangCode): Promise<unknown>;
+  /** Keeps them with the book, so they go when the book goes. Never rejects: notes not kept are made again next time. */
+  writeStyle(id: string, lang: LangCode, value: unknown): Promise<void>;
   /** A read-aloud clip routes-voice.ts kept for the book under `key`. Null when none is kept, or it cannot be read. */
   readVoice(id: string, key: string): Promise<Buffer | null>;
   /**
@@ -299,6 +304,8 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
   const folderOf = (id: string): string => keyOf(id, "");
   const translationOf = (id: string, lang: LangCode, chapterId: string): string =>
     keyOf(id, `translations/${lang}/${PLAIN_NAME.test(chapterId) ? chapterId : createHash("sha256").update(chapterId).digest("hex")}.json`);
+
+  const styleOf = (id: string, lang: LangCode): string => keyOf(id, `style/${lang}.json`);
 
   const voiceOf = (id: string, key: string): string => {
     if (!PLAIN_NAME.test(key)) throw new Error(`invalid clip key: ${JSON.stringify(key)}`);
@@ -930,6 +937,27 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
         // A damaged translation is just a miss: the chapter is translated again, and written over it.
         console.warn(`ignoring unreadable translation of ${id}:`, error);
         return null;
+      }
+    },
+
+    async readStyle(id, lang) {
+      try {
+        return await readJson(styleOf(id, lang));
+      } catch (error) {
+        // Damaged notes are just a miss: they are made again, and written over.
+        console.warn(`ignoring unreadable translator's notes of ${id}:`, error);
+        return null;
+      }
+    },
+
+    async writeStyle(id, lang, value) {
+      try {
+        await serialized(id, async () => {
+          // If the book was removed while its notes were being made, they must not bring part of it back.
+          if (await exists(id)) await store.write(styleOf(id, lang), JSON.stringify(value));
+        });
+      } catch (error) {
+        console.warn(`could not keep the translator's notes of ${id}:`, error);
       }
     },
 

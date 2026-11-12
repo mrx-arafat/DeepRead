@@ -252,6 +252,7 @@ Tap or click any word.
 A card shows its meaning in your language, a simple English meaning, and an everyday example.
 The meaning is chosen for the sentence you are in, so "minute sums of money" is "very small", not a unit of time.
 Terms like "sense-data" and "a priori" are looked up whole.
+A character's name or a term the book keeps using is written the same way every time, because the card follows the book's translator's notes (see [Explain a passage](#5-explain-a-passage)).
 The speaker button says the word aloud.
 
 <table><tr><td><img src="docs/images/word-card.webp" alt="A tapped word with its card in the margin: Bangla meaning, simple meaning and example" width="900"></td></tr></table>
@@ -267,12 +268,24 @@ Select a sentence or a paragraph, then choose what you want:
 | --- | --- |
 | **Explain** | The passage in simple words, in context (who is speaking, what just happened), its deeper meaning, and its hard words |
 | **Example** | The idea retold as an everyday situation |
-| **In Bangla** (named after your language) | A faithful translation into your language, then a short explanation |
+| **In Bangla** (named after your language) | A translation that reads like a published edition of the book (the meaning in context, natural everyday Bangla, and the right আপনি, তুমি or তুই for who is speaking to whom), then a short explanation |
 | **Listen** | Reading aloud from that passage |
 | **Highlight** and its colours | The passage marked in yellow, green, blue or pink; **Highlight** uses the colour you picked last |
 | **Reflect** | Your own note attached to the selected passage |
 
 <table><tr><td><img src="docs/images/select-passage.webp" alt="A selected passage with the Explain, Example, In Bangla and Listen buttons, and the Highlight button with its four colours" width="900"></td></tr></table>
+
+**The book's translator's notes.**
+A translator keeps notes beside the manuscript, so that a name is spelled one way, a recurring term has one rendering, and two people always address each other the same way.
+DeepRead does the same for each book and language.
+The first time you use **In Bangla** in a book, your AI helper reads a sample of the book once (the parts with the most talk, from up to 12 chapters) and writes its notes: how the main characters' names are spelled in your language, a few terms the book keeps using, and whether each pair of speakers says আপনি, তুমি or তুই to each other.
+That first answer does not wait for the notes.
+The next **In Bangla** answers and tapped words follow them, and so does the AI helper's chapter translation.
+The notes are kept with the book, so every reader of it and every device uses the same ones.
+A name or a term that is in the notes is never changed later; when a new chapter brings a character the notes have not seen, they only grow.
+They are short (under 1,400 characters in a prompt): a passage gets the names and terms that appear in it, and how the book's pairs of speakers address each other.
+Because the speaker of a line is often named many paragraphs before it, **In Bangla** looks back up to 20 paragraphs from your selection (Explain looks back 6).
+Without an AI helper there are no notes, and everything works as before.
 
 The answer is pinned beside the paragraph like a teacher's note. Choose **Save to notebook** on a completed explanation to keep its exact text for later, even if the AI helper is unavailable.
 Once DeepRead confirms **Notes saved**, these notes are kept with the book, so clearing your browser does not lose them and they show on your phone too.
@@ -375,12 +388,24 @@ Tapping a word still looks it up, and read-aloud turns the page as the voice rea
 Explanation languages: Bangla (the default), Hindi, Urdu, Arabic, Spanish, French, Indonesian and Turkish.
 
 **Translation** in **Aa** shows the whole chapter in your language as well, each paragraph's translation right under it, like a bilingual edition.
-A free translation service makes it (Microsoft Translator, or Google Translate when Microsoft cannot answer), not your AI helper, so it costs nothing and uses no one's AI.
-Each paragraph is translated once and kept with the book, so the chapter shows translated at once the next time, on any device, and for anyone it is shared with.
+Under **Automatic** (the default), when you have an AI helper (Claude Code, Codex or the API Model), the helper makes it.
+It reads the book around each paragraph (up to 20 paragraphs before each batch, with the Bangla it has already written for them) and follows the book's translator's notes, so it knows who is speaking to whom and what a word means at that point.
+It writes the way a published edition would: natural spoken-style Bangla, with the right level of address (আপনি, তুমি or তুই) and verb forms for each pair of people, kept the same through the book.
+The first chapter translated in a book waits about half a minute, once, while its notes are made; after that, a chapter that brings a character the notes have not seen adds the name to them behind the translation.
+It works through the chapter a few paragraphs at a time, so the first ones show after about ten to twenty seconds (about half a minute for the first chapter of a book, which also makes the book's notes) and the rest follow while you read, with a line under the chapter title saying it is still translating.
+Each batch is checked before it is kept: every paragraph must be there once, in Bangla, ending where the English ends, and not cut short or padded, and the helper must close its answer with an end line.
+A paragraph the helper cannot get right is made by a free translation service instead.
+Code, tables and text with no words in it are never sent to the helper: a free translation service translates them, whatever the admin chose.
+Without a helper, or when the helper fails, a free translation service (Microsoft Translator, or Google Translate when Microsoft cannot answer) makes the chapter at once and at no cost.
+It works a paragraph at a time with no memory of the book, so it can miss what a word means in its context, for example "table" as a chart instead of the furniture.
+A chapter a free service made is made again by the AI helper the next time a reader who has one opens it, except for a paragraph the helper already failed at.
+Each paragraph is translated once by whatever made it and kept with the book, together with what made it, so the chapter shows translated at once the next time, on any device, and for anyone it is shared with.
 The chapter you open starts first; other chapters begin translating as you approach them, keeping distant chapters from competing with reading on your phone.
-A translation service works a sentence at a time and can miss what a word means in its context, for example "table" as a chart instead of the furniture.
+The helper's translation uses your AI: with the API Model, each question to it counts as one request towards your daily limit.
+A batch of paragraphs is one question, a second question for paragraphs that failed the checks is another, and the first batch of a chapter is smaller (about 1,500 characters) than the rest (about 4,000).
 When the meaning matters, select the passage and choose **Explain** or **In Bangla**.
-With profiles on, the admin decides whether readers may use it and which service makes it.
+With profiles on, the admin decides whether readers may use it and what makes it.
+If the admin picks **Microsoft Translator** or **Google Translate**, only that free service is used, with no helper and no notes.
 
 <table><tr><td><img src="docs/images/translation.webp" alt="A chapter with Translation on: each English paragraph followed by its Bangla translation in a softer colour" width="900"></td></tr></table>
 
@@ -856,7 +881,10 @@ From there you can:
   A reader who asked for it shows **Approve** and **Not now** in place of the switch.
   **Service** at the top of its settings chooses where the model is asked: OpenRouter, Anthropic, another OpenAI-compatible API such as OpenAI, DeepSeek or Groq, or Ollama and LM Studio on a computer of your own.
 - **Turn chapter translation on or off.**
-  The **Chapter translation** card under the API Model lets readers show chapters in their language or not, chooses the service (**Automatic**, which tries Microsoft and then Google, **Microsoft Translator** or **Google Translate**), and has a **Try it** button that translates a sample sentence.
+  The **Chapter translation** card under the API Model lets readers show chapters in their language or not, chooses what translates them, and has a **Try it** button that translates a sample sentence.
+  **Automatic** uses the reader's AI helper when they have one and falls back to Microsoft, then Google.
+  **AI helper, book-aware** uses only the reader's helper for the text, which reads the book around each paragraph, and shows an error instead of a lesser translation when it cannot (code, tables and text with no words still go to the free services).
+  **Microsoft Translator** and **Google Translate** are the free services alone.
   The admin can always translate.
 - **See and stop shared books.**
   Under the profiles, **Shared books** lists every book one profile shares with another, with a **Stop sharing** button on each.
@@ -1056,6 +1084,7 @@ Claude Haiku is about twice as fast, but it invented events and wrote broken Ban
 Each kind of answer runs at a Claude Code effort level DeepRead picks for it, whatever yours is set to, chosen by timing it and checking what it writes.
 A tapped word runs at "high", so an everyday word shows its Bangla line in about a second and only a term of the book's subject waits while Sonnet thinks.
 The quiz runs at "high" too: it arrives whole, in about 10 seconds either way, so it keeps the extra thought for its answers.
+A book's translator's notes run at "high" as well, once per book and language, since they fix who says আপনি or তুমি to whom for every later translation of the book.
 Notes, your own questions, previews and summaries run at "medium", so their first words come in about a second and a half instead of the 4 to 8 seconds they took at "xhigh".
 With Codex, answers come from Codex's default model at low reasoning effort; its own coding instructions are replaced by DeepRead's.
 Codex runs in a Codex home of DeepRead's own, `data/codex-home`, signed in through a link to your own sign-in, so your personal `~/.codex/AGENTS.md`, skills and settings stay out of its answers.
@@ -1103,9 +1132,13 @@ Each sentence is made while the one before it is read, the silence the voice lea
 - The text you ask about goes to Anthropic (Claude Code) or OpenAI (Codex) through the sign-in of whoever runs DeepRead, the same as any session they start themselves.
   With the API Model it goes to OpenRouter and the company that runs the model, on the admin's API key, under OpenRouter's terms and the settings of the admin's account there.
   Only readers the admin gave a helper to can use it, and the admin's key is never sent to a browser.
+  The first **In Bangla** answer in a book also sends the helper about 30,000 characters of the book's text, from up to 12 chapters, once, to make the book's translator's notes.
+  A chapter that brings characters the notes have not seen sends the helper up to 10,000 characters of that chapter, once, to add them.
 - A fallback word translation uses an unofficial Google endpoint, or Microsoft's when Google refuses, and only if the AI answer fails or there is no AI helper.
-- **Translation**, only while you have it switched on, sends the chapter's text to Microsoft Translator or Google Translate through their free public services, with no account; nothing goes while it is off.
+- **Translation**, only while you have it switched on, sends the chapter's text, with the book's title and author, to the reader's AI helper (the companies above) when they have one, and otherwise to Microsoft Translator or Google Translate through their free public services, with no account; nothing goes while it is off.
+  The free services get only the paragraphs, a paragraph at a time, and they get code, tables and text with no words in it whichever engine the admin chose.
   Each paragraph is sent once, since the translation is kept with the book.
+  The first chapter translated in a book also sends the helper the same sample of the book as the first **In Bangla** answer, once, to make the book's translator's notes.
 
 ## For developers
 

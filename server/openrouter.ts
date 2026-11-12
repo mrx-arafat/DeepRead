@@ -30,7 +30,7 @@ const MODEL_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$/;
 const KEY_IN_TEXT = /sk-or-[A-Za-z0-9_-]{8,}/g;
 
 /** The longest each kind of answer may run to: a word card is short, a quiz is the longest. It also caps what a runaway model can cost. */
-const MAX_TOKENS: Record<LlmTask, number> = { word: 900, explain: 1800, ask: 1800, preview: 2600, recap: 2600, quiz: 3400, closing: 300 };
+const MAX_TOKENS: Record<LlmTask, number> = { word: 900, explain: 1800, ask: 1800, preview: 2600, recap: 2600, quiz: 3400, closing: 300, translate: 8000, style: 3000 };
 
 const ANTHROPIC_HOST = "api.anthropic.com";
 /** Claude's thinking counts against max_tokens, so an answer gets this much more room; at low effort it is rarely used up. */

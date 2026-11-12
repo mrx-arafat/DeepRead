@@ -1151,6 +1151,28 @@ describe("DeepRead API", () => {
       expect(textOf(await readSse(await send("POST", "/api/ai/explain", explainBody(id, { mode: "simple", selection }))))).toBe("a plain explanation");
     });
 
+    it("should make the book's translator's notes behind the first line translated, then put them in the Bangla of lines and words", async () => {
+      const id = await addBook();
+      const notes = { narrator: "Plain, natural চলিত.", characters: [{ name: "Beta", rendering: "বিটা", role: "a paragraph" }] };
+      llm.state.script = (request) => (request.task === "style" ? [JSON.stringify(notes)] : [request.user]);
+      const line = { mode: "native", selection: "Beta paragraph is the one the reader taps." };
+
+      // The first answer does not wait for the notes, and has none.
+      const first = textOf(await readSse(await send("POST", "/api/ai/explain", explainBody(id, line))));
+      expect(first).not.toContain("Translator's notes");
+      await vi.waitFor(async () => expect(await library.readStyle(id, "bn")).toMatchObject({ lang: "bn", narrator: "Plain, natural চলিত." }));
+
+      // The same request now carries them, so it is a new question and not the cached answer.
+      const second = textOf(await readSse(await send("POST", "/api/ai/explain", explainBody(id, line))));
+      expect(second).toContain("Names: Beta = বিটা (a paragraph)");
+      expect(second).toContain("Voice: Plain, natural চলিত.");
+      // A tapped word gets the names and terms that match it, and a word that matches none is left as it was.
+      expect(textOf(await readSse(await send("POST", "/api/ai/explain", explainBody(id, { selection: "Beta" }))))).toContain("Names: Beta = বিটা (a paragraph)");
+      expect(textOf(await readSse(await send("POST", "/api/ai/explain", explainBody(id, { selection: "reader" }))))).not.toContain("Translator's notes");
+      // Making them took the one request, and the lines and words after it none.
+      expect(llm.state.calls).toBe(5);
+    });
+
     it("should report a failed generation as an error event and never cache it", async () => {
       const id = await addBook();
       llm.state.script = (_request, call) =>
