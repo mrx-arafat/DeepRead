@@ -41,7 +41,23 @@ async (page) => {
     await page.keyboard.press('Escape');
   }
   await page.screenshot({ path: '/tmp/deepread-header-desktop.png' });
+  for (const width of [320, 390, 495, 639]) {
+    await page.setViewportSize({ width, height: 844 });
+    const add = await page.getByRole('button', { name: 'Add a book', exact: true }).boundingBox();
+    const theme = await appearance.boundingBox();
+    assert(Math.abs(add.y - theme.y) < 1 && Math.abs(add.height - theme.height) < 1, 'Mobile actions must have matching height and alignment');
+    assert(theme.x - (add.x + add.width) <= 16, 'Mobile action row must not contain a large empty gap');
+    assert(add.height >= 48 && theme.height >= 48, 'Mobile actions need comfortable touch targets');
+    assert(await appearance.getByText('Theme', { exact: true }).isVisible(), 'Mobile theme control needs a visible label');
+    await appearance.click();
+    await page.getByRole('radio', { name: 'Dark', exact: true }).check();
+    await page.locator('.library').ariaSnapshot();
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Mobile header must fit');
+    await page.keyboard.press('Escape');
+  }
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('heading', { name: 'DeepRead', exact: true }).click();
+  await page.screenshot({ path: '/tmp/deepread-mobile-actions.png' });
   await appearance.click();
   await page.getByRole('radio', { name: 'Dark', exact: true }).check();
   await page.locator('.library').ariaSnapshot();

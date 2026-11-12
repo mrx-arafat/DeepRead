@@ -34,7 +34,7 @@ export function AppearanceMenu(): ReactElement {
           event.currentTarget.querySelector("summary")?.focus();
         }
       }}>
-      <summary title="Appearance"><Icon size={18} aria-hidden /><span className="visually-hidden">Appearance</span><ChevronDown size={14} aria-hidden /></summary>
+      <summary title="Appearance"><Icon size={18} aria-hidden /><span className="visually-hidden">Appearance</span><span className="library-appearance-label" aria-hidden>Theme</span><ChevronDown size={14} aria-hidden /></summary>
       <fieldset className="dashboard-theme">
         <legend className="visually-hidden">Color theme</legend>
         {themes.map(({ value, label, Icon: ThemeIcon }) => (

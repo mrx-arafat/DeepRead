@@ -196,7 +196,7 @@ The steps below are the same for every profile.
 
 ### 1. Add a book
 
-Click **Add a book**, or drop a PDF anywhere on the page. The library header's **Appearance** menu offers Light, Sepia, and Dark themes beside your profile menu.
+Click **Add a book**, or drop a PDF anywhere on the page. The library header's **Appearance** menu offers Light, Sepia, and Dark themes beside your profile menu. On phones, the labeled **Theme** control sits beside the full-width Add a book button below your profile.
 DeepRead works with PDFs whose text you can select (most e-books and Project Gutenberg books).
 Scanned books, where each page is a photo, are recognized locally when the server has Tesseract installed (see [PDF import](docs/pdf-import.md)).
 
