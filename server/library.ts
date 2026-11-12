@@ -270,6 +270,13 @@ export type Library = {
   readTranslation(id: string, lang: LangCode, chapterId: string): Promise<unknown>;
   /** Keeps it with the book, so it goes when the book goes. Never rejects: one not kept is made again next time. */
   writeTranslation(id: string, lang: LangCode, chapterId: string, value: unknown): Promise<void>;
+  /** A read-aloud clip routes-voice.ts kept for the book under `key`. Null when none is kept, or it cannot be read. */
+  readVoice(id: string, key: string): Promise<Buffer | null>;
+  /**
+   * Keeps the clip with the book, so it goes when the book goes. Never rejects: a clip not kept (the book is gone, or the
+   * books have no room left for it) is made again the next time it is asked for.
+   */
+  writeVoice(id: string, key: string, clip: Uint8Array): Promise<void>;
   /**
    * Stops every change to the books, before a removed profile's files are cleared: resolves once the changes under way
    * (an upload being added, a place being saved) have finished, and every change after that throws LibraryClosedError
@@ -292,6 +299,11 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
   const folderOf = (id: string): string => keyOf(id, "");
   const translationOf = (id: string, lang: LangCode, chapterId: string): string =>
     keyOf(id, `translations/${lang}/${PLAIN_NAME.test(chapterId) ? chapterId : createHash("sha256").update(chapterId).digest("hex")}.json`);
+
+  const voiceOf = (id: string, key: string): string => {
+    if (!PLAIN_NAME.test(key)) throw new Error(`invalid clip key: ${JSON.stringify(key)}`);
+    return keyOf(id, `voice/${key}.mp3`);
+  };
 
   async function readJson(key: string): Promise<unknown> {
     const data = await store.read(key);
@@ -918,6 +930,30 @@ export function createLibrary(dataDir: string, options: LibraryOptions = {}): Li
         // A damaged translation is just a miss: the chapter is translated again, and written over it.
         console.warn(`ignoring unreadable translation of ${id}:`, error);
         return null;
+      }
+    },
+
+    async readVoice(id, key) {
+      try {
+        return await store.read(voiceOf(id, key));
+      } catch (error) {
+        // A clip that cannot be read is just a miss: it is made again, and written over.
+        console.warn(`ignoring unreadable read-aloud clip of ${id}:`, error);
+        return null;
+      }
+    },
+
+    async writeVoice(id, key, clip) {
+      try {
+        await serialized(id, async () => {
+          // If the book was removed while its sentence was being read, the clip must not bring part of it back.
+          if (!(await exists(id))) return;
+          // Clips count as the book's space: when the books are full, the sentence is read without being kept.
+          await assertRoom(clip.byteLength);
+          await store.write(voiceOf(id, key), clip);
+        });
+      } catch (error) {
+        if (!(error instanceof StorageFullError)) console.warn(`could not keep a read-aloud clip of ${id}:`, error);
       }
     },
 

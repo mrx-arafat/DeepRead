@@ -7,6 +7,7 @@ import type { Library } from "./library.ts";
 import type { OpenRouter } from "./openrouter.ts";
 import type { Profiles } from "./profiles.ts";
 import type { QuickTranslate } from "./translate.ts";
+import type { Voice } from "./voice.ts";
 
 /** Implemented in parser/. Throws ParseError for PDFs that cannot become a book. */
 export type ParsePdf = (filePath: string) => Promise<ParsedBook>;
@@ -33,6 +34,8 @@ type SharedDeps = {
   translation?: Translation;
   /** Open in ChatGPT: the admin's choice of whether readers get the button. Absent: everyone does, and the admin's address is unknown. */
   handoff?: HandoffSettingsStore;
+  /** The voice box that reads the natural voice for every reader. Absent: this server reads none, and devices use their own. */
+  voice?: Voice;
   /** Built web app to serve (production only). Unknown paths fall back to its index.html. */
   webRoot?: string;
   /** When set, devices on other host names (a tunnel) may use the app after unlocking with this key. */

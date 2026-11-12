@@ -7,12 +7,13 @@ import { TRANSLATION_ENGINES } from "../shared/types.ts";
 import type { Chapter, LangCode, TranslationSettings } from "../shared/types.ts";
 import type { AppEnv } from "./app-env.ts";
 import { isTranslationEngine, TranslationError } from "./chapter-translation.ts";
-import type { Translation, TranslationHome } from "./chapter-translation.ts";
+import type { Translation } from "./chapter-translation.ts";
 import type { Accounts } from "./deps.ts";
 import { adminOnly, apiError, bookNotFound, chapterNotFound, invalidBody, invalidId, isLangCode, LANG_HELP, readJsonObject } from "./http.ts";
 import { jsonBody, sendJsonBody } from "./routes-books.ts";
 import type { JsonBody } from "./routes-books.ts";
 import { isReadableBookId, parseSharedBookId } from "./shares.ts";
+import type { Library } from "./library.ts";
 
 const SETTINGS_HELP = 'send JSON like {"enabled": true, "engine": "auto"}.';
 
@@ -41,23 +42,24 @@ function translationBody(chapter: Chapter, lang: LangCode, text: string): JsonBo
   return body;
 }
 
+/**
+ * Where what DeepRead makes for a book is kept (its translations, its read-aloud clips): with the book, in its owner's own
+ * library. A book shared with the reader is read from its owner's, so it is made once for the owner and everyone they
+ * share it with.
+ */
+export function bookHome(c: Context<AppEnv>, accounts: Accounts | undefined, id: string): { library: Library; bookId: string } {
+  const shared = parseSharedBookId(id);
+  const ownerId = shared?.ownerId ?? c.var.session?.profile.id;
+  // Without profiles there is the one library, which holds every book.
+  if (!accounts || !ownerId) return { library: c.var.library, bookId: id };
+  // The same library for every reader of the book, so two of them asking at once share one making of it.
+  return { library: accounts.profiles.library(ownerId), bookId: shared?.bookId ?? id };
+}
+
 /** What every reader reaches: a chapter's translation, and whether they may have one. */
 export function translationRoutes(deps: Translation & { accounts?: Accounts }): Hono<AppEnv> {
   const { settings, translator, accounts } = deps;
   const routes = new Hono<AppEnv>();
-
-  /**
-   * Where a book's translations are kept: with the book, in its owner's own library. A book shared with the reader is read
-   * from its owner's, so its translation is made once for the owner and everyone they share it with.
-   */
-  function homeOf(c: Context<AppEnv>, id: string): TranslationHome {
-    const shared = parseSharedBookId(id);
-    const ownerId = shared?.ownerId ?? c.var.session?.profile.id;
-    // Without profiles there is the one library, which holds every book.
-    if (!accounts || !ownerId) return { library: c.var.library, bookId: id };
-    // The same library for every reader of the book, so two of them opening a chapter at once share one translation.
-    return { library: accounts.profiles.library(ownerId), bookId: shared?.bookId ?? id };
-  }
 
   routes.get("/translation", (c) => {
     const chosen = settings.get();
@@ -77,7 +79,7 @@ export function translationRoutes(deps: Translation & { accounts?: Accounts }): 
     const chapter = book.chapters.find((candidate) => candidate.id === c.req.param("chapterId"));
     if (!chapter) return chapterNotFound(c);
     try {
-      const translation = await translator.chapter(homeOf(c, id), chapter, lang, chosen.engine);
+      const translation = await translator.chapter(bookHome(c, accounts, id), chapter, lang, chosen.engine);
       // As big as the chapter: revalidating and gzipped, like it.
       return await sendJsonBody(c, translationBody(chapter, lang, JSON.stringify(translation)));
     } catch (error) {

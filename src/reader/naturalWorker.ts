@@ -2,7 +2,8 @@
 // work (a third of a gigabyte of model, seconds of compiling, about a second a sentence) holds up the page the reader is
 // scrolling. natural.ts starts this worker when the voice is asked for, and ends it to give the memory back.
 import type { VoiceReply, VoiceRequest } from "./natural.ts";
-import { chunksOf, fastEnough, trimSilence } from "./naturalTiming.ts";
+import { chunksOf, joinPieces, trimSilence } from "../../shared/speech-audio.ts";
+import { fastEnough } from "./naturalTiming.ts";
 
 const LIBRARY = "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm";
 const MODEL = "onnx-community/Kokoro-82M-v1.0-ONNX";
@@ -70,15 +71,7 @@ async function makeClip(text: string, speed: number): Promise<{ audio: Float32Ar
     sampleRate = made.sampling_rate;
     pieces.push(trimSilence(made.audio, sampleRate));
   }
-  const breath = Math.round((sampleRate * BREATH_MS) / 1000);
-  const length = pieces.reduce((sum, piece) => sum + piece.length, 0) + breath * Math.max(0, pieces.length - 1);
-  const audio = new Float32Array(length);
-  let at = 0;
-  for (const piece of pieces) {
-    audio.set(piece, at);
-    at += piece.length + breath;
-  }
-  return { audio, sampleRate };
+  return { audio: joinPieces(pieces, sampleRate, BREATH_MS), sampleRate };
 }
 
 scope.onmessage = (event) => {

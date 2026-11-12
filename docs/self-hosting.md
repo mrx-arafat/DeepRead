@@ -21,6 +21,7 @@ If DeepRead only needs to reach your own phone now and then, you do not need a s
 8. [Cloudflare in front (recommended)](#6-cloudflare-in-front-recommended)
 9. [Sign in and invite people](#7-sign-in-and-invite-people)
 10. [AI helpers on a server](#8-ai-helpers-on-a-server)
+    - [A voice box for the natural voice](#a-voice-box-for-the-natural-voice)
 11. [Backups](#9-backups)
 12. [Updating](#10-updating)
 13. [Troubleshooting](#troubleshooting)
@@ -363,6 +364,62 @@ DeepRead explains words and passages with an AI helper, and on a server one choi
 Reading, listening and notes work without any helper.
 So does **chapter translation** (each paragraph shown in the reader's language under it): it uses Microsoft Translator or Google Translate's free public services, needs no key, and keeps every translated paragraph with the book.
 The admin turns it on or off for readers on the admin page, under **Chapter translation**.
+
+### A voice box for the natural voice
+
+Without one, the **Natural** read-aloud voice runs on each reader's own device: it downloads a 326 MB model once per browser and needs a recent computer.
+With a voice box, the voice runs on a machine you choose, every reader gets it at once on any device, and their phone only plays small MP3s, about 0.2 MB a minute.
+DeepRead keeps each sentence it gets with the book, so a sentence is made once and every reader after that is sent the kept one.
+
+The voice box is [`server/voice-box.ts`](../server/voice-box.ts), run from [`voice-box/Dockerfile`](../voice-box/Dockerfile).
+Give it a machine of its own with several free cores: it uses about 0.8 GB of memory, and makes a second of speech in about 0.3 s on 24 cores but only 0.7 s on 2, which is too slow for more than one listener.
+
+1. On the voice box, copy the three files it needs and build the image:
+
+   ```bash
+   mkdir -p ~/deepread-voice/server ~/deepread-voice/shared ~/deepread-voice/tls && cd ~/deepread-voice
+   # from your DeepRead folder: voice-box/Dockerfile, server/voice-box.ts, shared/speech-audio.ts, into the same places
+   docker build -t deepread-voice .
+   ```
+
+2. Make its certificate (the book's text travels to it, so only over HTTPS) and its token. Replace `203.0.113.7` with the voice box's address:
+
+   ```bash
+   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -days 3650 -nodes \
+     -keyout tls/key.pem -out tls/cert.pem -subj "/CN=deepread-voice" -addext "subjectAltName=IP:203.0.113.7"
+   printf "VOICE_TOKEN=%s\nVOICE_TLS_KEY=/tls/key.pem\nVOICE_TLS_CERT=/tls/cert.pem\n" "$(openssl rand -hex 32)" > env
+   chmod 600 env tls/key.pem
+   ```
+
+3. Start it, as your own user so it can read the key, on the host's network so the firewall below applies to it:
+
+   ```bash
+   docker run -d --name deepread-voice --restart unless-stopped --network host --user "$(id -u):$(id -g)" \
+     --cpu-shares 256 --memory 4g --env-file env -v "$PWD/tls:/tls:ro" deepread-voice
+   docker logs deepread-voice   # The voice box reads on port 8443.
+   ```
+
+   `--cpu-shares 256` gives the machine's other work the cores first when both want them.
+
+4. Let only your DeepRead server reach it. With `ufw`, replace `198.51.100.4` with the DeepRead server's address:
+
+   ```bash
+   sudo ufw allow proto tcp from 198.51.100.4 to any port 8443
+   ```
+
+5. On the DeepRead server, copy the voice box's `tls/cert.pem` (the certificate, not the key) next to DeepRead, add these to `.env`, and restart DeepRead:
+
+   ```bash
+   DEEPREAD_VOICE_URL=https://203.0.113.7:8443
+   DEEPREAD_VOICE_TOKEN=the VOICE_TOKEN from the voice box's env file
+   DEEPREAD_VOICE_CERT=/srv/deepread/app/voice-box-cert.pem
+   ```
+
+   The log says `The natural voice is read by the voice box at https://203.0.113.7:8443.`
+   DeepRead refuses to start when the address is not `https://`, the token is shorter than 32 characters, or the certificate file cannot be read.
+
+When the voice box is busy or cannot be reached, readers hear their device's built-in voice for that sentence and DeepRead tries the voice box again a minute later.
+The kept sentences count towards the books' storage limit and go when the book does.
 
 ## 9. Backups
 

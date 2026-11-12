@@ -14,6 +14,7 @@ import { booksRoutes } from "./routes-books.ts";
 import { openrouterRoutes } from "./routes-openrouter.ts";
 import { handoffAdminRoutes, handoffRoutes } from "./routes-handoff.ts";
 import { translationAdminRoutes, translationRoutes } from "./routes-translation.ts";
+import { voiceRoutes } from "./routes-voice.ts";
 import { sharesRoutes } from "./routes-shares.ts";
 import { sessionRoutes } from "./routes-session.ts";
 import { readerGuard } from "./sessions.ts";
@@ -63,6 +64,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   if (deps.translation) app.route("/api", translationRoutes({ ...deps.translation, accounts: deps.accounts }));
   if (deps.handoff) app.route("/api", handoffRoutes(deps.handoff));
+  // The natural voice: every server says whether it reads it; only one with a voice box has the address that does.
+  app.route("/api", voiceRoutes({ voice: deps.voice, accounts: deps.accounts }));
   // Sharing is between profiles, so without them these addresses are unknown like any other.
   if (deps.accounts) app.route("/api", sharesRoutes(deps.accounts));
   app.route("/api/books", booksRoutes({ parsePdf: deps.parsePdf, renderCover: deps.renderCover }));

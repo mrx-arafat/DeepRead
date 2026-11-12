@@ -99,6 +99,8 @@ function speakNatural(text: string, options: SpeakOptions): () => void {
   const token = {};
   let stopped = false;
   let playing: Playing | null = null;
+  // The device voice reading this sentence instead, when the natural voice could not make it.
+  let instead: (() => void) | null = null;
   const holds = () => !stopped && owner === token;
   owner = token;
   // Whatever the device voice was saying is replaced, and its reader told so by its own events.
@@ -127,14 +129,16 @@ function speakNatural(text: string, options: SpeakOptions): () => void {
     })
     .catch(() => {
       if (!holds()) return;
+      // The natural voice could not make the sentence (its server is busy or unreachable, or its worker stopped): the
+      // device voice reads it, so reading carries on instead of stopping. The reader's events go to that utterance.
       naturalCurrent = null;
-      release(token);
-      options.onError?.("Reading aloud stopped unexpectedly. Press play to try again.");
+      instead = speakDevice(text, options);
     });
   return () => {
     if (stopped) return;
     stopped = true;
     playing?.stop();
+    instead?.();
     if (naturalCurrent?.token === token) naturalCurrent = null;
     if (owner === token) release(token);
   };
@@ -148,6 +152,11 @@ export function speak(text: string, options: SpeakOptions = {}): () => void {
     // Reading aloud is what asks for the natural voice: it starts now, and the device voice reads until it is ready.
     void enableNatural();
   }
+  return speakDevice(text, options);
+}
+
+/** `text` in the voice built into this device, replacing anything already being spoken. Returns a function that stops it. */
+function speakDevice(text: string, options: SpeakOptions): () => void {
   if (!canSpeak) {
     options.onError?.("This browser cannot read aloud.");
     return () => {};

@@ -6,7 +6,12 @@
 // This file is the page's side of it: when the worker starts, what it reported, and when it ends. Ending the worker is
 // what gives the voice's memory back (over a gigabyte while it loads), so a device that cannot use the voice is never
 // left holding it, and what the device turned out to be is remembered, so the next book does not find out again.
+//
+// A DeepRead server with a voice box (server/voice-box.ts) reads the voice itself: then none of the above happens. The
+// voice is ready at once on every device, each sentence comes from the server as a small MP3, and the device only
+// plays it. That is asked once per page (GET /api/voice).
 import { useSyncExternalStore } from "react";
+import { api } from "../api.ts";
 import { wordTimes } from "./naturalTiming.ts";
 
 export const NATURAL_DOWNLOAD_MB = 326;
@@ -36,11 +41,20 @@ export type NaturalStatus =
   | "crashed"
   | "failed";
 
-export type NaturalState = { status: NaturalStatus; /** 0 to 1, while downloading. */ progress: number; message: string | null };
+export type NaturalState = {
+  status: NaturalStatus;
+  /** 0 to 1, while downloading. */
+  progress: number;
+  message: string | null;
+  /** This DeepRead server reads the voice, so nothing is downloaded to or run on this device. False until it says so. */
+  server: boolean;
+};
+/** What a load comes to; whether the server reads the voice is known apart from it. */
+type Outcome = Omit<NaturalState, "server">;
 
-const OFF: NaturalState = { status: "off", progress: 0, message: null };
-const SLOW: NaturalState = { status: "slow", progress: 0, message: "This device is too slow for the natural voice, so DeepRead keeps the voice built into it." };
-const CRASHED: NaturalState = {
+const OFF: Outcome = { status: "off", progress: 0, message: null };
+const SLOW: Outcome = { status: "slow", progress: 0, message: "This device is too slow for the natural voice, so DeepRead keeps the voice built into it." };
+const CRASHED: Outcome = {
   status: "crashed",
   progress: 0,
   message: "The natural voice stopped this page the last time it loaded, so DeepRead keeps the voice built into this device. Choose This device, then Natural, to try again.",
@@ -72,7 +86,7 @@ function remember(value: Remembered | null): void {
 }
 
 /** The state a new page starts in: what an earlier page learned about this device, if it learned anything. */
-function recalled(): NaturalState {
+function recalled(): Outcome {
   const before = remembered();
   return before === "slow" ? SLOW : before === "crashed" ? CRASHED : OFF;
 }
@@ -86,7 +100,7 @@ async function loadingElsewhere(): Promise<boolean> {
   return held?.some((lock) => lock.name === STORE_KEY) ?? false;
 }
 
-let state: NaturalState = recalled();
+let state: NaturalState = { ...recalled(), server: false };
 const listeners = new Set<() => void>();
 let worker: Worker | null = null;
 let ready = false;
@@ -95,6 +109,54 @@ let loading: Promise<void> | null = null;
 let loaded: (() => void) | null = null;
 /** Counts the times the voice was let go, so a load begun before that does not carry on after it. */
 let letGo = 0;
+
+// The server's side: whether it reads the voice (asked once per page), whether it is reading for this page now, the book
+// whose sentences it is asked for, and until when it is left alone after a sentence it could not make.
+let serverAnswer: Promise<boolean> | null = null;
+let fromServer = false;
+let book: string | null = null;
+let pausedUntil = 0;
+/** How long the device voice reads by itself after the server could not make a sentence. */
+const SERVER_PAUSE_MS = 60_000;
+/** The rate the server's clips are decoded at: the voice's own. */
+const CLIP_RATE = 24000;
+
+/** The book whose sentences the server reads: the one open in the reader, or none. */
+export function setNaturalBook(id: string | null): void {
+  book = id;
+}
+
+/** Whether this DeepRead server reads the natural voice. Asked once per page; a failure to ask counts as no. */
+export function checkServerVoice(): Promise<boolean> {
+  serverAnswer ??= api.voice().then(
+    (answer) => answer.server === true,
+    () => false,
+  );
+  return serverAnswer.then((reads) => {
+    if (reads !== state.server) set({ server: reads });
+    return reads;
+  });
+}
+
+/** The server reads for this page from now on: ready at once, with nothing loaded on the device. */
+function useServer() {
+  stop();
+  watchPage(false);
+  fromServer = true;
+  ready = true;
+  pausedUntil = 0;
+  set({ status: "ready", progress: 1, message: null });
+}
+
+/**
+ * Makes the natural voice ready at once when this DeepRead server reads it, whatever this device turned out to be.
+ * Loads nothing on the device either way, so a phone can ask as a book opens.
+ */
+export async function connectServerVoice(): Promise<void> {
+  if (ready) return;
+  const began = letGo;
+  if ((await checkServerVoice()) && began === letGo && !ready) useServer();
+}
 
 function set(next: Partial<NaturalState>) {
   state = { ...state, ...next };
@@ -113,7 +175,7 @@ export function useNaturalState(): NaturalState {
 }
 
 /** Whether the natural voice can read the next sentence now. */
-export const naturalReady = (): boolean => ready;
+export const naturalReady = (): boolean => ready && (!fromServer || Date.now() >= pausedUntil);
 
 // The "loading" mark stands only while the reader can see the page: a tab the phone closes in the background, or a page
 // the reader leaves, is not the voice stopping the page.
@@ -137,7 +199,7 @@ function stop() {
 }
 
 /** The load under way is over: `next` is how it went, and `verdict` what to remember of this device. */
-function settle(next: NaturalState, verdict: Remembered | null) {
+function settle(next: Outcome, verdict: Remembered | null) {
   if (next.status !== "ready") stop();
   watchPage(false);
   remember(verdict);
@@ -153,7 +215,7 @@ function settle(next: NaturalState, verdict: Remembered | null) {
  */
 export function enableNatural(): Promise<void> {
   if (loading) return loading;
-  if (state.status !== "off") return Promise.resolve();
+  if (ready) return Promise.resolve();
   const attempt = start();
   loading = attempt;
   void attempt.then(() => {
@@ -164,6 +226,12 @@ export function enableNatural(): Promise<void> {
 
 async function start(): Promise<void> {
   const began = letGo;
+  // A server that reads the voice makes everything below unnecessary.
+  if (await checkServerVoice()) {
+    if (began === letGo) useServer();
+    return;
+  }
+  if (began !== letGo || state.status !== "off") return;
   if (remembered() === "loading" && !(await loadingElsewhere())) {
     if (began !== letGo) return;
     remember("crashed");
@@ -217,6 +285,8 @@ function load(): Promise<void> {
 export function disableNatural(): void {
   letGo++;
   stop();
+  fromServer = false;
+  pausedUntil = 0;
   watchPage(false);
   remember(null);
   loading = null;
@@ -242,6 +312,10 @@ export function synthesize(text: string, speed: number): Promise<Clip> {
   if (known) return known;
   const voice = worker;
   const clip = new Promise<Clip>((resolve, reject) => {
+    if (fromServer) {
+      serverClip(text, speed).then(resolve, reject);
+      return;
+    }
     if (!voice || !ready) {
       reject(new Error("The natural voice is not ready."));
       return;
@@ -257,6 +331,21 @@ export function synthesize(text: string, speed: number): Promise<Clip> {
   });
   while (clips.size > KEPT) clips.delete(clips.keys().next().value as string);
   return clip;
+}
+
+/** A sentence of the open book from the server: its MP3, decoded to sound without starting a live audio context. */
+async function serverClip(text: string, speed: number): Promise<Clip> {
+  if (!book || Date.now() < pausedUntil) throw new Error("The natural voice is not ready.");
+  try {
+    const mp3 = await api.voiceClip(book, text, Math.min(2, Math.max(0.5, speed)));
+    const sound = await new OfflineAudioContext(1, 1, CLIP_RATE).decodeAudioData(mp3);
+    const audio = new Float32Array(sound.getChannelData(0));
+    return { audio, sampleRate: sound.sampleRate, seconds: audio.length / sound.sampleRate };
+  } catch (error) {
+    // The server or its voice box could not make it: the device voice reads for a minute, then the server is asked again.
+    pausedUntil = Date.now() + SERVER_PAUSE_MS;
+    throw error;
+  }
 }
 
 let context: AudioContext | null = null;

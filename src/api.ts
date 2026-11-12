@@ -259,6 +259,11 @@ export const api = {
       ? request<void>(`/api/books/${bookId}/notes/${encodeURIComponent(change.note.id)}`, json("PUT", { note: change.note, before: change.before }))
       : request<void>(`/api/books/${bookId}/notes/${encodeURIComponent(change.id)}`, { method: "DELETE" }),
   storage: () => request<StorageView>("/api/storage"),
+  /** Whether this DeepRead server reads the natural voice itself (it has a voice box), so devices load nothing for it. */
+  voice: () => request<{ server: boolean }>("/api/voice"),
+  /** A sentence of the book read aloud by the server's natural voice: the MP3's bytes. */
+  voiceClip: async (bookId: string, text: string, speed: number): Promise<ArrayBuffer> =>
+    (await accept(`/api/books/${bookId}/voice`, json("POST", { text, speed }))).arrayBuffer(),
 
   /** Who one of the reader's own books is shared with. */
   bookShares: (bookId: string) => request<BookShare[]>(`/api/books/${bookId}/shares`),

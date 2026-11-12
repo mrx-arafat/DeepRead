@@ -165,4 +165,21 @@ describe("speak", () => {
     // Only the one still to come: the second is already being read.
     expect(made).toEqual(["The third sentence."]);
   });
+
+  it("should read the sentence with the device voice when the natural voice cannot make it, without stopping", async () => {
+    vi.doMock("./natural.ts", () => ({
+      naturalReady: () => true,
+      enableNatural: () => Promise.resolve(),
+      synthesize: () => Promise.reject(new Error("The natural voice cannot be reached just now.")),
+    }));
+    const { speak, setNaturalVoiceWanted } = await import("./speech.ts");
+    setNaturalVoiceWanted(true);
+    const events: string[] = [];
+
+    speak("A whole sentence.", { onEnd: () => events.push("ended"), onError: (message) => events.push(message) });
+    await settle();
+    expect(engine.queue.map((utterance) => utterance.text)).toEqual(["A whole sentence."]);
+    engine.queue[0]?.onend?.();
+    expect(events).toEqual(["ended"]);
+  });
 });

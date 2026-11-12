@@ -159,7 +159,7 @@ export function ReaderPage({ bookId, chapterId }: Props) {
     () => ({ coming: flow.hasMore, error: flow.nextError, open: flow.loadNext }),
     [flow.hasMore, flow.nextError, flow.loadNext],
   );
-  useNaturalVoice(prefs.voice);
+  useNaturalVoice(prefs.voice, bookId);
   const listen = useListen(blocks, prefs.rate, nextChapter);
   const { active: listenActive, stop: stopListen } = listen;
   const listenButton = useRef<HTMLButtonElement>(null);

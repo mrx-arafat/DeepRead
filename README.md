@@ -332,7 +332,8 @@ DeepRead pauses where a person would: a little after each sentence, longer betwe
 By default DeepRead reads with the voice built into your browser and computer.
 For a more human one, open **Aa → Reader preferences → Voice settings** and choose **Natural** under **Read-aloud voice**.
 You can also open **Voice settings** from the player while listening.
-It downloads once (326 MB, with a progress figure in the menu), and from then on it runs on your computer's graphics card and works offline.
+If DeepRead runs on a server with a voice box, the server reads the natural voice: it works at once on every device, phones included, and nothing is downloaded to or run on your device (see [A voice box for the natural voice](docs/self-hosting.md#a-voice-box-for-the-natural-voice)).
+Otherwise it downloads once (326 MB, with a progress figure in the menu), and from then on it runs on your computer's graphics card and works offline.
 It needs a browser with WebGPU, which means a recent Chrome or Edge on a computer from the last few years.
 If your browser or computer cannot run it, or runs it too slowly to keep up with the reading, DeepRead says so in the menu and keeps the voice built into your computer.
 It remembers that in this browser, so the next book opens without trying the voice again.
@@ -341,7 +342,7 @@ On a phone it starts only when you press **Listen** or choose **Natural**, so op
 While it downloads or gets ready, reading aloud carries on with the built-in voice, and a single word said from its card always uses it.
 Choosing **This device** again lets go of the natural voice and its memory.
 The code for it (kokoro-js, pinned to one version) comes from jsDelivr and the voice model from Hugging Face, and only that download uses the network.
-The book text is never sent anywhere to be read aloud.
+The book text is never sent anywhere to be read aloud, except to your own DeepRead server's voice box when it has one.
 
 ### 9. Jump to a chapter
 

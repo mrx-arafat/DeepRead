@@ -23,6 +23,8 @@ import type { StorageConfig } from "./storage-config.ts";
 import { createLocalStore } from "./storage.ts";
 import type { ObjectStore } from "./storage.ts";
 import { createQuickTranslate } from "./translate.ts";
+import { createVoice, readVoiceConfig } from "./voice.ts";
+import type { Voice } from "./voice.ts";
 
 // Before anything reads a setting.
 const envFiles = loadEnvFiles();
@@ -72,6 +74,21 @@ const translator = createQuickTranslate({ cacheFile: join(dataDir, "translate-ca
 // Chapters in the reader's language, kept with each book; the admin's choice of whether readers may, and by which service.
 const translation = { settings: createTranslationSettings(dataDir), translator: createChapterTranslator() };
 
+/** The voice box that reads the natural voice for every reader (DEEPREAD_VOICE_URL), or none: devices use their own. */
+function openVoice(): Voice | undefined {
+  try {
+    const config = readVoiceConfig(process.env);
+    if (!config) return undefined;
+    console.log(`The natural voice is read by the voice box at ${config.url.origin}.`);
+    return createVoice(config);
+  } catch (error) {
+    // The sentence already names the setting to check; a stack trace would only bury it.
+    console.error(`DeepRead could not use the voice box. ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+}
+const voice = openVoice();
+
 /** Profiles mode: reads profiles.json (making the admin's profile, moving books from before profiles), or stops with why. */
 async function openAccounts(): Promise<Accounts> {
   if (adminPasskey.length > MAX_PASSKEY_CHARS) {
@@ -110,6 +127,7 @@ const app = createApp({
   translation,
   // Open in ChatGPT: whether readers get the button, the admin's choice kept in the data folder like translation's.
   handoff: createHandoffSettings(dataDir),
+  voice,
   webRoot: production ? resolve(import.meta.dirname, "../dist") : undefined,
   remoteKey: process.env.DEEPREAD_REMOTE_KEY || undefined,
   publicOrigin,

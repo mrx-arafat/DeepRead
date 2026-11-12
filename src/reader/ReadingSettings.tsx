@@ -9,7 +9,7 @@ import { setAiStatus, useReaderKey } from "./aiStatusStore.ts";
 import { HANDOFF_TARGET_IDS, HANDOFF_TARGETS, type HandoffTarget } from "./handoff.ts";
 import { helperRows } from "./helperState.ts";
 import type { Viewer } from "./helperState.ts";
-import { enableNatural, NATURAL_DOWNLOAD_MB, useNaturalState } from "./natural.ts";
+import { checkServerVoice, enableNatural, NATURAL_DOWNLOAD_MB, useNaturalState } from "./natural.ts";
 import { keepingPlace } from "./useChapterTranslation.ts";
 import { keepingLine } from "./useReadingPosition.ts";
 
@@ -166,11 +166,17 @@ function VoiceChoice({ voice }: { voice: Prefs["voice"] }) {
     setPrefs({ voice: value });
     if (value === "natural") void enableNatural();
   };
+  // Whether this DeepRead server reads the natural voice: it changes what choosing it means for this device.
+  useEffect(() => void checkServerVoice(), []);
   const hint =
     voice === "device"
-      ? `The voice built into this computer. Natural is a more human voice that runs on this computer and works offline once it has downloaded (${NATURAL_DOWNLOAD_MB} MB, once).`
+      ? natural.server
+        ? "The voice built into this device. Natural is a more human voice that this DeepRead server reads, so nothing is downloaded to this device."
+        : `The voice built into this computer. Natural is a more human voice that runs on this computer and works offline once it has downloaded (${NATURAL_DOWNLOAD_MB} MB, once).`
       : natural.status === "ready"
-        ? "The natural voice runs on this computer and works offline."
+        ? natural.server
+          ? "The natural voice is read by this DeepRead server, so nothing is downloaded to or run on this device."
+          : "The natural voice runs on this device and works offline."
         : natural.status === "downloading"
           ? // Once the file is in (at once, when the browser already has it) the voice still takes a few seconds to start.
             percent < 100
