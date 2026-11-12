@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiError, ParsedBook } from "../shared/types.ts";
 import type { Ai } from "./ai.ts";
 import type { AppEnv } from "./app-env.ts";
@@ -59,7 +59,8 @@ describe("the natural voice from the server", () => {
   });
 
   afterEach(async () => {
-    await rm(dataDir, { recursive: true, force: true });
+    // A clip is kept just after the reader has it, so a save may still be under way: retry until the folder is empty.
+    await rm(dataDir, { recursive: true, force: true, maxRetries: 5 });
   });
 
   it("should say whether this server reads the natural voice", async () => {
@@ -69,6 +70,7 @@ describe("the natural voice from the server", () => {
 
   it("should read a sentence of the reader's book as an MP3, and make each sentence only once for everyone", async () => {
     const id = await addBook();
+    const bookBytes = (await library.usage()).used;
     const sentence = { text: "The Nellie, a cruising yawl, swung to her anchor.", speed: 1 };
 
     const first = await speak(id, sentence);
@@ -76,7 +78,8 @@ describe("the natural voice from the server", () => {
     expect(first.headers.get("content-type")).toBe("audio/mpeg");
     expect(Buffer.from(await first.arrayBuffer())).toEqual(mp3Of(sentence.text, 1));
 
-    // Kept with the book: asked again, also after DeepRead starts again, the voice box is not.
+    // Kept with the book, just after the reader has it: asked again, also after DeepRead starts again, the voice box is not.
+    await vi.waitFor(async () => expect((await library.usage()).used).toBeGreaterThan(bookBytes));
     library = createLibrary(dataDir);
     const again = await speak(id, sentence, appWith(voice));
     expect(Buffer.from(await again.arrayBuffer())).toEqual(mp3Of(sentence.text, 1));
@@ -85,6 +88,17 @@ describe("the natural voice from the server", () => {
     // Another speed is another clip.
     await speak(id, { ...sentence, speed: 1.5 });
     expect(asked).toEqual([sentence, { ...sentence, speed: 1.5 }]);
+  });
+
+  it("should answer as soon as the voice box does, without waiting for the clip to be kept", async () => {
+    const id = await addBook();
+    // Storage that never finishes keeping a clip, as a far-away store might on a slow day.
+    library = { ...library, writeVoice: () => new Promise<void>(() => {}) };
+    app = appWith(voice);
+
+    const answer = await speak(id, { text: "The Nellie swung to her anchor.", speed: 1 });
+    expect(answer.status).toBe(200);
+    expect(Buffer.from(await answer.arrayBuffer())).toEqual(mp3Of("The Nellie swung to her anchor.", 1));
   });
 
   it("should let go of a book's clips when the book is removed", async () => {

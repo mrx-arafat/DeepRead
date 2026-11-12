@@ -7,12 +7,18 @@ const server = vi.hoisted(() => ({
   reads: false,
   failing: false,
   asked: [] as Array<{ bookId: string; text: string; speed: number }>,
+  /** How many sentences were being made at once, at most. */
+  most: 0,
+  making: 0,
 }));
 vi.mock("../api.ts", () => ({
   api: {
     voice: async () => ({ server: server.reads }),
     voiceClip: async (bookId: string, text: string, speed: number) => {
       server.asked.push({ bookId, text, speed });
+      server.most = Math.max(server.most, ++server.making);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      server.making--;
       if (server.failing) throw new Error("The natural voice cannot be reached just now.");
       return new ArrayBuffer(8);
     },
@@ -67,6 +73,8 @@ beforeEach(() => {
   server.reads = false;
   server.failing = false;
   server.asked = [];
+  server.most = 0;
+  server.making = 0;
   vi.stubGlobal("OfflineAudioContext", FakeOfflineAudioContext);
   FakeWorker.made = [];
   stored = new Map();
@@ -192,6 +200,29 @@ describe("the natural voice", () => {
     const clip = await page.synthesize("The Nellie swung to her anchor.", 1.25);
     expect(server.asked).toEqual([{ bookId: "heart-of-darkness-fb9585e9", text: "The Nellie swung to her anchor.", speed: 1.25 }]);
     expect(clip).toMatchObject({ sampleRate: 24000, seconds: 0.5 });
+  });
+
+  it("should make the coming sentences one at a time in their order, after the sentence wanted now", async () => {
+    server.reads = true;
+    const page = await openPage();
+    page.setNaturalBook("heart-of-darkness-fb9585e9");
+    await page.enableNatural();
+
+    const now = page.synthesize("The Nellie swung to her anchor.", 1);
+    page.prepare(["The flood had made.", "The wind was nearly calm.", "The only thing for it was to come to and wait."], 1);
+    await now;
+    await vi.waitFor(() => expect(server.asked).toHaveLength(4));
+    expect(server.asked.map((ask) => ask.text)).toEqual([
+      "The Nellie swung to her anchor.",
+      "The flood had made.",
+      "The wind was nearly calm.",
+      "The only thing for it was to come to and wait.",
+    ]);
+    // One at a time: a sentence the reader wants now, after Next say, waits behind one sentence at most.
+    expect(server.most).toBe(1);
+    // Made already, so reading them asks for nothing more.
+    await page.synthesize("The flood had made.", 1);
+    expect(server.asked).toHaveLength(4);
   });
 
   it("should leave the server voice alone for a minute after a sentence could not be made, then try it again", async () => {

@@ -145,7 +145,13 @@ async function main(): Promise<void> {
   const port = Number(process.env.VOICE_PORT ?? 8443);
   const maxQueue = Number(process.env.VOICE_QUEUE ?? 16);
   const speak = await loadVoice();
-  createServer({ key, cert }, voiceBoxHandler({ token, speak, encode: encodeMp3, maxQueue })).listen(port, () => {
+  const server = createServer({ key, cert }, voiceBoxHandler({ token, speak, encode: encodeMp3, maxQueue }));
+  // DeepRead keeps its connection open between sentences, which can be many seconds apart. Node lets an idle connection
+  // go after 5 s, and one closed just as DeepRead sends the next sentence on it fails that sentence (DeepRead then asks
+  // again on a new connection, which costs a handshake across the network).
+  server.keepAliveTimeout = 120_000;
+  server.headersTimeout = 125_000;
+  server.listen(port, () => {
     console.log(`The voice box reads on port ${port}.`);
   });
 }

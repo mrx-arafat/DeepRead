@@ -372,7 +372,9 @@ With a voice box, the voice runs on a machine you choose, every reader gets it a
 DeepRead keeps each sentence it gets with the book, so a sentence is made once and every reader after that is sent the kept one.
 
 The voice box is [`server/voice-box.ts`](../server/voice-box.ts), run from [`voice-box/Dockerfile`](../voice-box/Dockerfile).
-Give it a machine of its own with several free cores: it uses about 0.8 GB of memory, and makes a second of speech in about 0.3 s on 24 cores but only 0.7 s on 2, which is too slow for more than one listener.
+Give it a machine of its own with several free cores: it uses about 0.8 GB of memory.
+On 24 cores shared with other work it took 1.1 s for a two-word sentence, 3.5 s for a four-second one and 5 s for an eight-second one, plus about 0.2 s to make the MP3; on 2 cores it is too slow for more than one listener.
+Since it is only a little faster than speech, the reader asks for the next three sentences while one is read, one at a time, so a long sentence after a short one is ready when its turn comes.
 
 1. On the voice box, copy the three files it needs and build the image:
 
@@ -419,6 +421,7 @@ Give it a machine of its own with several free cores: it uses about 0.8 GB of me
    DeepRead refuses to start when the address is not `https://`, the token is shorter than 32 characters, or the certificate file cannot be read.
 
 When the voice box is busy or cannot be reached, readers hear their device's built-in voice for that sentence and DeepRead tries the voice box again a minute later.
+After updating DeepRead, copy `server/voice-box.ts` and `shared/speech-audio.ts` to the voice box again, rebuild the image and start a new container the same way.
 The kept sentences count towards the books' storage limit and go when the book does.
 
 ## 9. Backups

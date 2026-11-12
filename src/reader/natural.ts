@@ -285,6 +285,7 @@ function load(): Promise<void> {
 export function disableNatural(): void {
   letGo++;
   stop();
+  ahead = [];
   fromServer = false;
   pausedUntil = 0;
   watchPage(false);
@@ -297,19 +298,66 @@ export function disableNatural(): void {
 
 export type Clip = { audio: Float32Array<ArrayBuffer>; sampleRate: number; seconds: number };
 
-// Voices take about a second to start a sentence, so the sentence after the one being read is made ahead of time, and the
-// last few are kept in case the reader goes back or pauses (a sentence is spoken again from the word they stopped at).
+// A sentence takes the voice a moment to make, so the sentences after the one being read are made ahead of time (see
+// prepare), and the last few are kept in case the reader goes back or pauses (a sentence is spoken again from the word
+// they stopped at).
 const clips = new Map<string, Promise<Clip>>();
 const KEPT = 12;
 /** The clips the worker is making, by the number each was asked under. */
 const asked = new Map<number, { resolve: (clip: Clip) => void; reject: (error: Error) => void }>();
 let lastAsked = 0;
+const keyOf = (text: string, speed: number): string => `${speed}|${text}`;
 
-/** The audio for `text` at `speed`, made now or already made. */
+// The sentences to make ahead, in the order they will be read, and whether one of them is being made now. They are made
+// one at a time, and only while no sentence wanted now is being made: the voice (the server's voice box, or the worker)
+// makes one sentence at a time in the order asked, so a sentence the reader wants now, after Next say, must not wait
+// behind several made ahead.
+let ahead: Array<{ text: string; speed: number }> = [];
+let makingAhead = false;
+let wantedNow = 0;
+
+/**
+ * Makes the sentences about to be read, one after another in their order, so each is ready when its turn comes.
+ * Replaces the sentences named before: those not begun yet are no longer made.
+ */
+export function prepare(texts: string[], speed: number): void {
+  ahead = texts.map((text) => ({ text, speed }));
+  makeAhead();
+}
+
+function makeAhead(): void {
+  if (makingAhead || wantedNow > 0 || !naturalReady()) return;
+  const next = ahead.find((item) => !clips.has(keyOf(item.text, item.speed)));
+  if (!next) return;
+  makingAhead = true;
+  void make(next.text, next.speed)
+    .catch(() => {
+      // Not asked again by itself: reading it is what asks again, or the device voice reads it.
+      ahead = ahead.filter((item) => item !== next);
+    })
+    .finally(() => {
+      makingAhead = false;
+      makeAhead();
+    });
+}
+
+/** The audio for `text` at `speed`, made now or already made. It goes before the sentences being made ahead. */
 export function synthesize(text: string, speed: number): Promise<Clip> {
-  const key = `${speed}|${text}`;
-  const known = clips.get(key);
+  const known = clips.get(keyOf(text, speed));
   if (known) return known;
+  wantedNow++;
+  const clip = make(text, speed);
+  void clip
+    .catch(() => {})
+    .finally(() => {
+      wantedNow--;
+      makeAhead();
+    });
+  return clip;
+}
+
+function make(text: string, speed: number): Promise<Clip> {
+  const key = keyOf(text, speed);
   const voice = worker;
   const clip = new Promise<Clip>((resolve, reject) => {
     if (fromServer) {

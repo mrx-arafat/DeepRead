@@ -55,14 +55,17 @@ export function voiceRoutes(deps: { voice?: Voice; accounts?: Accounts }): Hono<
     const name = `${home.bookId}\n${key}`;
     let clip = inLibrary.get(name);
     if (!clip) {
-      clip = voice
-        .clip(text, speed)
-        .then(async (made) => {
-          await home.library.writeVoice(home.bookId, key, made);
-          return made;
-        })
+      const asked = voice.clip(text, speed);
+      clip = asked;
+      inLibrary.set(name, asked);
+      // The reader gets the clip the moment the voice box answers, and it is kept with the book after that: storage may
+      // be far from here (R2), and waiting on it added to every sentence's silence. Until it is kept, an ask for the same
+      // sentence gets this one.
+      void asked
+        .then((made) => home.library.writeVoice(home.bookId, key, made))
+        // A clip the voice box could not make is answered below, and there is nothing to keep.
+        .catch(() => {})
         .finally(() => inLibrary.delete(name));
-      inLibrary.set(name, clip);
     }
     try {
       return send(await clip);

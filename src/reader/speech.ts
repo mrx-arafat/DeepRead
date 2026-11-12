@@ -1,6 +1,6 @@
 // Read-aloud through the browser's built-in voices (works offline, no keys), or through the natural voice (natural.ts)
 // when the reader chose it and it is ready.
-import { enableNatural, naturalReady, play, synthesize } from "./natural.ts";
+import { enableNatural, naturalReady, play, prepare, synthesize } from "./natural.ts";
 import type { Playing } from "./natural.ts";
 import { pickVoice } from "./voicing.ts";
 
@@ -73,25 +73,25 @@ export type SpeakOptions = {
   onError?: (message: string) => void;
 };
 
-// The sentence to make once the natural voice has loaded: the newest one asked for while it was loading.
-let coming: { text: string; rate: number } | null = null;
+// The sentences to make once the natural voice has loaded: the newest ones asked for while it was loading.
+let coming: { texts: string[]; rate: number } | null = null;
 
-/** Gets the voice ready for the sentence about to be read, so it starts without a wait. */
-export function prepareSpeech(text: string, rate: number): void {
-  if (!wantNatural) return;
+/** Gets the voice ready for the sentences about to be read, in their order, so each starts without a wait. */
+export function prepareSpeech(texts: string[], rate: number): void {
+  if (!wantNatural || texts.length === 0) return;
   if (naturalReady()) {
-    void synthesize(text, rate).catch(() => {});
+    prepare(texts, rate);
     return;
   }
-  // Still loading, with the device voice reading meanwhile: the sentence is made the moment the voice is ready, so
+  // Still loading, with the device voice reading meanwhile: the sentences are made the moment the voice is ready, so
   // the natural voice takes over at the next sentence without a silence while its first one is made.
   const waiting = coming !== null;
-  coming = { text, rate };
+  coming = { texts, rate };
   if (waiting) return;
   void enableNatural().then(() => {
     const next = coming;
     coming = null;
-    if (next && wantNatural && naturalReady()) void synthesize(next.text, next.rate).catch(() => {});
+    if (next && wantNatural && naturalReady()) prepare(next.texts, next.rate);
   });
 }
 

@@ -42,6 +42,13 @@ export type Listen = {
 };
 
 /**
+ * How many sentences after the one being read the natural voice makes ahead. Measured on a phone with the server's voice:
+ * a sentence took 2 to 4.3 s to arrive while a short one is read in 1 to 2 s, so with only the next one made ahead a long
+ * sentence after a short one left up to 3 s of silence. Three keep about ten seconds of reading ready.
+ */
+const MADE_AHEAD = 3;
+
+/**
  * Reads the book aloud one sentence at a time, highlighting the sentence and word being spoken.
  * `blocks` are all the blocks on the page, in order; it may grow while reading, and reading carries on into it.
  */
@@ -230,10 +237,10 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
     let unwait = () => {};
     let cancel = () => {};
     const start = () => {
-      // The natural voice takes a moment to make a sentence, so the next one is made while this one is read.
+      // The natural voice takes a moment to make a sentence, so the next few are made while this one is read.
       const sentences = latest.current();
       const index = sentenceIndex(sentences, sentence);
-      const next = index === -1 ? undefined : sentences[index + 1];
+      const upcoming = index === -1 ? [] : sentences.slice(index + 1, index + 1 + MADE_AHEAD);
       cancel = speak(voiced.text, {
         rate,
         onWord: (offset) => {
@@ -268,7 +275,7 @@ export function useListen(blocks: Block[], rate: number, nextChapter: NextChapte
           setError(message);
         },
       });
-      if (next) prepareSpeech(forSpeech(next.text).text, rate);
+      prepareSpeech(upcoming.map((item) => forSpeech(item.text).text), rate);
     };
     const timer = silence > 0 ? window.setTimeout(start, silence) : undefined;
     if (!timer) start();
